@@ -68,14 +68,19 @@ async def find_or_create_user(db: AsyncSession, google_user_info: dict) -> User:
     roles_result = await db.execute(select(Role).where(Role.name.in_([r.value for r in role_names])))
     roles = roles_result.scalars().all()
 
-    # Insert directly into the association table to avoid async lazy-load issues
+    # Insert directly into the association table instead of user.roles.append().
+    # After db.flush() on a new object, accessing a relationship attribute like
+    # user.roles triggers a synchronous lazy-load internally — even with
+    # lazy="selectin" — which raises MissingGreenlet under async sessions.
+    # Using a direct INSERT bypasses the ORM relationship machinery entirely.
     if roles:
         await db.execute(
             insert(user_roles),
             [{"user_id": user.id, "role_id": role.id} for role in roles],
         )
 
-    # Refresh so the user object has roles loaded for JWT creation
+    # Refresh to populate user.roles from the rows we just inserted,
+    # so downstream code (JWT creation) can read them without lazy-loading.
     await db.refresh(user, ["roles"])
 
     return user
