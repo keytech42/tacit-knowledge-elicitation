@@ -39,7 +39,10 @@ class Answer(UUIDMixin, TimestampMixin, Base):
     author_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     body: Mapped[str] = mapped_column(Text)
     selected_option_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("answer_options.id"), nullable=True)
-    status: Mapped[str] = mapped_column(SAEnum(AnswerStatus, name="answerstatus"), default=AnswerStatus.DRAFT)
+    status: Mapped[str] = mapped_column(
+        SAEnum(AnswerStatus, name="answerstatus", values_callable=lambda e: [x.value for x in e]),
+        default=AnswerStatus.DRAFT,
+    )
     current_version: Mapped[int] = mapped_column(Integer, default=0)
     confirmed_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -61,7 +64,9 @@ class AnswerRevision(UUIDMixin, TimestampMixin, Base):
     body: Mapped[str] = mapped_column(Text)
     selected_option_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("answer_options.id"), nullable=True)
     created_by_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
-    trigger: Mapped[str] = mapped_column(SAEnum(RevisionTrigger, name="revisiontrigger"))
+    trigger: Mapped[str] = mapped_column(
+        SAEnum(RevisionTrigger, name="revisiontrigger", values_callable=lambda e: [x.value for x in e])
+    )
     previous_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     answer = relationship("Answer", back_populates="revisions")

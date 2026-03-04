@@ -42,10 +42,12 @@ class Question(UUIDMixin, TimestampMixin, Base):
     body: Mapped[str] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     status: Mapped[str] = mapped_column(
-        SAEnum(QuestionStatus, name="questionstatus"), default=QuestionStatus.DRAFT
+        SAEnum(QuestionStatus, name="questionstatus", values_callable=lambda e: [x.value for x in e]),
+        default=QuestionStatus.DRAFT,
     )
     confirmation: Mapped[str] = mapped_column(
-        SAEnum(Confirmation, name="confirmation"), default=Confirmation.PENDING
+        SAEnum(Confirmation, name="confirmation", values_callable=lambda e: [x.value for x in e]),
+        default=Confirmation.PENDING,
     )
     review_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     show_suggestions: Mapped[bool] = mapped_column(Boolean, default=False)
