@@ -1,7 +1,5 @@
-import asyncio
 from collections.abc import AsyncGenerator
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
@@ -17,13 +15,6 @@ from app.services.auth import create_jwt_token, generate_api_key, hash_api_key
 TEST_DATABASE_URL = settings.DATABASE_URL.replace("/knowledge_elicitation", "/knowledge_elicitation_test")
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 test_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -82,6 +73,7 @@ async def admin_user(db: AsyncSession, roles: dict[str, Role]) -> User:
     user = User(user_type=UserType.HUMAN, external_id="google_admin_123", display_name="Admin User", email="admin@test.com")
     db.add(user)
     await db.flush()
+    await db.refresh(user, ["roles"])
     user.roles.append(roles[RoleName.ADMIN.value])
     user.roles.append(roles[RoleName.AUTHOR.value])
     await db.flush()
@@ -93,6 +85,7 @@ async def author_user(db: AsyncSession, roles: dict[str, Role]) -> User:
     user = User(user_type=UserType.HUMAN, external_id="google_author_123", display_name="Author User", email="author@test.com")
     db.add(user)
     await db.flush()
+    await db.refresh(user, ["roles"])
     user.roles.append(roles[RoleName.AUTHOR.value])
     await db.flush()
     return user
@@ -103,6 +96,7 @@ async def respondent_user(db: AsyncSession, roles: dict[str, Role]) -> User:
     user = User(user_type=UserType.HUMAN, external_id="google_respondent_123", display_name="Respondent User", email="respondent@test.com")
     db.add(user)
     await db.flush()
+    await db.refresh(user, ["roles"])
     user.roles.append(roles[RoleName.RESPONDENT.value])
     await db.flush()
     return user
@@ -113,6 +107,7 @@ async def reviewer_user(db: AsyncSession, roles: dict[str, Role]) -> User:
     user = User(user_type=UserType.HUMAN, external_id="google_reviewer_123", display_name="Reviewer User", email="reviewer@test.com")
     db.add(user)
     await db.flush()
+    await db.refresh(user, ["roles"])
     user.roles.append(roles[RoleName.REVIEWER.value])
     await db.flush()
     return user
@@ -124,6 +119,7 @@ async def service_user(db: AsyncSession, roles: dict[str, Role]) -> tuple[User, 
     user = User(user_type=UserType.SERVICE, display_name="Test LLM Agent", model_id="claude-sonnet-4-5-20250929", api_key_hash=hash_api_key(api_key))
     db.add(user)
     await db.flush()
+    await db.refresh(user, ["roles"])
     user.roles.append(roles[RoleName.AUTHOR.value])
     await db.flush()
     return user, api_key

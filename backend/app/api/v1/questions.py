@@ -141,6 +141,8 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
     apply_publish(question, current_user)
+    await db.flush()
+    await db.refresh(question)
     return question
 
 

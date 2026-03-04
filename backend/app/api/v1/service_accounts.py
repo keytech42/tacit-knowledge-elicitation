@@ -31,8 +31,10 @@ async def create_service_account(
     author_role = await db.execute(select(Role).where(Role.name == RoleName.AUTHOR.value))
     role = author_role.scalar_one_or_none()
     if role:
+        await db.refresh(user, ["roles"])
         user.roles.append(role)
     await db.flush()
+    await db.refresh(user, ["roles"])
 
     return ServiceAccountWithKeyResponse(
         id=user.id, display_name=user.display_name, model_id=user.model_id,
@@ -93,6 +95,7 @@ async def rotate_api_key(
         raise HTTPException(status_code=404, detail="Service account not found")
     api_key = generate_api_key()
     user.api_key_hash = hash_api_key(api_key)
+    await db.refresh(user, ["roles"])
     return ServiceAccountWithKeyResponse(
         id=user.id, display_name=user.display_name, model_id=user.model_id,
         system_version=user.system_version, is_active=user.is_active,
