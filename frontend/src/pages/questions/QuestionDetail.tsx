@@ -2,6 +2,65 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api, Question, Answer } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { ActionButton } from "@/components/ActionButton";
+import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
+
+function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
+  if (status === "archived") return { enabled: false, reason: "Archived questions are read-only" };
+  if (isAdmin) return { enabled: true };
+  if (isAuthor && status === "draft") return { enabled: true };
+  if (isAuthor && status === "proposed")
+    return { enabled: false, reason: "Under review — editing is locked", hint: "Wait for admin to reject back to draft, or ask an admin to make the edit" };
+  if (isAuthor)
+    return { enabled: false, reason: "Only admins can edit in this state", hint: "Contact an admin if corrections are needed" };
+  return { enabled: false, reason: "Only the author or an admin can edit" };
+}
+
+function submitPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
+  if ((isAuthor || isAdmin) && status === "draft") return { enabled: true };
+  if (status !== "draft")
+    return { enabled: false, reason: "Already submitted for review", hint: "Question is in the review pipeline" };
+  return { enabled: false, reason: "Only the author or an admin can submit" };
+}
+
+function deletePermission(isAdmin: boolean, isAuthor: boolean, status: string) {
+  if (isAdmin) return { enabled: true };
+  if (isAuthor && status === "draft") return { enabled: true };
+  if (isAuthor)
+    return { enabled: false, reason: "Only draft questions can be deleted by authors", hint: "Ask an admin to delete or archive it instead" };
+  return { enabled: false, reason: "Only the author or an admin can delete" };
+}
+
+type AdminAction = { action: string; label: string; variant: "blue" | "green" | "danger" | "gray" };
+const ADMIN_PIPELINE: AdminAction[] = [
+  { action: "start-review", label: "Start Review", variant: "blue" },
+  { action: "publish", label: "Publish", variant: "green" },
+  { action: "reject", label: "Reject", variant: "danger" },
+  { action: "close", label: "Close", variant: "gray" },
+  { action: "archive", label: "Archive", variant: "gray" },
+];
+
+const ADMIN_ACTION_ENABLED_STATUS: Record<string, string> = {
+  "start-review": "proposed",
+  publish: "in_review",
+  reject: "in_review",
+  close: "published",
+  archive: "closed",
+};
+
+function adminActionPermission(action: string, status: string) {
+  const requiredStatus = ADMIN_ACTION_ENABLED_STATUS[action];
+  if (status === requiredStatus) return { enabled: true };
+  if (status === "archived") return { enabled: false, reason: "Question is archived" };
+
+  // Build a contextual message
+  const statusOrder = ["draft", "proposed", "in_review", "published", "closed", "archived"];
+  const currentIdx = statusOrder.indexOf(status);
+  const requiredIdx = statusOrder.indexOf(requiredStatus);
+  if (currentIdx < requiredIdx)
+    return { enabled: false, reason: `Not ready yet — question must reach "${requiredStatus.replace(/_/g, " ")}" state first` };
+  return { enabled: false, reason: "Already past this stage" };
+}
 
 export function QuestionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -15,7 +74,6 @@ export function QuestionDetail() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editCategory, setEditCategory] = useState("");
-  // feedback
   const [feedbackRating, setFeedbackRating] = useState(0);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
@@ -100,60 +158,37 @@ export function QuestionDetail() {
 
   const isAuthor = user?.id === question.created_by.id;
   const isAdmin = hasRole("admin");
-  // Admin can edit in any non-archived state; author can edit in draft or proposed
-  const canEdit = (isAdmin && question.status !== "archived") ||
-    (isAuthor && (question.status === "draft" || question.status === "proposed"));
-  const canSubmit = (isAuthor || isAdmin) && question.status === "draft";
-  const canDelete = (isAuthor || isAdmin) && question.status === "draft";
-
-  const STATUS_COLORS: Record<string, string> = {
-    draft: "bg-gray-200 text-gray-700",
-    proposed: "bg-yellow-100 text-yellow-800",
-    in_review: "bg-blue-100 text-blue-800",
-    published: "bg-green-100 text-green-800",
-    closed: "bg-red-100 text-red-800",
-    archived: "bg-gray-100 text-gray-500",
-  };
+  const showAuthorActions = isAuthor || isAdmin;
+  const editPerm = editPermission(isAdmin, isAuthor, question.status);
+  const submitPerm = submitPermission(isAdmin, isAuthor, question.status);
+  const deletePerm = deletePermission(isAdmin, isAuthor, question.status);
 
   return (
     <div className="max-w-3xl mx-auto">
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[question.status] || "bg-gray-100"}`}>
-            {question.status}
-          </span>
+        {/* Status + workflow hint */}
+        <div className="flex items-center gap-3 mb-1">
+          <StatusBadge status={question.status} />
           {question.category && <span className="text-sm text-muted-foreground">{question.category}</span>}
           {question.quality_score != null && (
             <span className="text-sm text-muted-foreground ml-auto">Score: {question.quality_score.toFixed(1)}/5</span>
           )}
         </div>
+        <p className="text-xs text-muted-foreground mb-4">{WORKFLOW_HINTS[`q:${question.status}`]}</p>
 
         {editing ? (
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
-              <input
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm font-semibold"
-              />
+              <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm font-semibold" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Body</label>
-              <textarea
-                value={editBody}
-                onChange={(e) => setEditBody(e.target.value)}
-                className="w-full border border-border rounded-md p-3 min-h-[150px] bg-background text-sm"
-              />
+              <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[150px] bg-background text-sm" />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
-              <input
-                value={editCategory}
-                onChange={(e) => setEditCategory(e.target.value)}
-                placeholder="Category (optional)"
-                className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm"
-              />
+              <input value={editCategory} onChange={(e) => setEditCategory(e.target.value)} placeholder="Category (optional)" className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm" />
             </div>
             <div className="flex gap-2">
               <button onClick={handleSaveEdit} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm">Save</button>
@@ -170,71 +205,53 @@ export function QuestionDetail() {
           </>
         )}
 
-        {/* Author / edit actions */}
-        {!editing && (canEdit || canSubmit || canDelete) && (
-          <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-            {canEdit && <button onClick={() => setEditing(true)} className="bg-secondary text-secondary-foreground px-3 py-1.5 rounded text-sm">Edit</button>}
-            {canSubmit && <button onClick={() => handleAction("submit")} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm">Submit for Review</button>}
-            {canDelete && <button onClick={handleDelete} className="bg-red-600 text-white px-3 py-1.5 rounded text-sm">Delete</button>}
+        {/* Author / edit actions — always visible */}
+        {!editing && showAuthorActions && (
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
+            <ActionButton label="Edit" onClick={() => setEditing(true)} enabled={editPerm.enabled} disabledReason={editPerm.reason} disabledHint={editPerm.hint} variant="secondary" />
+            <ActionButton label="Submit for Review" onClick={() => handleAction("submit")} enabled={submitPerm.enabled} disabledReason={submitPerm.reason} disabledHint={submitPerm.hint} variant="primary" />
+            <ActionButton label="Delete" onClick={handleDelete} enabled={deletePerm.enabled} disabledReason={deletePerm.reason} disabledHint={deletePerm.hint} variant="danger" />
           </div>
         )}
 
-        {/* Admin state transition actions */}
+        {/* Admin workflow pipeline — always visible for admin */}
         {!editing && isAdmin && (
-          <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-            {question.status === "proposed" && (
-              <button onClick={() => handleAction("start-review")} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Start Review</button>
-            )}
-            {question.status === "in_review" && (
-              <>
-                <button onClick={() => handleAction("publish")} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm">Publish</button>
-                <button onClick={() => handleAction("reject")} className="bg-red-600 text-white px-3 py-1.5 rounded text-sm">Reject</button>
-              </>
-            )}
-            {question.status === "published" && (
-              <button onClick={() => handleAction("close")} className="bg-gray-600 text-white px-3 py-1.5 rounded text-sm">Close</button>
-            )}
-            {question.status === "closed" && (
-              <button onClick={() => handleAction("archive")} className="bg-gray-500 text-white px-3 py-1.5 rounded text-sm">Archive</button>
-            )}
+          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
+            <span className="text-xs text-muted-foreground self-center mr-1">Workflow:</span>
+            {ADMIN_PIPELINE.map((a) => {
+              const perm = adminActionPermission(a.action, question.status);
+              return (
+                <ActionButton
+                  key={a.action}
+                  label={a.label}
+                  onClick={() => handleAction(a.action)}
+                  enabled={perm.enabled}
+                  disabledReason={perm.reason}
+                  variant={a.variant}
+                />
+              );
+            })}
           </div>
         )}
       </div>
 
       {error && <p className="text-destructive text-sm mb-4">{error}</p>}
 
-      {/* Quality feedback for published/closed questions */}
+      {/* Quality feedback */}
       {(question.status === "published" || question.status === "closed") && !feedbackSubmitted && (
         <div className="bg-background p-4 rounded-lg border border-border mb-6">
           <h2 className="font-semibold mb-2 text-sm">Rate this question</h2>
           <div className="flex items-center gap-1 mb-2">
             {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                onClick={() => setFeedbackRating(n)}
-                className={`w-8 h-8 rounded text-sm font-medium ${n <= feedbackRating ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
-              >
-                {n}
-              </button>
+              <button key={n} onClick={() => setFeedbackRating(n)} className={`w-8 h-8 rounded text-sm font-medium ${n <= feedbackRating ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>{n}</button>
             ))}
           </div>
-          <input
-            value={feedbackComment}
-            onChange={(e) => setFeedbackComment(e.target.value)}
-            placeholder="Optional comment"
-            className="w-full border border-border rounded-md px-3 py-1.5 bg-background text-sm mb-2"
-          />
-          <button
-            onClick={handleSubmitFeedback}
-            disabled={feedbackRating < 1}
-            className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50"
-          >
-            Submit Feedback
-          </button>
+          <input value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} placeholder="Optional comment" className="w-full border border-border rounded-md px-3 py-1.5 bg-background text-sm mb-2" />
+          <button onClick={handleSubmitFeedback} disabled={feedbackRating < 1} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50">Submit Feedback</button>
         </div>
       )}
 
-      {/* Answer form for published questions */}
+      {/* Answer form */}
       {question.status === "published" && (
         <div className="bg-background p-6 rounded-lg border border-border mb-6">
           <h2 className="font-semibold mb-3">Submit Your Answer</h2>
@@ -243,30 +260,13 @@ export function QuestionDetail() {
               <p className="text-sm text-muted-foreground mb-2">Suggested starting points:</p>
               <div className="space-y-2">
                 {question.answer_options.map((opt) => (
-                  <button
-                    key={opt.id}
-                    onClick={() => setNewAnswer(opt.body)}
-                    className="block w-full text-left p-3 border border-border rounded-md hover:bg-muted text-sm"
-                  >
-                    {opt.body}
-                  </button>
+                  <button key={opt.id} onClick={() => setNewAnswer(opt.body)} className="block w-full text-left p-3 border border-border rounded-md hover:bg-muted text-sm">{opt.body}</button>
                 ))}
               </div>
             </div>
           )}
-          <textarea
-            value={newAnswer}
-            onChange={(e) => setNewAnswer(e.target.value)}
-            className="w-full border border-border rounded-md p-3 min-h-[120px] bg-background text-sm"
-            placeholder="Write your answer..."
-          />
-          <button
-            onClick={handleSubmitAnswer}
-            disabled={!newAnswer.trim()}
-            className="mt-3 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50"
-          >
-            Submit Answer
-          </button>
+          <textarea value={newAnswer} onChange={(e) => setNewAnswer(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[120px] bg-background text-sm" placeholder="Write your answer..." />
+          <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="mt-3 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50">Submit Answer</button>
         </div>
       )}
 
@@ -276,18 +276,14 @@ export function QuestionDetail() {
         {answers.map((a) => (
           <Link key={a.id} to={`/answers/${a.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30">
             <div className="flex items-center gap-3 mb-2">
-              <span className="text-xs px-2 py-1 rounded-full bg-secondary font-medium">{a.status}</span>
+              <StatusBadge status={a.status} />
               <span className="text-xs text-muted-foreground">v{a.current_version}</span>
             </div>
             <p className="text-sm line-clamp-3">{a.body}</p>
-            <div className="text-xs text-muted-foreground mt-2">
-              by {a.author.display_name} &middot; {new Date(a.created_at).toLocaleDateString()}
-            </div>
+            <div className="text-xs text-muted-foreground mt-2">by {a.author.display_name} &middot; {new Date(a.created_at).toLocaleDateString()}</div>
           </Link>
         ))}
-        {answers.length === 0 && (
-          <p className="text-center text-muted-foreground py-4">No answers yet.</p>
-        )}
+        {answers.length === 0 && <p className="text-center text-muted-foreground py-4">No answers yet.</p>}
       </div>
     </div>
   );
