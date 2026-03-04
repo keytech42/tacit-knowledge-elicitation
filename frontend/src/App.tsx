@@ -3,6 +3,7 @@ import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { LoginPage } from "@/auth/LoginPage";
 import { QuestionList } from "@/pages/questions/QuestionList";
+import { QuestionCreate } from "@/pages/questions/QuestionCreate";
 import { QuestionDetail } from "@/pages/questions/QuestionDetail";
 import { AnswerDetail } from "@/pages/answers/AnswerDetail";
 import { ReviewQueue } from "@/pages/reviews/ReviewQueue";
@@ -19,6 +20,7 @@ function App() {
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<Navigate to="/questions" replace />} />
         <Route path="/questions" element={<QuestionList />} />
+        <Route path="/questions/new" element={<QuestionCreate />} />
         <Route path="/questions/:id" element={<QuestionDetail />} />
         <Route path="/answers/:id" element={<AnswerDetail />} />
 
