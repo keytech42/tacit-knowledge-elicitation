@@ -37,7 +37,8 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Google OAuth is not configured")
     try:
-        google_user_info = await exchange_google_code(request.code)
+        redirect_uri = settings.GOOGLE_REDIRECT_URI or "postmessage"
+        google_user_info = await exchange_google_code(request.code, redirect_uri=redirect_uri)
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to exchange Google authorization code")
 
