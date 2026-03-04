@@ -1,1 +1,0 @@
-# Tacit Knowledge Elicitation Platform
