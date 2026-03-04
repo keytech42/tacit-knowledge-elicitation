@@ -58,8 +58,8 @@ export function ReviewDetail() {
     return { enabled: false, reason: "Only the assigned reviewer can set a verdict" };
   })();
 
-  // Get answer version info if target is an answer
-  const answerVersion = target && "current_version" in target ? (target as Answer).current_version : null;
+  // Show the version this review targets (from review record), not the answer's current version
+  const answerVersion = review.target_type === "answer" ? review.answer_version : null;
   const answerStatus = target && "status" in target && "current_version" in target ? (target as Answer).status : null;
 
   return (

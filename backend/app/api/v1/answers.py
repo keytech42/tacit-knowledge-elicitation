@@ -13,6 +13,7 @@ from app.models.answer import (
     AnswerStatus,
 )
 from app.models.question import Question, QuestionStatus
+from app.models.review import Review, ReviewTargetType, ReviewVerdict
 from app.models.user import RoleName, User
 from app.schemas.answer import (
     AnswerCreate,
@@ -160,11 +161,38 @@ async def submit_answer_endpoint(
         raise HTTPException(status_code=404, detail="Answer not found")
 
     if answer.status == AnswerStatus.REVISION_REQUESTED.value:
+        previous_version = answer.current_version
         revision = resubmit_answer(answer, current_user)
+        db.add(revision)
+        await db.flush()
+
+        # Auto-reassign reviewers who requested changes on the previous version
+        prev_reviews_result = await db.execute(
+            select(Review).where(
+                Review.target_type == ReviewTargetType.ANSWER.value,
+                Review.target_id == answer.id,
+                Review.answer_version == previous_version,
+                Review.verdict == ReviewVerdict.CHANGES_REQUESTED.value,
+            )
+        )
+        prev_reviewers = prev_reviews_result.scalars().all()
+        for prev_review in prev_reviewers:
+            new_review = Review(
+                target_type=ReviewTargetType.ANSWER.value,
+                target_id=answer.id,
+                reviewer_id=prev_review.reviewer_id,
+                answer_version=answer.current_version,
+            )
+            db.add(new_review)
+        # If reviewers were auto-reassigned, move directly to under_review
+        if prev_reviewers:
+            answer.status = AnswerStatus.UNDER_REVIEW.value
+        await db.flush()
+        await db.refresh(answer)
     else:
         revision = submit_answer(answer, current_user)
+        db.add(revision)
 
-    db.add(revision)
     return answer
 
 

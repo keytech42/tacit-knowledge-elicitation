@@ -241,17 +241,22 @@ class TestQuestionAnswerReviewLifecycle:
         }, headers=auth_header(respondent_user))
         assert r.status_code == 200
 
-        # Author resubmits
+        # Author resubmits — reviewer is auto-reassigned
         r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
         assert r.status_code == 200
-        assert r.json()["status"] == "submitted"
+        assert r.json()["status"] == "under_review"  # auto-reassigned reviewers
 
-        # New review and approval
-        r = await client.post("/api/v1/reviews", json={
+        # Find the auto-created pending review for the new version
+        r = await client.get("/api/v1/reviews", params={
             "target_type": "answer", "target_id": a_id,
         }, headers=auth_header(reviewer_user))
-        review2_id = r.json()["id"]
+        reviews = r.json()
+        pending_reviews = [rv for rv in reviews if rv["verdict"] == "pending"]
+        assert len(pending_reviews) == 1
+        review2_id = pending_reviews[0]["id"]
+        assert pending_reviews[0]["answer_version"] == 2
 
+        # Approve the auto-created review
         r = await client.patch(f"/api/v1/reviews/{review2_id}", json={
             "verdict": "approved",
         }, headers=auth_header(reviewer_user))
