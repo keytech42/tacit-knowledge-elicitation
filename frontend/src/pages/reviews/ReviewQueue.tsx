@@ -24,6 +24,9 @@ function KanbanCard({ rev }: { rev: Review }) {
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs font-medium capitalize">{rev.target_type}</span>
       </div>
+      {rev.question_title && (
+        <p className="text-xs font-medium text-foreground/80 line-clamp-1">{rev.question_title}</p>
+      )}
       {rev.comment && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{rev.comment}</p>}
       <div className="text-[10px] text-muted-foreground mt-1.5">{new Date(rev.created_at).toLocaleDateString()}</div>
     </Link>
@@ -97,6 +100,9 @@ export function ReviewQueue() {
               <div className="flex items-center gap-3">
                 <StatusBadge status={rev.verdict} />
                 <span className="text-sm font-medium capitalize">{rev.target_type}</span>
+                {rev.question_title && (
+                  <span className="text-sm text-foreground/70 truncate max-w-[300px]">{rev.question_title}</span>
+                )}
                 <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleDateString()}</span>
               </div>
             </Link>

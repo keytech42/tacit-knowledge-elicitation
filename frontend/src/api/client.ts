@@ -121,6 +121,7 @@ export interface Review {
   assigned_by: User | null;
   verdict: string;
   comment: string | null;
+  question_title: string | null;
   comments: ReviewComment[];
   created_at: string;
   updated_at: string;

@@ -8,6 +8,7 @@ from app.api.deps import CurrentUser, require_role
 from app.database import get_db
 from app.models.answer import Answer, AnswerCollaborator, AnswerRevision
 from app.models.question import AnswerOption, Question, QuestionQualityFeedback, QuestionStatus
+from app.models.review import Review, ReviewComment, ReviewTargetType
 from app.models.user import RoleName, User
 from app.schemas.question import (
     AnswerOptionBatchCreate, AnswerOptionResponse, QualityFeedbackCreate, QualityFeedbackResponse,
@@ -114,6 +115,24 @@ async def delete_question(question_id: uuid.UUID, current_user: CurrentUser, db:
             raise HTTPException(status_code=409, detail="Can only delete draft questions")
     # Cascade-delete child records in FK-safe order
     answer_ids = select(Answer.id).where(Answer.question_id == question_id)
+
+    # Clean up reviews and their comments targeting this question's answers
+    answer_review_ids = select(Review.id).where(
+        Review.target_type == ReviewTargetType.ANSWER.value,
+        Review.target_id.in_(answer_ids),
+    )
+    await db.execute(delete(ReviewComment).where(ReviewComment.review_id.in_(answer_review_ids)))
+    await db.execute(delete(Review).where(Review.id.in_(answer_review_ids)))
+
+    # Clean up reviews targeting the question itself
+    question_review_ids = select(Review.id).where(
+        Review.target_type == ReviewTargetType.QUESTION.value,
+        Review.target_id == question_id,
+    )
+    await db.execute(delete(ReviewComment).where(ReviewComment.review_id.in_(question_review_ids)))
+    await db.execute(delete(Review).where(Review.id.in_(question_review_ids)))
+
+    # Delete answer child records, then answers
     await db.execute(delete(AnswerRevision).where(AnswerRevision.answer_id.in_(answer_ids)))
     await db.execute(delete(AnswerCollaborator).where(AnswerCollaborator.answer_id.in_(answer_ids)))
     await db.execute(delete(Answer).where(Answer.question_id == question_id))

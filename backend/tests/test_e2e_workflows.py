@@ -760,7 +760,11 @@ class TestQuestionDelete:
         }, headers=auth_header(admin_user))
         await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
 
-        # Admin deletes the question — should cascade through answers, revisions
+        # Verify the review exists before deletion
+        r = await client.get(f"/api/v1/reviews/{review_id}", headers=auth_header(reviewer_user))
+        assert r.status_code == 200
+
+        # Admin deletes the question — should cascade through answers, revisions, AND reviews
         r = await client.delete(f"/api/v1/questions/{q.id}", headers=auth_header(admin_user))
         assert r.status_code == 204
 
@@ -770,6 +774,10 @@ class TestQuestionDelete:
 
         # Verify answer gone
         r = await client.get(f"/api/v1/answers/{a_id}", headers=auth_header(admin_user))
+        assert r.status_code == 404
+
+        # Verify review gone — no orphaned reviews
+        r = await client.get(f"/api/v1/reviews/{review_id}", headers=auth_header(reviewer_user))
         assert r.status_code == 404
 
     async def test_author_cannot_delete_submitted_question(
@@ -799,6 +807,55 @@ class TestQuestionDelete:
 
         r = await client.delete(f"/api/v1/questions/{q_id}", headers=auth_header(respondent_user))
         assert r.status_code == 403
+
+
+class TestReviewQuestionTitle:
+    """Verify that review responses include the related question title."""
+
+    async def test_review_includes_question_title(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db,
+    ):
+        """Review for an answer should include the parent question's title."""
+        q = Question(
+            title="Important Question About Testing",
+            body="Body text",
+            created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+        )
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={
+            "body": "My answer",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Create review
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.status_code == 201
+        review_id = r.json()["id"]
+        assert r.json()["question_title"] == "Important Question About Testing"
+
+        # Verify in GET single review
+        r = await client.get(f"/api/v1/reviews/{review_id}", headers=auth_header(reviewer_user))
+        assert r.json()["question_title"] == "Important Question About Testing"
+
+        # Verify in list endpoint
+        r = await client.get("/api/v1/reviews", params={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.json()[0]["question_title"] == "Important Question About Testing"
+
+        # Verify in my-queue endpoint
+        r = await client.get("/api/v1/reviews/my-queue", headers=auth_header(reviewer_user))
+        matching = [rev for rev in r.json() if rev["id"] == review_id]
+        assert len(matching) == 1
+        assert matching[0]["question_title"] == "Important Question About Testing"
 
 
 class TestVersionDiffing:
