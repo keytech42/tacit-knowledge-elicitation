@@ -9,7 +9,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open http://localhost:5173 and type `test` at the login prompt to sign in as a dev admin.
+Open http://localhost:5173 and click **Sign in as Test User** to log in as a dev admin.
 
 ## Architecture
 
@@ -53,6 +53,8 @@ See `.env.example` for all environment variables. Key settings:
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://app:devpassword@db:5432/knowledge_elicitation` |
 | `JWT_SECRET` | Token signing key | `dev-secret-change-me` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID (empty = dev login enabled) | empty |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
+| `GOOGLE_REDIRECT_URI` | OAuth redirect URI (must match GCP config) | empty |
 | `BOOTSTRAP_ADMIN_EMAIL` | Email that auto-receives all roles on first login | empty |
 | `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:5173"]` |
 

@@ -1,12 +1,12 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models.user import Role, RoleName, User, UserType
+from app.models.user import Role, RoleName, User, UserType, user_roles
 from app.schemas.auth import AuthConfigResponse, GoogleAuthRequest, TokenResponse
 from app.services.auth import create_jwt_token, exchange_google_code, find_or_create_user, verify_jwt_token
 
@@ -64,14 +64,17 @@ async def dev_login(db: AsyncSession = Depends(get_db)):
         )
         db.add(user)
         await db.flush()
-        await db.refresh(user, ["roles"])
 
-        for role_name in RoleName:
-            r = await db.execute(select(Role).where(Role.name == role_name.value))
-            role = r.scalar_one_or_none()
-            if role:
-                user.roles.append(role)
-        await db.flush()
+        # Same pattern as find_or_create_user: insert directly into the
+        # association table to avoid MissingGreenlet on user.roles.append().
+        roles_result = await db.execute(select(Role))
+        roles = roles_result.scalars().all()
+        if roles:
+            await db.execute(
+                insert(user_roles),
+                [{"user_id": user.id, "role_id": role.id} for role in roles],
+            )
+        await db.refresh(user, ["roles"])
 
     return _token_response(user)
 
