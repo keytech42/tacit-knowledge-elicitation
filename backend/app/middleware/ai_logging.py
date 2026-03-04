@@ -1,8 +1,9 @@
 import json
 import time
 import uuid
+from collections.abc import Callable
 
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseCall
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -17,7 +18,7 @@ class AILoggingMiddleware(BaseHTTPMiddleware):
 
     WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-    async def dispatch(self, request: Request, call_next: RequestResponseCall) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Only intercept write methods
         if request.method not in self.WRITE_METHODS:
             return await call_next(request)
