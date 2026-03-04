@@ -42,6 +42,22 @@ async def create_review(
     else:
         raise HTTPException(status_code=400, detail="target_type must be 'question' or 'answer'")
 
+    # Prevent duplicate: reject if this reviewer already has a pending review for the same target and version
+    existing_query = select(Review).where(
+        Review.target_type == request.target_type,
+        Review.target_id == request.target_id,
+        Review.reviewer_id == current_user.id,
+        Review.verdict == ReviewVerdict.PENDING.value,
+    )
+    if request.target_type == "answer":
+        existing_query = existing_query.where(Review.answer_version == target.current_version)
+    existing_result = await db.execute(existing_query)
+    if existing_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a pending review for this target",
+        )
+
     review = Review(
         target_type=request.target_type,
         target_id=request.target_id,
