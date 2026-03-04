@@ -516,6 +516,38 @@ class TestConcurrencyGuards:
         }, headers=auth_header(reviewer_user))
         assert r.status_code == 409
 
+    async def test_duplicate_pending_review(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db,
+    ):
+        """Same reviewer cannot create two pending reviews for the same answer version."""
+        q = Question(
+            title="Q", body="B", created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+        )
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={
+            "body": "Answer",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # First review → success
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.status_code == 201
+
+        # Second review by same reviewer → 409
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.status_code == 409
+        assert "pending review" in r.json()["detail"].lower()
+
     async def test_double_question_submit(
         self, client: AsyncClient, author_user: User,
     ):
