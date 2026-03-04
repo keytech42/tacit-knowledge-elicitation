@@ -11,7 +11,8 @@ from app.models.question import AnswerOption, Question, QuestionQualityFeedback,
 from app.models.review import Review, ReviewComment, ReviewTargetType
 from app.models.user import RoleName, User
 from app.schemas.question import (
-    AnswerOptionBatchCreate, AnswerOptionResponse, QualityFeedbackCreate, QualityFeedbackResponse,
+    AdminQueueItem, AdminQueueResponse, AnswerOptionBatchCreate, AnswerOptionResponse,
+    QualityFeedbackCreate, QualityFeedbackResponse,
     QuestionCreate, QuestionListResponse, QuestionRejectRequest, QuestionResponse, QuestionUpdate,
 )
 from app.services.question import (
@@ -64,6 +65,41 @@ async def list_questions(
     questions = result.scalars().all()
     total = (await db.execute(count_query)).scalar() or 0
     return QuestionListResponse(questions=questions, total=total)
+
+
+@router.get("/admin-queue", response_model=AdminQueueResponse)
+async def admin_queue(
+    current_user: User = require_role(RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    actionable = [
+        QuestionStatus.PROPOSED.value,
+        QuestionStatus.IN_REVIEW.value,
+        QuestionStatus.PUBLISHED.value,
+        QuestionStatus.CLOSED.value,
+    ]
+    # Fetch questions with answer counts in one query
+    stmt = (
+        select(Question, func.count(Answer.id).label("answer_count"))
+        .outerjoin(Answer, Answer.question_id == Question.id)
+        .where(Question.status.in_(actionable))
+        .group_by(Question.id)
+        .order_by(Question.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+
+    buckets: dict[str, list[AdminQueueItem]] = {s: [] for s in actionable}
+    for question, count in rows:
+        item = AdminQueueItem.model_validate(question)
+        item.answer_count = count
+        buckets.setdefault(question.status, []).append(item)
+
+    return AdminQueueResponse(
+        proposed=buckets.get(QuestionStatus.PROPOSED.value, []),
+        in_review=buckets.get(QuestionStatus.IN_REVIEW.value, []),
+        published=buckets.get(QuestionStatus.PUBLISHED.value, []),
+        closed=buckets.get(QuestionStatus.CLOSED.value, []),
+    )
 
 
 @router.get("/categories", response_model=list[str])
