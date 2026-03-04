@@ -1,5 +1,7 @@
+import asyncio
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
@@ -15,6 +17,13 @@ from app.services.auth import create_jwt_token, generate_api_key, hash_api_key
 TEST_DATABASE_URL = settings.DATABASE_URL.replace("/knowledge_elicitation", "/knowledge_elicitation_test")
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 test_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
