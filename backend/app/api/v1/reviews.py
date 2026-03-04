@@ -130,6 +130,7 @@ async def update_review(
         await db.flush()
         await resolve_answer_reviews(review.target_id, db)
 
+    await db.refresh(review)
     return review
 
 

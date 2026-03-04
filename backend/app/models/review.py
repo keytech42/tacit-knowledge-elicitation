@@ -50,6 +50,6 @@ class ReviewComment(UUIDMixin, TimestampMixin, Base):
     body: Mapped[str] = mapped_column(Text)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("review_comments.id"), nullable=True)
 
-    review = relationship("Review", back_populates="comments")
+    review = relationship("Review", back_populates="comments", lazy="selectin")
     author = relationship("User", lazy="selectin")
     replies = relationship("ReviewComment", lazy="selectin")
