@@ -1,10 +1,17 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { api, User } from "@/api/client";
 
+interface AuthConfig {
+  google_client_id: string;
+  dev_login_enabled: boolean;
+}
+
 interface AuthState {
   user: User | null;
   loading: boolean;
+  authConfig: AuthConfig | null;
   login: (code: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
   hasRole: (role: string) => boolean;
 }
@@ -17,6 +24,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return stored ? JSON.parse(stored) : null;
   });
   const [loading, setLoading] = useState(false);
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+
+  // Fetch auth config on mount
+  useEffect(() => {
+    api.get<AuthConfig>("/auth/config").then(setAuthConfig).catch(() => {});
+  }, []);
+
+  const loginWithToken = async (token: string) => {
+    api.setToken(token);
+    const userInfo = await api.get<User>("/users/me");
+    setUser(userInfo);
+    localStorage.setItem("user", JSON.stringify(userInfo));
+  };
 
   const login = async (code: string) => {
     setLoading(true);
@@ -31,12 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles: string[];
       }>(endpoint, body);
 
-      api.setToken(response.access_token);
-
-      // Fetch full user info
-      const userInfo = await api.get<User>("/users/me");
-      setUser(userInfo);
-      localStorage.setItem("user", JSON.stringify(userInfo));
+      await loginWithToken(response.access_token);
     } finally {
       setLoading(false);
     }
@@ -69,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, authConfig, login, loginWithToken, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

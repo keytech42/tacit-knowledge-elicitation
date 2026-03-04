@@ -8,8 +8,8 @@ For human users in production environments.
 
 ### Flow
 
-1. Frontend redirects to Google's consent screen
-2. User authorizes, Google returns an authorization code
+1. Frontend opens a Google consent popup via `@react-oauth/google` (auth-code flow)
+2. User selects an account, Google returns an authorization code to the popup
 3. Frontend sends the code to `POST /api/v1/auth/google`
 4. Backend exchanges the code with Google for user info (email, name, avatar)
 5. Backend finds or creates the user, returns a JWT token
@@ -29,11 +29,11 @@ BOOTSTRAP_ADMIN_EMAIL=admin@yourcompany.com
 
 ## Dev Login (Local Development)
 
-Available only when `GOOGLE_CLIENT_ID` is empty.
+Available when `DEV_LOGIN_ENABLED` is true (the default) or when `GOOGLE_CLIENT_ID` is empty.
 
-Type `test` at the login prompt. The frontend calls `POST /api/v1/auth/dev-login`, which creates (or returns) a `dev@localhost` user with all roles.
+Click **Sign in as Test User** on the login page. The frontend calls `POST /api/v1/auth/dev-login`, which creates (or returns) a `dev@localhost` user with all roles. When Google OAuth is also configured, both options appear on the login page.
 
-This endpoint returns 404 when Google OAuth is configured, so it cannot be accessed in production.
+This endpoint returns 404 when `DEV_LOGIN_ENABLED` is false, so it can be disabled in production.
 
 ## API Key (Service Accounts)
 
