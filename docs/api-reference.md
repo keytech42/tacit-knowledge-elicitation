@@ -1,274 +1,133 @@
 # API Reference
 
-Base URL: `/api/v1`
+## Interactive Documentation
 
-All endpoints require authentication unless noted. Pass a JWT token via `Authorization: Bearer <token>` or an API key via `X-API-Key: <key>`.
+FastAPI auto-generates interactive API docs from the source code. These are always up to date:
+
+| Tool | URL | Best for |
+|------|-----|----------|
+| **Swagger UI** | [http://localhost:8000/docs](http://localhost:8000/docs) | Trying endpoints interactively |
+| **ReDoc** | [http://localhost:8000/redoc](http://localhost:8000/redoc) | Reading structured reference |
+| **OpenAPI JSON** | [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json) | Code generation, client SDKs |
+
+Use those for endpoint signatures, request/response schemas, and query parameters. The rest of this page covers behavior that doesn't appear in the OpenAPI spec.
 
 ---
 
-## Authentication
+## Authentication Behavior
 
-### POST /auth/google
+All endpoints require authentication unless noted. Two methods:
 
-Exchange a Google OAuth authorization code for a JWT token.
+- `Authorization: Bearer <jwt>` — for human users
+- `X-API-Key: <key>` — for service accounts
 
-**Body:** `{ "code": "string" }`
+The `GET /health` endpoint is the only unauthenticated route.
 
-**Response 200:**
+### First-time Google login
+
+When a user authenticates via Google for the first time, an account is created automatically with the `respondent` role. If their email matches the `BOOTSTRAP_ADMIN_EMAIL` environment variable, they receive all four roles instead.
+
+### Dev login side effects
+
+`POST /auth/dev-login` creates a `dev@localhost` user with all roles on first call. Subsequent calls return the same user. Returns 404 when `GOOGLE_CLIENT_ID` is configured, so it cannot be reached in production.
+
+---
+
+## Question State Machine
+
+State transitions are enforced in `services/question.py`. The OpenAPI spec shows the endpoints, but not the allowed transitions or who can trigger them.
+
+```
+DRAFT ──[submit]──▶ PROPOSED ──[start-review]──▶ IN_REVIEW ──[publish]──▶ PUBLISHED ──[close]──▶ CLOSED ──[archive]──▶ ARCHIVED
+                                                     │
+                                                     └──[reject]──▶ DRAFT
+```
+
+| Endpoint | Transition | Who |
+|----------|-----------|-----|
+| `POST /questions/{id}/submit` | draft → proposed | author or admin |
+| `POST /questions/{id}/start-review` | proposed → in_review | admin |
+| `POST /questions/{id}/publish` | in_review → published | admin |
+| `POST /questions/{id}/reject` | in_review → draft | admin |
+| `POST /questions/{id}/close` | published → closed | admin |
+| `POST /questions/{id}/archive` | closed → archived | admin |
+
+**Publish side effect**: if `review_policy` is null, a default policy is set:
 ```json
 {
-  "access_token": "eyJ...",
-  "user_id": "uuid",
-  "email": "user@example.com",
-  "display_name": "Jane Doe",
-  "roles": ["author", "respondent"]
+  "min_approvals": 1,
+  "auto_assign": false,
+  "allow_self_review": false,
+  "require_comment_on_reject": true,
+  "auto_assign_count": 1
 }
 ```
 
-If the user doesn't exist, an account is created with the `respondent` role. If the email matches `BOOTSTRAP_ADMIN_EMAIL`, all roles are granted.
-
-### POST /auth/dev-login
-
-Development-only login. Returns 404 when `GOOGLE_CLIENT_ID` is configured.
-
-**Body:** none
-
-**Response 200:** same schema as `/auth/google`
-
-Creates a dev admin user (`dev@localhost`) with all roles on first call.
-
-### POST /auth/refresh
-
-Refresh an existing token.
-
-**Query:** `?token=<jwt>`
-
-**Response 200:** same schema as `/auth/google`
-
 ---
 
-## Questions
+## Answer State Machine and Versioning
 
-### POST /questions
+State transitions are enforced in `services/answer.py`.
 
-Create a question in draft status.
-
-**Requires:** `author` or `admin` role
-
-**Body:**
-```json
-{
-  "title": "string (required)",
-  "body": "string (required)",
-  "category": "string (optional)"
-}
+```
+DRAFT ──[submit]──▶ SUBMITTED ──[review starts]──▶ UNDER_REVIEW
+                        ▲                              │
+                        │                    ┌─────────┴─────────┐
+                        │                    ▼                   ▼
+                   REVISION_REQUESTED      APPROVED          REJECTED
+                                             │
+                                             └──[revise]──▶ SUBMITTED
 ```
 
-### GET /questions
+### Revision triggers
 
-List questions. Returns published questions plus the caller's own questions in any status.
+Each submission creates an immutable `AnswerRevision`. The `trigger` field records why:
 
-**Query params:** `status`, `category`, `skip` (default 0), `limit` (default 50)
+| Trigger | When |
+|---------|------|
+| `initial_submit` | First `POST .../submit` (creates version 1) |
+| `revision_after_review` | Resubmit after `changes_requested` feedback |
+| `post_approval_update` | `POST .../revise` on an already-approved answer |
 
-### GET /questions/categories
+### Edit permissions
 
-List all distinct category values.
-
-### GET /questions/{id}
-
-Get a single question with its answer options and creator info.
-
-### PATCH /questions/{id}
-
-Update a question. Editable fields: `title`, `body`, `category`, `review_policy`, `show_suggestions`.
-
-**Requires:** question owner (draft only) or admin
-
-### DELETE /questions/{id}
-
-Delete a draft question.
-
-**Requires:** question owner or admin
-
-### State Transitions
-
-All return the updated question.
-
-| Endpoint | Transition | Role |
-|----------|-----------|------|
-| POST /questions/{id}/submit | draft → proposed | author, admin |
-| POST /questions/{id}/start-review | proposed → in_review | admin |
-| POST /questions/{id}/publish | in_review → published | admin |
-| POST /questions/{id}/reject | in_review → draft | admin |
-| POST /questions/{id}/close | published → closed | admin |
-| POST /questions/{id}/archive | closed → archived | admin |
-
-### Answer Options
-
-**POST /questions/{id}/options** — Create options. Body: `{ "options": [{ "body": "string", "display_order": 0 }] }`
-
-**GET /questions/{id}/options** — List options for a question.
-
-### Quality Feedback
-
-**POST /questions/{id}/feedback** — Submit rating. Body: `{ "rating": 4, "comment": "optional" }`. One per user.
-
-**GET /questions/{id}/feedback** — List all feedback.
+- **Draft / revision_requested**: only the author (or admin) can edit
+- **Approved**: author, collaborators, or admin can revise — this resets status to `submitted`
 
 ---
 
-## Answers
+## Review Resolution Logic
 
-### POST /questions/{question_id}/answers
+When a reviewer submits a verdict via `PATCH /reviews/{id}`, the system automatically resolves the answer's status based on all reviews for that answer:
 
-Create a draft answer for a published question.
+1. If **any** review has verdict `changes_requested` → answer becomes `revision_requested`
+2. If **any** review has verdict `rejected` → answer becomes `rejected`
+3. If approvals **≥** the question's `review_policy.min_approvals` → answer becomes `approved`
+4. Otherwise, the answer stays in its current status (waiting for more reviews)
 
-**Body:** `{ "body": "string", "selected_option_id": "uuid (optional)" }`
-
-### GET /questions/{question_id}/answers
-
-List answers. **Query:** `status`, `skip`, `limit`
-
-### GET /answers/{id}
-
-Get answer with author info.
-
-### PATCH /answers/{id}
-
-Update a draft or revision-requested answer. **Body:** `{ "body": "string", "selected_option_id": "uuid" }`
-
-### POST /answers/{id}/submit
-
-Submit for review. Creates version 1 revision. Transitions: draft → submitted.
-
-### POST /answers/{id}/revise
-
-Revise an approved answer. Creates a new revision and resets status to submitted.
-
-### Versions
-
-**GET /answers/{id}/versions** — List all revisions.
-
-**GET /answers/{id}/versions/{version}** — Get a specific revision.
-
-**GET /answers/{id}/diff?from=1&to=2** — Unified diff between two versions.
-
-### Collaborators
-
-**POST /answers/{id}/collaborators** — Add collaborator. Body: `{ "user_id": "uuid" }`
-
-**GET /answers/{id}/collaborators** — List collaborators.
-
-**DELETE /answers/{id}/collaborators/{user_id}** — Remove collaborator.
+This logic runs in `services/review.py:resolve_answer_reviews()`.
 
 ---
 
-## Reviews
+## AI Logging (Implicit)
 
-### POST /reviews
+The AI logging middleware automatically records all write operations (POST, PUT, PATCH, DELETE) from service accounts. No explicit API call is needed — the middleware intercepts the request/response and creates an `AIInteractionLog` entry with:
 
-Create a review assignment.
+- Endpoint and HTTP method
+- Full request body
+- Response status code
+- Latency in milliseconds
+- Service account's `model_id` at request time
 
-**Requires:** `reviewer` or `admin` role
-
-**Body:** `{ "target_type": "question|answer", "target_id": "uuid" }`
-
-### GET /reviews
-
-List reviews. **Query:** `target_type`, `target_id`, `reviewer_id`
-
-### GET /reviews/my-queue
-
-Get the current user's pending reviews (verdict = pending).
-
-### GET /reviews/{id}
-
-Get review with comments.
-
-### PATCH /reviews/{id}
-
-Submit verdict.
-
-**Body:** `{ "verdict": "approved|changes_requested|rejected", "comment": "optional" }`
-
-When all reviews for an answer are resolved, the answer status is updated automatically based on verdict consensus.
-
-### POST /reviews/{id}/comments
-
-Add a comment. **Body:** `{ "body": "string", "parent_id": "uuid (optional for threading)" }`
+Human users' requests are **not** logged. The middleware fails silently to avoid breaking requests.
 
 ---
 
-## Service Accounts (Admin)
+## Visibility Rules
 
-### POST /service-accounts
+Not captured in OpenAPI:
 
-Create a service account. Returns the API key once — store it securely.
-
-**Body:** `{ "display_name": "string", "model_id": "string (optional)", "system_version": "string (optional)" }`
-
-### GET /service-accounts
-
-List all service accounts.
-
-### GET /service-accounts/{id}
-
-Get a service account.
-
-### PATCH /service-accounts/{id}
-
-Update metadata. **Body:** `{ "display_name": "string", "model_id": "string", "system_version": "string" }`
-
-### POST /service-accounts/{id}/rotate-key
-
-Rotate the API key. Returns the new key once.
-
----
-
-## AI Logs (Admin)
-
-### GET /ai-logs
-
-List AI interaction logs. **Query:** `service_user_id`, `endpoint`, `skip`, `limit`
-
-### GET /ai-logs/export?format=json|csv
-
-Export logs.
-
-### GET /ai-logs/{id}
-
-Get a single log entry.
-
-### POST /ai-logs/{id}/feedback
-
-Submit human feedback on an AI interaction. **Body:** `{ "rating": 1-5, "comment": "optional" }`
-
----
-
-## Users
-
-### GET /users/me
-
-Get the current authenticated user.
-
-### GET /users
-
-List all users. **Requires:** admin. **Query:** `skip`, `limit`
-
-### POST /users/{id}/roles
-
-Assign a role. **Requires:** admin. **Body:** `{ "role_name": "admin|author|respondent|reviewer" }`
-
-### DELETE /users/{id}/roles/{role_name}
-
-Remove a role. **Requires:** admin.
-
----
-
-## Health
-
-### GET /health
-
-**No auth required.**
-
-**Response 200:** `{ "status": "ok" }`
+- **`GET /questions`** returns all published questions **plus** the caller's own questions in any status. Other users' drafts are not visible.
+- **`GET /questions/{question_id}/answers`** visibility depends on the caller's relationship to the question and answer.
+- **Quality feedback** is limited to one entry per user per question (enforced by unique constraint).
+- **Service account API keys** are returned exactly once at creation (and on rotation). They cannot be retrieved later.
