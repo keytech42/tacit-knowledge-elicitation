@@ -1,5 +1,22 @@
-import { Link, Outlet, useNavigate } from "react-router-dom";
+import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
+
+function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const isActive = pathname === to || pathname.startsWith(to + "/");
+  return (
+    <Link
+      to={to}
+      className={`text-sm px-3 py-1.5 rounded-md transition-colors ${
+        isActive
+          ? "bg-primary text-primary-foreground font-medium"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+      }`}
+    >
+      {children}
+    </Link>
+  );
+}
 
 export function Layout() {
   const { user, logout, hasRole } = useAuth();
@@ -14,17 +31,17 @@ export function Layout() {
     <div className="min-h-screen bg-muted">
       <nav className="bg-background border-b border-border">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="font-bold text-lg">KEP</Link>
-            <Link to="/questions" className="text-sm text-muted-foreground hover:text-foreground">Questions</Link>
+          <div className="flex items-center gap-1">
+            <Link to="/" className="font-bold text-lg mr-4">KEP</Link>
+            <NavLink to="/questions">Questions</NavLink>
             {(hasRole("reviewer") || hasRole("admin")) && (
-              <Link to="/reviews" className="text-sm text-muted-foreground hover:text-foreground">Reviews</Link>
+              <NavLink to="/reviews">Reviews</NavLink>
             )}
             {hasRole("admin") && (
               <>
-                <Link to="/admin/questions" className="text-sm text-muted-foreground hover:text-foreground">Admin Queue</Link>
-                <Link to="/admin/service-accounts" className="text-sm text-muted-foreground hover:text-foreground">Service Accounts</Link>
-                <Link to="/admin/ai-logs" className="text-sm text-muted-foreground hover:text-foreground">AI Logs</Link>
+                <NavLink to="/admin/questions">Admin Queue</NavLink>
+                <NavLink to="/admin/service-accounts">Service Accounts</NavLink>
+                <NavLink to="/admin/ai-logs">AI Logs</NavLink>
               </>
             )}
           </div>

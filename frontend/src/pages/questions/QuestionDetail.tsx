@@ -99,9 +99,12 @@ export function QuestionDetail() {
   if (!question) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
 
   const isAuthor = user?.id === question.created_by.id;
-  const canEdit = (isAuthor || hasRole("admin")) && question.status === "draft";
-  const canSubmit = (isAuthor || hasRole("admin")) && question.status === "draft";
-  const canDelete = (isAuthor || hasRole("admin")) && question.status === "draft";
+  const isAdmin = hasRole("admin");
+  // Admin can edit in any non-archived state; author can edit in draft or proposed
+  const canEdit = (isAdmin && question.status !== "archived") ||
+    (isAuthor && (question.status === "draft" || question.status === "proposed"));
+  const canSubmit = (isAuthor || isAdmin) && question.status === "draft";
+  const canDelete = (isAuthor || isAdmin) && question.status === "draft";
 
   const STATUS_COLORS: Record<string, string> = {
     draft: "bg-gray-200 text-gray-700",
@@ -127,22 +130,31 @@ export function QuestionDetail() {
 
         {editing ? (
           <div className="space-y-3">
-            <input
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm font-semibold"
-            />
-            <textarea
-              value={editBody}
-              onChange={(e) => setEditBody(e.target.value)}
-              className="w-full border border-border rounded-md p-3 min-h-[150px] bg-background text-sm"
-            />
-            <input
-              value={editCategory}
-              onChange={(e) => setEditCategory(e.target.value)}
-              placeholder="Category (optional)"
-              className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm"
-            />
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
+              <input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm font-semibold"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Body</label>
+              <textarea
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+                className="w-full border border-border rounded-md p-3 min-h-[150px] bg-background text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
+              <input
+                value={editCategory}
+                onChange={(e) => setEditCategory(e.target.value)}
+                placeholder="Category (optional)"
+                className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm"
+              />
+            </div>
             <div className="flex gap-2">
               <button onClick={handleSaveEdit} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm">Save</button>
               <button onClick={() => setEditing(false)} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
@@ -158,7 +170,7 @@ export function QuestionDetail() {
           </>
         )}
 
-        {/* Author actions */}
+        {/* Author / edit actions */}
         {!editing && (canEdit || canSubmit || canDelete) && (
           <div className="flex gap-2 mt-4 pt-4 border-t border-border">
             {canEdit && <button onClick={() => setEditing(true)} className="bg-secondary text-secondary-foreground px-3 py-1.5 rounded text-sm">Edit</button>}
@@ -167,8 +179,8 @@ export function QuestionDetail() {
           </div>
         )}
 
-        {/* Admin actions */}
-        {!editing && hasRole("admin") && (
+        {/* Admin state transition actions */}
+        {!editing && isAdmin && (
           <div className="flex gap-2 mt-4 pt-4 border-t border-border">
             {question.status === "proposed" && (
               <button onClick={() => handleAction("start-review")} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Start Review</button>
