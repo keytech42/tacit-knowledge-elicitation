@@ -11,7 +11,12 @@ from app.models.user import RoleName, User
 
 
 async def resolve_answer_reviews(answer_id, db: AsyncSession) -> None:
-    """Check if an answer has met its approval threshold and update status accordingly."""
+    """Check if an answer has met its approval threshold and update status accordingly.
+
+    Only considers reviews from the current revision cycle (matching the
+    answer's current_version) so that old verdicts from previous cycles
+    don't block new approvals.
+    """
     answer_result = await db.execute(select(Answer).where(Answer.id == answer_id))
     answer = answer_result.scalar_one_or_none()
     if not answer or answer.status != AnswerStatus.UNDER_REVIEW.value:
@@ -25,12 +30,14 @@ async def resolve_answer_reviews(answer_id, db: AsyncSession) -> None:
     review_policy = question.review_policy or {"min_approvals": 1}
     min_approvals = review_policy.get("min_approvals", 1)
 
-    reviews_result = await db.execute(
-        select(Review).where(
-            Review.target_type == ReviewTargetType.ANSWER.value,
-            Review.target_id == answer_id,
-        )
+    # Only consider reviews from the current answer version cycle
+    review_query = select(Review).where(
+        Review.target_type == ReviewTargetType.ANSWER.value,
+        Review.target_id == answer_id,
+        Review.answer_version == answer.current_version,
     )
+
+    reviews_result = await db.execute(review_query)
     reviews = reviews_result.scalars().all()
 
     # Check for any changes_requested — blocks approval
