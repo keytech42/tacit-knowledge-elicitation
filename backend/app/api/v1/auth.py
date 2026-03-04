@@ -4,12 +4,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
-from app.models.user import User
+from app.models.user import Role, RoleName, User, UserType
 from app.schemas.auth import GoogleAuthRequest, TokenResponse
 from app.services.auth import create_jwt_token, exchange_google_code, find_or_create_user, verify_jwt_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _token_response(user: User) -> TokenResponse:
+    return TokenResponse(
+        access_token=create_jwt_token(user),
+        user_id=user.id,
+        email=user.email or "",
+        display_name=user.display_name,
+        roles=[r.name if isinstance(r.name, str) else r.name.value for r in user.roles],
+    )
 
 
 @router.post("/google", response_model=TokenResponse)
@@ -20,13 +31,38 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to exchange Google authorization code")
 
     user = await find_or_create_user(db, google_user_info)
-    token = create_jwt_token(user)
+    return _token_response(user)
 
-    return TokenResponse(
-        access_token=token, user_id=user.id, email=user.email or "",
-        display_name=user.display_name,
-        roles=[r.name if isinstance(r.name, str) else r.name.value for r in user.roles],
-    )
+
+@router.post("/dev-login", response_model=TokenResponse)
+async def dev_login(db: AsyncSession = Depends(get_db)):
+    """Create or return a dev admin user. Only available when Google OAuth is not configured."""
+    if settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    dev_email = "dev@localhost"
+    result = await db.execute(select(User).where(User.email == dev_email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = User(
+            user_type=UserType.HUMAN,
+            external_id="dev-local-admin",
+            display_name="Dev Admin",
+            email=dev_email,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user, ["roles"])
+
+        for role_name in RoleName:
+            r = await db.execute(select(Role).where(Role.name == role_name.value))
+            role = r.scalar_one_or_none()
+            if role:
+                user.roles.append(role)
+        await db.flush()
+
+    return _token_response(user)
 
 
 @router.post("/refresh", response_model=TokenResponse)

@@ -21,13 +21,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (code: string) => {
     setLoading(true);
     try {
+      const endpoint = code === "test" ? "/auth/dev-login" : "/auth/google";
+      const body = code === "test" ? undefined : { code };
       const response = await api.post<{
         access_token: string;
         user_id: string;
         email: string;
         display_name: string;
         roles: string[];
-      }>("/auth/google", { code });
+      }>(endpoint, body);
 
       api.setToken(response.access_token);
 
