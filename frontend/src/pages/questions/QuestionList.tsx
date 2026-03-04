@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Question } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-200 text-gray-700",
@@ -12,6 +13,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function QuestionList() {
+  const { hasRole } = useAuth();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -27,7 +29,12 @@ export function QuestionList() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Questions ({total})</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">Questions ({total})</h1>
+          {(hasRole("author") || hasRole("admin")) && (
+            <Link to="/questions/new" className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium">New Question</Link>
+          )}
+        </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
