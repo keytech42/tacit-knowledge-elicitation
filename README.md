@@ -62,14 +62,17 @@ See `.env.example` for all environment variables. Key settings:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft : Author creates
-    Draft --> Proposed : Author submits
+    [*] --> Draft
+    Draft --> Proposed : Author/Admin submits
     Proposed --> In_Review : Admin starts review
     In_Review --> Published : Admin publishes
     In_Review --> Draft : Admin rejects
     Published --> Closed : Admin closes
     Closed --> Archived : Admin archives
     Archived --> [*]
+
+    note right of Draft : Author can edit
+    note right of Published : Accepting answers
 ```
 
 | State | Who can edit | Notes |
@@ -85,16 +88,19 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft : Respondent creates
+    [*] --> Draft
     Draft --> Submitted : Author submits
     Submitted --> Under_Review : Reviewer assigned
-    Under_Review --> Approved : Reviewer approves
-    Under_Review --> Revision_Requested : Reviewer requests changes
-    Under_Review --> Rejected : Reviewer rejects
+    Under_Review --> Approved : Review passes
+    Under_Review --> Revision_Requested : Changes needed
+    Under_Review --> Rejected : Review rejects
     Revision_Requested --> Submitted : Author resubmits
-    Approved --> Submitted : Author/collaborator revises
+    Approved --> Submitted : Author revises (new version)
     Approved --> [*]
     Rejected --> [*]
+
+    note right of Draft : Author can edit
+    note right of Revision_Requested : Author can edit
 ```
 
 | State | Who can edit | Notes |
