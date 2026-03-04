@@ -159,18 +159,11 @@ export function AnswerDetail() {
   const revisePerm = revisePermission(isAdmin, isAuthor, answer.status);
   const assignPerm = assignReviewPermission(isReviewer, isAdmin, answer.status);
 
-  // Group reviews by revision cycle (based on creation date relative to revisions)
-  const reviewsWithMeta = reviews.map((rev) => {
-    const reviewDate = new Date(rev.created_at).getTime();
-    // Find the latest revision that was created before this review
-    let reviewVersion = 1;
-    for (const r of revisions) {
-      if (new Date(r.created_at).getTime() <= reviewDate) {
-        reviewVersion = r.version;
-      }
-    }
-    return { ...rev, answerVersion: reviewVersion };
-  });
+  // Use answer_version from the API (set at review creation time)
+  const reviewsWithMeta = reviews.map((rev) => ({
+    ...rev,
+    answerVersion: rev.answer_version ?? 1,
+  }));
 
   return (
     <div className="max-w-3xl mx-auto">
