@@ -68,6 +68,7 @@ class AnswerRevision(UUIDMixin, TimestampMixin, Base):
         SAEnum(RevisionTrigger, name="revisiontrigger", values_callable=lambda e: [x.value for x in e])
     )
     previous_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     answer = relationship("Answer", back_populates="revisions")
     created_by = relationship("User", lazy="selectin")

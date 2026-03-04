@@ -472,6 +472,11 @@ class TestConcurrencyGuards:
             "verdict": "approved",
         }, headers=auth_header(reviewer_user))
 
+        # Edit body before revising (identical content is now rejected)
+        await client.patch(f"/api/v1/answers/{a_id}", json={
+            "body": "Revised answer content",
+        }, headers=auth_header(admin_user))
+
         # First revise → success
         r = await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
         assert r.status_code == 200
@@ -856,6 +861,154 @@ class TestReviewQuestionTitle:
         matching = [rev for rev in r.json() if rev["id"] == review_id]
         assert len(matching) == 1
         assert matching[0]["question_title"] == "Important Question About Testing"
+
+
+class TestIdenticalRevisionGuard:
+    """Prevent creating revisions when content is unchanged."""
+
+    async def test_resubmit_identical_content_rejected(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db,
+    ):
+        """Resubmitting without changes after revision_requested should be rejected."""
+        q = Question(
+            title="Q", body="B", created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+            review_policy={"min_approvals": 1},
+        )
+        db.add(q)
+        await db.flush()
+
+        # Create and submit answer
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={
+            "body": "My original answer",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Reviewer requests changes
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        review_id = r.json()["id"]
+        await client.patch(f"/api/v1/reviews/{review_id}", json={
+            "verdict": "changes_requested",
+        }, headers=auth_header(reviewer_user))
+
+        # Author tries to resubmit WITHOUT editing → 409
+        r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+        assert r.status_code == 409
+        assert "identical" in r.json()["detail"].lower()
+
+    async def test_resubmit_with_trailing_whitespace_only_rejected(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db,
+    ):
+        """Adding only trailing spaces should still count as identical content."""
+        q = Question(
+            title="Q", body="B", created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+            review_policy={"min_approvals": 1},
+        )
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={
+            "body": "My answer text",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Reviewer requests changes
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        review_id = r.json()["id"]
+        await client.patch(f"/api/v1/reviews/{review_id}", json={
+            "verdict": "changes_requested",
+        }, headers=auth_header(reviewer_user))
+
+        # Author "edits" by adding trailing whitespace only
+        r = await client.patch(f"/api/v1/answers/{a_id}", json={
+            "body": "My answer text   \n  ",
+        }, headers=auth_header(respondent_user))
+        assert r.status_code == 200
+
+        # Resubmit → 409 (normalized content is identical)
+        r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+        assert r.status_code == 409
+        assert "identical" in r.json()["detail"].lower()
+
+    async def test_revise_identical_content_rejected(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db,
+    ):
+        """Post-approval revise with no content change should be rejected."""
+        q = Question(
+            title="Q", body="B", created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+            review_policy={"min_approvals": 1},
+        )
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={
+            "body": "Approved answer",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Approve
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        review_id = r.json()["id"]
+        await client.patch(f"/api/v1/reviews/{review_id}", json={
+            "verdict": "approved",
+        }, headers=auth_header(reviewer_user))
+
+        # Revise without editing → 409
+        r = await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
+        assert r.status_code == 409
+        assert "identical" in r.json()["detail"].lower()
+
+    async def test_resubmit_with_real_changes_succeeds(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db,
+    ):
+        """Resubmitting with actual content changes should succeed."""
+        q = Question(
+            title="Q", body="B", created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+            review_policy={"min_approvals": 1},
+        )
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={
+            "body": "First version",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Reviewer requests changes
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        review_id = r.json()["id"]
+        await client.patch(f"/api/v1/reviews/{review_id}", json={
+            "verdict": "changes_requested",
+        }, headers=auth_header(reviewer_user))
+
+        # Author makes real edits
+        await client.patch(f"/api/v1/answers/{a_id}", json={
+            "body": "Second version with improvements",
+        }, headers=auth_header(respondent_user))
+
+        # Resubmit → success
+        r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+        assert r.status_code == 200
+        assert r.json()["current_version"] == 2
 
 
 class TestVersionDiffing:
