@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, Index, Text
+from sqlalchemy import Enum as SAEnum, ForeignKey, Index, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,6 +34,7 @@ class Review(UUIDMixin, TimestampMixin, Base):
         default=ReviewVerdict.PENDING,
     )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     reviewer = relationship("User", foreign_keys=[reviewer_id], lazy="selectin")
     assigned_by = relationship("User", foreign_keys=[assigned_by_id], lazy="selectin")

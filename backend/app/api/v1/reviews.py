@@ -46,6 +46,7 @@ async def create_review(
         target_type=request.target_type,
         target_id=request.target_id,
         reviewer_id=current_user.id,
+        answer_version=target.current_version if request.target_type == "answer" else None,
     )
     db.add(review)
     await db.flush()

@@ -39,6 +39,7 @@ class ReviewResponse(BaseModel):
     assigned_by: UserResponse | None = None
     verdict: str
     comment: str | None = None
+    answer_version: int | None = None
     comments: list[ReviewCommentResponse] = []
     created_at: datetime
     updated_at: datetime
