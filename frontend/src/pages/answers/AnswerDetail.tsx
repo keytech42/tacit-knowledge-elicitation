@@ -61,6 +61,7 @@ export function AnswerDetail() {
   const [diffTo, setDiffTo] = useState<number | null>(null);
   const [diffText, setDiffText] = useState<string | null>(null);
   const [showAssignReview, setShowAssignReview] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const load = () => {
     if (!id) return;
@@ -72,7 +73,8 @@ export function AnswerDetail() {
   useEffect(load, [id]);
 
   const handleSave = async () => {
-    if (!id) return;
+    if (!id || isLoading) return;
+    setIsLoading(true);
     try {
       const updated = await api.patch<Answer>(`/answers/${id}`, { body: editBody });
       setAnswer(updated);
@@ -80,11 +82,14 @@ export function AnswerDetail() {
       setError("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSubmit = async () => {
-    if (!id) return;
+    if (!id || isLoading) return;
+    setIsLoading(true);
     try {
       const updated = await api.post<Answer>(`/answers/${id}/submit`);
       setAnswer(updated);
@@ -92,17 +97,22 @@ export function AnswerDetail() {
       setError("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submit failed");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleRevise = async () => {
-    if (!id) return;
+    if (!id || isLoading) return;
+    setIsLoading(true);
     try {
       const updated = await api.post<Answer>(`/answers/${id}/revise`);
       setAnswer(updated);
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Revise failed");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -186,9 +196,9 @@ export function AnswerDetail() {
         {/* Author actions — always visible */}
         {!editing && showAuthorActions && (
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
-            <ActionButton label="Edit" onClick={() => setEditing(true)} enabled={editPerm.enabled} disabledReason={editPerm.reason} disabledHint={editPerm.hint} variant="secondary" />
-            <ActionButton label={answer.status === "revision_requested" ? "Resubmit" : "Submit for Review"} onClick={handleSubmit} enabled={submitPerm.enabled} disabledReason={submitPerm.reason} disabledHint={submitPerm.hint} variant="primary" />
-            <ActionButton label="Revise (new version)" onClick={handleRevise} enabled={revisePerm.enabled} disabledReason={revisePerm.reason} variant="blue" />
+            <ActionButton label="Edit" onClick={() => setEditing(true)} enabled={editPerm.enabled && !isLoading} disabledReason={editPerm.reason} disabledHint={editPerm.hint} variant="secondary" />
+            <ActionButton label={answer.status === "revision_requested" ? "Resubmit" : "Submit for Review"} onClick={handleSubmit} enabled={submitPerm.enabled && !isLoading} disabledReason={submitPerm.reason} disabledHint={submitPerm.hint} variant="primary" />
+            <ActionButton label="Revise (new version)" onClick={handleRevise} enabled={revisePerm.enabled && !isLoading} disabledReason={revisePerm.reason} variant="blue" />
           </div>
         )}
 
