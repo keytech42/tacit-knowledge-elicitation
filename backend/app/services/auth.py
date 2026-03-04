@@ -4,11 +4,11 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import jwt
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.user import Role, RoleName, User, UserType
+from app.models.user import Role, RoleName, User, UserType, user_roles
 
 
 async def exchange_google_code(code: str, redirect_uri: str = "postmessage") -> dict:
@@ -60,17 +60,23 @@ async def find_or_create_user(db: AsyncSession, google_user_info: dict) -> User:
     db.add(user)
     await db.flush()
 
-    respondent_role = await db.execute(select(Role).where(Role.name == RoleName.RESPONDENT.value))
-    role = respondent_role.scalar_one_or_none()
-    if role:
-        user.roles.append(role)
-
+    # Determine which roles to assign
+    role_names = {RoleName.RESPONDENT}
     if settings.BOOTSTRAP_ADMIN_EMAIL and email.lower() == settings.BOOTSTRAP_ADMIN_EMAIL.lower():
-        for role_name in RoleName:
-            r = await db.execute(select(Role).where(Role.name == role_name.value))
-            role_obj = r.scalar_one_or_none()
-            if role_obj and role_obj not in user.roles:
-                user.roles.append(role_obj)
+        role_names = set(RoleName)
+
+    roles_result = await db.execute(select(Role).where(Role.name.in_([r.value for r in role_names])))
+    roles = roles_result.scalars().all()
+
+    # Insert directly into the association table to avoid async lazy-load issues
+    if roles:
+        await db.execute(
+            insert(user_roles),
+            [{"user_id": user.id, "role_id": role.id} for role in roles],
+        )
+
+    # Refresh so the user object has roles loaded for JWT creation
+    await db.refresh(user, ["roles"])
 
     return user
 
