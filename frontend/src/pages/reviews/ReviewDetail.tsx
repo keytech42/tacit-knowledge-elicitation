@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { api, Review, Answer, Question } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 
@@ -15,6 +15,7 @@ export function ReviewDetail() {
     if (!id) return;
     api.get<Review>(`/reviews/${id}`).then((r) => {
       setReview(r);
+      setComment(r.comment || "");
       const endpoint = r.target_type === "answer" ? `/answers/${r.target_id}` : `/questions/${r.target_id}`;
       api.get(endpoint).then(setTarget as (v: unknown) => void);
     });
@@ -22,7 +23,7 @@ export function ReviewDetail() {
 
   const handleVerdict = async (verdict: string) => {
     if (!id) return;
-    const updated = await api.patch<Review>(`/reviews/${id}`, { verdict, comment });
+    const updated = await api.patch<Review>(`/reviews/${id}`, { verdict, comment: comment.trim() || undefined });
     setReview(updated);
   };
 
@@ -38,30 +39,44 @@ export function ReviewDetail() {
 
   const isReviewer = user?.id === review.reviewer.id;
 
+  const VERDICT_COLORS: Record<string, string> = {
+    pending: "bg-gray-200 text-gray-700",
+    approved: "bg-green-100 text-green-800",
+    changes_requested: "bg-yellow-100 text-yellow-800",
+    rejected: "bg-red-100 text-red-800",
+  };
+
+  const targetLink = review.target_type === "answer"
+    ? `/answers/${review.target_id}`
+    : `/questions/${review.target_id}`;
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
         <div className="flex items-center gap-3 mb-4">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-            review.verdict === "approved" ? "bg-green-100 text-green-800" :
-            review.verdict === "changes_requested" ? "bg-yellow-100 text-yellow-800" :
-            review.verdict === "rejected" ? "bg-red-100 text-red-800" : "bg-gray-100"
-          }`}>{review.verdict}</span>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${VERDICT_COLORS[review.verdict] || "bg-gray-100"}`}>
+            {review.verdict.replace(/_/g, " ")}
+          </span>
           <span className="text-sm text-muted-foreground">Review of {review.target_type}</span>
           <span className="text-sm text-muted-foreground ml-auto">by {review.reviewer.display_name}</span>
         </div>
 
-        {/* Target content */}
+        {/* Target content — clickable link to the reviewed item */}
         {target && (
-          <div className="bg-muted p-4 rounded-md mb-4">
-            <p className="text-sm font-medium mb-2">{"title" in target ? (target as Question).title : "Answer"}</p>
-            <p className="text-sm whitespace-pre-wrap">{"body" in target ? (target as Answer).body : ""}</p>
-          </div>
+          <Link to={targetLink} className="block bg-muted p-4 rounded-md mb-4 hover:bg-muted/80 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs text-muted-foreground">View {review.target_type}</span>
+              <span className="text-xs text-blue-600">&rarr;</span>
+            </div>
+            <p className="text-sm font-medium mb-1">{"title" in target ? (target as Question).title : "Answer"}</p>
+            <p className="text-sm whitespace-pre-wrap line-clamp-4">{"body" in target ? (target as Answer).body : ""}</p>
+          </Link>
         )}
 
         {/* Verdict actions */}
         {isReviewer && review.verdict === "pending" && (
           <div className="border-t border-border pt-4">
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Review comment</label>
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
@@ -76,26 +91,29 @@ export function ReviewDetail() {
           </div>
         )}
 
-        {review.comment && (
+        {review.verdict !== "pending" && review.comment && (
           <div className="mt-4 pt-4 border-t border-border">
-            <p className="text-sm font-medium mb-1">Review Comment</p>
-            <p className="text-sm text-muted-foreground">{review.comment}</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Review Comment</p>
+            <p className="text-sm">{review.comment}</p>
           </div>
         )}
       </div>
 
       {/* Comments thread */}
-      <h2 className="font-semibold text-lg mb-3">Discussion</h2>
+      <h2 className="font-semibold text-lg mb-3">Discussion ({review.comments.length})</h2>
       <div className="space-y-3 mb-4">
         {review.comments.map((c) => (
           <div key={c.id} className={`bg-background p-3 rounded border border-border text-sm ${c.parent_id ? "ml-8" : ""}`}>
             <div className="flex items-center gap-2 mb-1">
-              <span className="font-medium">{c.author.display_name}</span>
-              <span className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
+              <span className="font-medium text-xs">{c.author.display_name}</span>
+              <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
             </div>
-            <p>{c.body}</p>
+            <p className="text-sm">{c.body}</p>
           </div>
         ))}
+        {review.comments.length === 0 && (
+          <p className="text-sm text-muted-foreground">No comments yet.</p>
+        )}
       </div>
 
       <div className="flex gap-2">
@@ -104,6 +122,7 @@ export function ReviewDetail() {
           onChange={(e) => setNewComment(e.target.value)}
           placeholder="Add a comment..."
           className="flex-1 border border-border rounded-md px-3 py-2 text-sm bg-background"
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }}
         />
         <button onClick={handleAddComment} disabled={!newComment.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50">Comment</button>
       </div>

@@ -40,6 +40,18 @@ export function AnswerDetail() {
     }
   };
 
+  const handleSubmit = async () => {
+    if (!id) return;
+    try {
+      const updated = await api.post<Answer>(`/answers/${id}/submit`);
+      setAnswer(updated);
+      load();
+      setError("");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Submit failed");
+    }
+  };
+
   const handleRevise = async () => {
     if (!id) return;
     try {
@@ -76,9 +88,13 @@ export function AnswerDetail() {
   if (!answer) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
 
   const isAuthor = user?.id === answer.author.id;
-  const canEdit = (isAuthor && (answer.status === "draft" || answer.status === "revision_requested")) || hasRole("admin");
-  const canRevise = isAuthor && answer.status === "approved";
-  const canAssignReview = (hasRole("reviewer") || hasRole("admin")) && (answer.status === "submitted" || answer.status === "under_review");
+  const isAdmin = hasRole("admin");
+  // Backend: admin can always edit; author when draft or revision_requested
+  const canEdit = isAdmin || (isAuthor && (answer.status === "draft" || answer.status === "revision_requested"));
+  // Can submit: draft or revision_requested answers
+  const canSubmit = (isAuthor || isAdmin) && (answer.status === "draft" || answer.status === "revision_requested");
+  const canRevise = (isAuthor || isAdmin) && answer.status === "approved";
+  const canAssignReview = (hasRole("reviewer") || isAdmin) && (answer.status === "submitted" || answer.status === "under_review");
 
   const VERDICT_COLORS: Record<string, string> = {
     approved: "bg-green-100 text-green-800",
@@ -101,7 +117,7 @@ export function AnswerDetail() {
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
         <div className="flex items-center gap-3 mb-4">
           <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[answer.status] || "bg-gray-100"}`}>
-            {answer.status}
+            {answer.status.replace(/_/g, " ")}
           </span>
           <span className="text-xs text-muted-foreground">Version {answer.current_version}</span>
           <Link to={`/questions/${answer.question_id}`} className="text-xs text-blue-600 hover:underline ml-auto">Back to question</Link>
@@ -109,10 +125,11 @@ export function AnswerDetail() {
 
         {editing ? (
           <>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Answer body</label>
             <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[200px] bg-background text-sm" />
             <div className="flex gap-2 mt-3">
               <button onClick={handleSave} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm">Save</button>
-              <button onClick={() => setEditing(false)} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
+              <button onClick={() => { setEditing(false); setEditBody(answer.body); }} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
             </div>
           </>
         ) : (
@@ -121,13 +138,16 @@ export function AnswerDetail() {
             <div className="text-sm text-muted-foreground mt-4">
               by {answer.author.display_name} &middot; {new Date(answer.created_at).toLocaleDateString()}
             </div>
-            <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-              {canEdit && <button onClick={() => setEditing(true)} className="bg-secondary text-secondary-foreground px-3 py-1.5 rounded text-sm">Edit</button>}
-              {canRevise && <button onClick={handleRevise} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Revise (new version)</button>}
-              {canAssignReview && !showAssignReview && (
-                <button onClick={() => setShowAssignReview(true)} className="bg-purple-600 text-white px-3 py-1.5 rounded text-sm">Assign Review</button>
-              )}
-            </div>
+            {(canEdit || canSubmit || canRevise || canAssignReview) && (
+              <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
+                {canEdit && <button onClick={() => setEditing(true)} className="bg-secondary text-secondary-foreground px-3 py-1.5 rounded text-sm">Edit</button>}
+                {canSubmit && <button onClick={handleSubmit} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm">{answer.status === "revision_requested" ? "Resubmit" : "Submit for Review"}</button>}
+                {canRevise && <button onClick={handleRevise} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Revise (new version)</button>}
+                {canAssignReview && !showAssignReview && (
+                  <button onClick={() => setShowAssignReview(true)} className="bg-purple-600 text-white px-3 py-1.5 rounded text-sm">Assign Review</button>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -170,7 +190,7 @@ export function AnswerDetail() {
               <option value="">From...</option>
               {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
             </select>
-            <span className="text-muted-foreground text-sm">→</span>
+            <span className="text-muted-foreground text-sm">&rarr;</span>
             <select value={diffTo ?? ""} onChange={(e) => setDiffTo(Number(e.target.value))} className="border border-border rounded px-2 py-1 text-sm bg-background">
               <option value="">To...</option>
               {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
