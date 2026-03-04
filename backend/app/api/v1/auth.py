@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import Role, RoleName, User, UserType
-from app.schemas.auth import GoogleAuthRequest, TokenResponse
+from app.schemas.auth import AuthConfigResponse, GoogleAuthRequest, TokenResponse
 from app.services.auth import create_jwt_token, exchange_google_code, find_or_create_user, verify_jwt_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -23,8 +23,19 @@ def _token_response(user: User) -> TokenResponse:
     )
 
 
+@router.get("/config", response_model=AuthConfigResponse)
+async def auth_config():
+    """Return public auth configuration for the frontend."""
+    return AuthConfigResponse(
+        google_client_id=settings.GOOGLE_CLIENT_ID,
+        dev_login_enabled=settings.DEV_LOGIN_ENABLED,
+    )
+
+
 @router.post("/google", response_model=TokenResponse)
 async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Google OAuth is not configured")
     try:
         google_user_info = await exchange_google_code(request.code)
     except Exception:
@@ -36,8 +47,8 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
 
 @router.post("/dev-login", response_model=TokenResponse)
 async def dev_login(db: AsyncSession = Depends(get_db)):
-    """Create or return a dev admin user. Only available when Google OAuth is not configured."""
-    if settings.GOOGLE_CLIENT_ID:
+    """Create or return a dev admin user. Available when DEV_LOGIN_ENABLED is true."""
+    if not settings.DEV_LOGIN_ENABLED:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     dev_email = "dev@localhost"

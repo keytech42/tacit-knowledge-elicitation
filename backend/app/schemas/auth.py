@@ -18,3 +18,8 @@ class TokenResponse(BaseModel):
 
 class TokenRefreshRequest(BaseModel):
     refresh_token: str
+
+
+class AuthConfigResponse(BaseModel):
+    google_client_id: str
+    dev_login_enabled: bool

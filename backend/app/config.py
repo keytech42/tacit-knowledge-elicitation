@@ -7,7 +7,9 @@ class Settings(BaseSettings):
     JWT_EXPIRY_HOURS: int = 24
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
     BOOTSTRAP_ADMIN_EMAIL: str = ""
+    DEV_LOGIN_ENABLED: bool = True
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
     model_config = {"env_file": ".env", "extra": "ignore"}

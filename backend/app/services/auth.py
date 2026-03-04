@@ -11,7 +11,7 @@ from app.config import settings
 from app.models.user import Role, RoleName, User, UserType
 
 
-async def exchange_google_code(code: str) -> dict:
+async def exchange_google_code(code: str, redirect_uri: str = "postmessage") -> dict:
     """Exchange Google OAuth authorization code for user info."""
     async with httpx.AsyncClient() as client:
         token_response = await client.post(
@@ -20,7 +20,7 @@ async def exchange_google_code(code: str) -> dict:
                 "code": code,
                 "client_id": settings.GOOGLE_CLIENT_ID,
                 "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                "redirect_uri": "postmessage",
+                "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
             },
         )
