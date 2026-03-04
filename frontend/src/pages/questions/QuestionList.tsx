@@ -2,15 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Question } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-
-const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-200 text-gray-700",
-  proposed: "bg-yellow-100 text-yellow-800",
-  in_review: "bg-blue-100 text-blue-800",
-  published: "bg-green-100 text-green-800",
-  closed: "bg-red-100 text-red-800",
-  archived: "bg-gray-100 text-gray-500",
-};
+import { StatusBadge, statusLabel, statusColor } from "@/components/StatusBadge";
 
 const STATUS_BORDER_COLORS: Record<string, string> = {
   draft: "border-gray-300",
@@ -22,15 +14,6 @@ const STATUS_BORDER_COLORS: Record<string, string> = {
 };
 
 const ALL_STATUSES = ["draft", "proposed", "in_review", "published", "closed", "archived"];
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  proposed: "Proposed",
-  in_review: "In Review",
-  published: "Published",
-  closed: "Closed",
-  archived: "Archived",
-};
 
 type ViewMode = "list" | "kanban";
 
@@ -46,9 +29,7 @@ function KanbanCard({ q }: { q: Question }) {
         {q.category && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{q.category}</span>}
         {q.quality_score != null && <span className="text-[10px] text-muted-foreground">{q.quality_score.toFixed(1)}</span>}
       </div>
-      <div className="text-[10px] text-muted-foreground mt-1.5">
-        {q.created_by.display_name}
-      </div>
+      <div className="text-[10px] text-muted-foreground mt-1.5">{q.created_by.display_name}</div>
     </Link>
   );
 }
@@ -63,19 +44,15 @@ function KanbanBoard({ questions }: { questions: Question[] }) {
     <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: "calc(100vh - 220px)" }}>
       {ALL_STATUSES.map((status) => (
         <div key={status} className="flex-shrink-0 w-64">
-          <div className={`flex items-center gap-2 mb-3 px-1`}>
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[status]}`}>
-              {STATUS_LABELS[status]}
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(status)}`}>
+              {statusLabel(status)}
             </span>
             <span className="text-xs text-muted-foreground">{grouped[status].length}</span>
           </div>
           <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${STATUS_BORDER_COLORS[status]} min-h-[200px]`}>
-            {grouped[status].map((q) => (
-              <KanbanCard key={q.id} q={q} />
-            ))}
-            {grouped[status].length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-6">No items</p>
-            )}
+            {grouped[status].map((q) => <KanbanCard key={q.id} q={q} />)}
+            {grouped[status].length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No items</p>}
           </div>
         </div>
       ))}
@@ -116,11 +93,7 @@ export function QuestionList() {
         </div>
         <div className="flex items-center gap-3">
           {viewMode === "list" && (
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-border rounded-md px-3 py-2 text-sm bg-background"
-            >
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-border rounded-md px-3 py-2 text-sm bg-background">
               <option value="">All statuses</option>
               <option value="published">Published</option>
               <option value="draft">Draft</option>
@@ -130,18 +103,8 @@ export function QuestionList() {
             </select>
           )}
           <div className="flex border border-border rounded-md overflow-hidden">
-            <button
-              onClick={() => handleViewChange("list")}
-              className={`px-3 py-2 text-sm ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-            >
-              List
-            </button>
-            <button
-              onClick={() => handleViewChange("kanban")}
-              className={`px-3 py-2 text-sm ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-            >
-              Board
-            </button>
+            <button onClick={() => handleViewChange("list")} className={`px-3 py-2 text-sm ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>List</button>
+            <button onClick={() => handleViewChange("kanban")} className={`px-3 py-2 text-sm ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>Board</button>
           </div>
         </div>
       </div>
@@ -151,28 +114,18 @@ export function QuestionList() {
       ) : (
         <div className="space-y-3">
           {questions.map((q) => (
-            <Link
-              key={q.id}
-              to={`/questions/${q.id}`}
-              className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30 transition-colors"
-            >
+            <Link key={q.id} to={`/questions/${q.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30 transition-colors">
               <div className="flex items-center gap-3 mb-2">
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[q.status] || "bg-gray-100"}`}>
-                  {q.status}
-                </span>
+                <StatusBadge status={q.status} />
                 {q.category && <span className="text-xs text-muted-foreground">{q.category}</span>}
                 {q.quality_score && <span className="text-xs text-muted-foreground">Score: {q.quality_score.toFixed(1)}</span>}
               </div>
               <h3 className="font-semibold">{q.title}</h3>
               <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{q.body}</p>
-              <div className="text-xs text-muted-foreground mt-2">
-                by {q.created_by.display_name} &middot; {new Date(q.created_at).toLocaleDateString()}
-              </div>
+              <div className="text-xs text-muted-foreground mt-2">by {q.created_by.display_name} &middot; {new Date(q.created_at).toLocaleDateString()}</div>
             </Link>
           ))}
-          {questions.length === 0 && (
-            <p className="text-center text-muted-foreground py-8">No questions found.</p>
-          )}
+          {questions.length === 0 && <p className="text-center text-muted-foreground py-8">No questions found.</p>}
         </div>
       )}
     </div>

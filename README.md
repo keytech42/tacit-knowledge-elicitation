@@ -56,6 +56,60 @@ See `.env.example` for all environment variables. Key settings:
 | `BOOTSTRAP_ADMIN_EMAIL` | Email that auto-receives all roles on first login | empty |
 | `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:5173"]` |
 
+## Workflow State Machines
+
+### Question Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft : Author creates
+    Draft --> Proposed : Author submits
+    Proposed --> In_Review : Admin starts review
+    In_Review --> Published : Admin publishes
+    In_Review --> Draft : Admin rejects
+    Published --> Closed : Admin closes
+    Closed --> Archived : Admin archives
+    Archived --> [*]
+```
+
+| State | Who can edit | Notes |
+|-------|-------------|-------|
+| **Draft** | Author, Admin | Initial state — full editing allowed |
+| **Proposed** | Admin only | Author's edit is locked while awaiting review |
+| **In Review** | Admin only | Under admin evaluation |
+| **Published** | Admin only | Live — accepting answers and feedback |
+| **Closed** | Admin only | No new answers accepted |
+| **Archived** | Nobody | Terminal state — read-only |
+
+### Answer Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft : Respondent creates
+    Draft --> Submitted : Author submits
+    Submitted --> Under_Review : Reviewer assigned
+    Under_Review --> Approved : Reviewer approves
+    Under_Review --> Revision_Requested : Reviewer requests changes
+    Under_Review --> Rejected : Reviewer rejects
+    Revision_Requested --> Submitted : Author resubmits
+    Approved --> Submitted : Author/collaborator revises
+    Approved --> [*]
+    Rejected --> [*]
+```
+
+| State | Who can edit | Notes |
+|-------|-------------|-------|
+| **Draft** | Author, Admin | Initial state — full editing |
+| **Submitted** | Admin only | Awaiting reviewer assignment |
+| **Under Review** | Admin only | Reviewer is evaluating |
+| **Revision Requested** | Author, Admin | Changes needed — edit and resubmit |
+| **Approved** | Nobody (use Revise) | Accepted — revision creates a new version |
+| **Rejected** | Nobody | Terminal state |
+
+### Review Verdict Flow
+
+Reviews follow a simpler one-shot flow: **Pending** → **Approved** / **Changes Requested** / **Rejected**. Only the assigned reviewer (or an admin) can set the verdict. Once set, the verdict is final.
+
 ## Documentation
 
 See [`docs/`](docs/) for detailed documentation:

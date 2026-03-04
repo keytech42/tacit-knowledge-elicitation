@@ -2,13 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Review } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-
-const VERDICT_COLORS: Record<string, string> = {
-  pending: "bg-gray-200 text-gray-700",
-  approved: "bg-green-100 text-green-800",
-  changes_requested: "bg-yellow-100 text-yellow-800",
-  rejected: "bg-red-100 text-red-800",
-};
+import { StatusBadge, statusColor, statusLabel } from "@/components/StatusBadge";
 
 const VERDICT_BORDER_COLORS: Record<string, string> = {
   pending: "border-gray-300",
@@ -18,13 +12,6 @@ const VERDICT_BORDER_COLORS: Record<string, string> = {
 };
 
 const ALL_VERDICTS = ["pending", "approved", "changes_requested", "rejected"];
-
-const VERDICT_LABELS: Record<string, string> = {
-  pending: "Pending",
-  approved: "Approved",
-  changes_requested: "Changes Requested",
-  rejected: "Rejected",
-};
 
 type ViewMode = "list" | "kanban";
 
@@ -37,12 +24,8 @@ function KanbanCard({ rev }: { rev: Review }) {
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs font-medium capitalize">{rev.target_type}</span>
       </div>
-      {rev.comment && (
-        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{rev.comment}</p>
-      )}
-      <div className="text-[10px] text-muted-foreground mt-1.5">
-        {new Date(rev.created_at).toLocaleDateString()}
-      </div>
+      {rev.comment && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{rev.comment}</p>}
+      <div className="text-[10px] text-muted-foreground mt-1.5">{new Date(rev.created_at).toLocaleDateString()}</div>
     </Link>
   );
 }
@@ -58,18 +41,14 @@ function KanbanBoard({ reviews }: { reviews: Review[] }) {
       {ALL_VERDICTS.map((verdict) => (
         <div key={verdict} className="flex-shrink-0 w-64">
           <div className="flex items-center gap-2 mb-3 px-1">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${VERDICT_COLORS[verdict]}`}>
-              {VERDICT_LABELS[verdict]}
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(verdict)}`}>
+              {statusLabel(verdict)}
             </span>
             <span className="text-xs text-muted-foreground">{grouped[verdict].length}</span>
           </div>
           <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${VERDICT_BORDER_COLORS[verdict]} min-h-[200px]`}>
-            {grouped[verdict].map((rev) => (
-              <KanbanCard key={rev.id} rev={rev} />
-            ))}
-            {grouped[verdict].length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-6">No items</p>
-            )}
+            {grouped[verdict].map((rev) => <KanbanCard key={rev.id} rev={rev} />)}
+            {grouped[verdict].length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No items</p>}
           </div>
         </div>
       ))}
@@ -86,10 +65,8 @@ export function ReviewQueue() {
 
   useEffect(() => {
     if (viewMode === "kanban" && user) {
-      // Fetch all reviews for this user (all verdicts) for kanban
       api.get<Review[]>(`/reviews?reviewer_id=${user.id}`).then(setReviews);
     } else {
-      // List mode: only pending
       api.get<Review[]>("/reviews/my-queue").then(setReviews);
     }
   }, [viewMode, user]);
@@ -106,18 +83,8 @@ export function ReviewQueue() {
           {viewMode === "kanban" ? `My Reviews (${reviews.length})` : `My Review Queue (${reviews.length})`}
         </h1>
         <div className="flex border border-border rounded-md overflow-hidden">
-          <button
-            onClick={() => handleViewChange("list")}
-            className={`px-3 py-2 text-sm ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-          >
-            List
-          </button>
-          <button
-            onClick={() => handleViewChange("kanban")}
-            className={`px-3 py-2 text-sm ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-          >
-            Board
-          </button>
+          <button onClick={() => handleViewChange("list")} className={`px-3 py-2 text-sm ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>List</button>
+          <button onClick={() => handleViewChange("kanban")} className={`px-3 py-2 text-sm ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>Board</button>
         </div>
       </div>
 
@@ -126,16 +93,10 @@ export function ReviewQueue() {
       ) : (
         <div className="space-y-3">
           {reviews.map((rev) => (
-            <Link
-              key={rev.id}
-              to={`/reviews/${rev.id}`}
-              className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30"
-            >
+            <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30">
               <div className="flex items-center gap-3">
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${VERDICT_COLORS[rev.verdict] || "bg-gray-100"}`}>
-                  {rev.verdict}
-                </span>
-                <span className="text-sm font-medium">{rev.target_type}</span>
+                <StatusBadge status={rev.verdict} />
+                <span className="text-sm font-medium capitalize">{rev.target_type}</span>
                 <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleDateString()}</span>
               </div>
             </Link>

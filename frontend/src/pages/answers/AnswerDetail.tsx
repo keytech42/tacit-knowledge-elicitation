@@ -2,6 +2,51 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, Answer, AnswerRevision, Review } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { ActionButton } from "@/components/ActionButton";
+import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
+
+function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
+  if (isAdmin) return { enabled: true };
+  if (isAuthor && (status === "draft" || status === "revision_requested")) return { enabled: true };
+  if (isAuthor && status === "submitted")
+    return { enabled: false, reason: "Answer is awaiting review", hint: "Wait for the review outcome" };
+  if (isAuthor && status === "under_review")
+    return { enabled: false, reason: "Answer is under review", hint: "Changes will be possible if revision is requested" };
+  if (isAuthor && status === "approved")
+    return { enabled: false, reason: "Answer is finalized", hint: "Use 'Revise' to create a new version instead" };
+  if (status === "rejected")
+    return { enabled: false, reason: "Rejected answers cannot be edited" };
+  return { enabled: false, reason: "Only the author or an admin can edit" };
+}
+
+function submitPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
+  if ((isAuthor || isAdmin) && (status === "draft" || status === "revision_requested")) return { enabled: true };
+  if (status === "submitted" || status === "under_review")
+    return { enabled: false, reason: "Already submitted", hint: "Awaiting review" };
+  if (status === "approved")
+    return { enabled: false, reason: "Already approved", hint: "Use 'Revise' to reopen for changes" };
+  if (status === "rejected")
+    return { enabled: false, reason: "Rejected answers cannot be resubmitted" };
+  return { enabled: false, reason: "Only the author or an admin can submit" };
+}
+
+function revisePermission(isAdmin: boolean, isAuthor: boolean, status: string) {
+  if ((isAuthor || isAdmin) && status === "approved") return { enabled: true };
+  if (status === "approved")
+    return { enabled: false, reason: "Only the author or an admin can revise" };
+  return { enabled: false, reason: "Only approved answers can be revised" };
+}
+
+function assignReviewPermission(hasReviewerRole: boolean, isAdmin: boolean, status: string) {
+  if ((hasReviewerRole || isAdmin) && (status === "submitted" || status === "under_review")) return { enabled: true };
+  if (status === "draft")
+    return { enabled: false, reason: "Answer must be submitted first" };
+  if (status === "approved" || status === "rejected")
+    return { enabled: false, reason: "Review cycle is complete" };
+  if (status === "revision_requested")
+    return { enabled: false, reason: "Awaiting author revision", hint: "A review can be assigned after resubmission" };
+  return { enabled: false, reason: "Only reviewers or admins can assign reviews" };
+}
 
 export function AnswerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -12,11 +57,9 @@ export function AnswerDetail() {
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState("");
   const [error, setError] = useState("");
-  // diff
   const [diffFrom, setDiffFrom] = useState<number | null>(null);
   const [diffTo, setDiffTo] = useState<number | null>(null);
   const [diffText, setDiffText] = useState<string | null>(null);
-  // assign review
   const [showAssignReview, setShowAssignReview] = useState(false);
 
   const load = () => {
@@ -89,39 +132,38 @@ export function AnswerDetail() {
 
   const isAuthor = user?.id === answer.author.id;
   const isAdmin = hasRole("admin");
-  // Backend: admin can always edit; author when draft or revision_requested
-  const canEdit = isAdmin || (isAuthor && (answer.status === "draft" || answer.status === "revision_requested"));
-  // Can submit: draft or revision_requested answers
-  const canSubmit = (isAuthor || isAdmin) && (answer.status === "draft" || answer.status === "revision_requested");
-  const canRevise = (isAuthor || isAdmin) && answer.status === "approved";
-  const canAssignReview = (hasRole("reviewer") || isAdmin) && (answer.status === "submitted" || answer.status === "under_review");
+  const isReviewer = hasRole("reviewer");
+  const showAuthorActions = isAuthor || isAdmin;
+  const showReviewerActions = isReviewer || isAdmin;
 
-  const VERDICT_COLORS: Record<string, string> = {
-    approved: "bg-green-100 text-green-800",
-    changes_requested: "bg-yellow-100 text-yellow-800",
-    rejected: "bg-red-100 text-red-800",
-    pending: "bg-gray-100 text-gray-700",
-  };
+  const editPerm = editPermission(isAdmin, isAuthor, answer.status);
+  const submitPerm = submitPermission(isAdmin, isAuthor, answer.status);
+  const revisePerm = revisePermission(isAdmin, isAuthor, answer.status);
+  const assignPerm = assignReviewPermission(isReviewer, isAdmin, answer.status);
 
-  const STATUS_COLORS: Record<string, string> = {
-    draft: "bg-gray-200 text-gray-700",
-    submitted: "bg-yellow-100 text-yellow-800",
-    under_review: "bg-blue-100 text-blue-800",
-    approved: "bg-green-100 text-green-800",
-    revision_requested: "bg-orange-100 text-orange-800",
-    rejected: "bg-red-100 text-red-800",
-  };
+  // Group reviews by revision cycle (based on creation date relative to revisions)
+  const reviewsWithMeta = reviews.map((rev) => {
+    const reviewDate = new Date(rev.created_at).getTime();
+    // Find the latest revision that was created before this review
+    let reviewVersion = 1;
+    for (const r of revisions) {
+      if (new Date(r.created_at).getTime() <= reviewDate) {
+        reviewVersion = r.version;
+      }
+    }
+    return { ...rev, answerVersion: reviewVersion };
+  });
 
   return (
     <div className="max-w-3xl mx-auto">
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[answer.status] || "bg-gray-100"}`}>
-            {answer.status.replace(/_/g, " ")}
-          </span>
+        {/* Status + workflow hint */}
+        <div className="flex items-center gap-3 mb-1">
+          <StatusBadge status={answer.status} />
           <span className="text-xs text-muted-foreground">Version {answer.current_version}</span>
           <Link to={`/questions/${answer.question_id}`} className="text-xs text-blue-600 hover:underline ml-auto">Back to question</Link>
         </div>
+        <p className="text-xs text-muted-foreground mb-4">{WORKFLOW_HINTS[`a:${answer.status}`]}</p>
 
         {editing ? (
           <>
@@ -138,32 +180,35 @@ export function AnswerDetail() {
             <div className="text-sm text-muted-foreground mt-4">
               by {answer.author.display_name} &middot; {new Date(answer.created_at).toLocaleDateString()}
             </div>
-            {(canEdit || canSubmit || canRevise || canAssignReview) && (
-              <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
-                {canEdit && <button onClick={() => setEditing(true)} className="bg-secondary text-secondary-foreground px-3 py-1.5 rounded text-sm">Edit</button>}
-                {canSubmit && <button onClick={handleSubmit} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm">{answer.status === "revision_requested" ? "Resubmit" : "Submit for Review"}</button>}
-                {canRevise && <button onClick={handleRevise} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Revise (new version)</button>}
-                {canAssignReview && !showAssignReview && (
-                  <button onClick={() => setShowAssignReview(true)} className="bg-purple-600 text-white px-3 py-1.5 rounded text-sm">Assign Review</button>
-                )}
-              </div>
-            )}
           </>
+        )}
+
+        {/* Author actions — always visible */}
+        {!editing && showAuthorActions && (
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
+            <ActionButton label="Edit" onClick={() => setEditing(true)} enabled={editPerm.enabled} disabledReason={editPerm.reason} disabledHint={editPerm.hint} variant="secondary" />
+            <ActionButton label={answer.status === "revision_requested" ? "Resubmit" : "Submit for Review"} onClick={handleSubmit} enabled={submitPerm.enabled} disabledReason={submitPerm.reason} disabledHint={submitPerm.hint} variant="primary" />
+            <ActionButton label="Revise (new version)" onClick={handleRevise} enabled={revisePerm.enabled} disabledReason={revisePerm.reason} variant="blue" />
+          </div>
+        )}
+
+        {/* Reviewer actions — always visible */}
+        {!editing && showReviewerActions && (
+          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
+            <span className="text-xs text-muted-foreground self-center mr-1">Review:</span>
+            {!showAssignReview ? (
+              <ActionButton label="Assign Review" onClick={() => setShowAssignReview(true)} enabled={assignPerm.enabled} disabledReason={assignPerm.reason} disabledHint={assignPerm.hint} variant="purple" />
+            ) : (
+              <>
+                <button onClick={handleCreateReview} className="bg-purple-600 text-white px-3 py-1.5 rounded text-sm">Confirm — Assign to Me</button>
+                <button onClick={() => setShowAssignReview(false)} className="border border-border px-3 py-1.5 rounded text-sm">Cancel</button>
+              </>
+            )}
+          </div>
         )}
       </div>
 
       {error && <p className="text-destructive text-sm mb-4">{error}</p>}
-
-      {/* Assign review */}
-      {showAssignReview && (
-        <div className="bg-background p-4 rounded-lg border border-border mb-6">
-          <p className="text-sm mb-3">Create a review assignment for this answer. You will be assigned as reviewer.</p>
-          <div className="flex gap-2">
-            <button onClick={handleCreateReview} className="bg-purple-600 text-white px-4 py-2 rounded-md text-sm">Confirm — Assign to Me</button>
-            <button onClick={() => setShowAssignReview(false)} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
-          </div>
-        </div>
-      )}
 
       {/* Version History */}
       <h2 className="font-semibold text-lg mb-3">Version History</h2>
@@ -195,30 +240,24 @@ export function AnswerDetail() {
               <option value="">To...</option>
               {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
             </select>
-            <button
-              onClick={handleViewDiff}
-              disabled={diffFrom == null || diffTo == null || diffFrom === diffTo}
-              className="bg-secondary text-secondary-foreground px-3 py-1 rounded text-sm disabled:opacity-50"
-            >
-              View Diff
-            </button>
+            <button onClick={handleViewDiff} disabled={diffFrom == null || diffTo == null || diffFrom === diffTo} className="bg-secondary text-secondary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">View Diff</button>
           </div>
-          {diffText !== null && (
-            <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap font-mono">{diffText}</pre>
-          )}
+          {diffText !== null && <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap font-mono">{diffText}</pre>}
         </div>
       )}
 
-      {/* Reviews */}
-      <h2 className="font-semibold text-lg mb-3">Reviews</h2>
+      {/* Reviews — enriched with metadata */}
+      <h2 className="font-semibold text-lg mb-3">Reviews ({reviews.length})</h2>
       <div className="space-y-2">
-        {reviews.map((rev) => (
+        {reviewsWithMeta.map((rev) => (
           <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-3 rounded border border-border text-sm hover:border-primary/30">
             <div className="flex items-center gap-3">
-              <span className={`text-xs px-2 py-0.5 rounded font-medium ${VERDICT_COLORS[rev.verdict] || "bg-gray-100"}`}>{rev.verdict}</span>
+              <StatusBadge status={rev.verdict} />
+              <span className="text-xs text-muted-foreground font-mono">v{rev.answerVersion}</span>
               <span className="text-muted-foreground">{rev.reviewer.display_name}</span>
-              {rev.comment && <span className="text-muted-foreground truncate ml-auto max-w-[200px]">{rev.comment}</span>}
+              <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleDateString()}</span>
             </div>
+            {rev.comment && <p className="text-xs text-muted-foreground mt-1 truncate">{rev.comment}</p>}
           </Link>
         ))}
         {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet.</p>}

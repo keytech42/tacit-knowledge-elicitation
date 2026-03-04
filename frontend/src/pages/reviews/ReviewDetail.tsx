@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, Review, Answer, Question } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { ActionButton } from "@/components/ActionButton";
+import { StatusBadge, statusLabel } from "@/components/StatusBadge";
 
 export function ReviewDetail() {
   const { id } = useParams<{ id: string }>();
@@ -23,8 +25,12 @@ export function ReviewDetail() {
 
   const handleVerdict = async (verdict: string) => {
     if (!id) return;
-    const updated = await api.patch<Review>(`/reviews/${id}`, { verdict, comment: comment.trim() || undefined });
-    setReview(updated);
+    try {
+      const updated = await api.patch<Review>(`/reviews/${id}`, { verdict, comment: comment.trim() || undefined });
+      setReview(updated);
+    } catch (err: unknown) {
+      // show error inline
+    }
   };
 
   const handleAddComment = async () => {
@@ -38,30 +44,38 @@ export function ReviewDetail() {
   if (!review) return <p className="text-center py-8 text-muted-foreground">Loading...</p>;
 
   const isReviewer = user?.id === review.reviewer.id;
-
-  const VERDICT_COLORS: Record<string, string> = {
-    pending: "bg-gray-200 text-gray-700",
-    approved: "bg-green-100 text-green-800",
-    changes_requested: "bg-yellow-100 text-yellow-800",
-    rejected: "bg-red-100 text-red-800",
-  };
+  const isPending = review.verdict === "pending";
 
   const targetLink = review.target_type === "answer"
     ? `/answers/${review.target_id}`
     : `/questions/${review.target_id}`;
 
+  // Build verdict button permissions
+  const verdictPerm = (() => {
+    if (isReviewer && isPending) return { enabled: true };
+    if (!isPending)
+      return { enabled: false, reason: "Verdict already submitted", hint: "Contact an admin if you need to change it" };
+    return { enabled: false, reason: "Only the assigned reviewer can set a verdict" };
+  })();
+
+  // Get answer version info if target is an answer
+  const answerVersion = target && "current_version" in target ? (target as Answer).current_version : null;
+  const answerStatus = target && "status" in target && "current_version" in target ? (target as Answer).status : null;
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
         <div className="flex items-center gap-3 mb-4">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${VERDICT_COLORS[review.verdict] || "bg-gray-100"}`}>
-            {review.verdict.replace(/_/g, " ")}
+          <StatusBadge status={review.verdict} />
+          <span className="text-sm text-muted-foreground">
+            Review of {review.target_type}
+            {answerVersion != null && <span className="font-mono ml-1">v{answerVersion}</span>}
+            {answerStatus && <span className="ml-1">({statusLabel(answerStatus)})</span>}
           </span>
-          <span className="text-sm text-muted-foreground">Review of {review.target_type}</span>
           <span className="text-sm text-muted-foreground ml-auto">by {review.reviewer.display_name}</span>
         </div>
 
-        {/* Target content — clickable link to the reviewed item */}
+        {/* Target content — clickable link */}
         {target && (
           <Link to={targetLink} className="block bg-muted p-4 rounded-md mb-4 hover:bg-muted/80 transition-colors">
             <div className="flex items-center gap-2 mb-1">
@@ -73,20 +87,24 @@ export function ReviewDetail() {
           </Link>
         )}
 
-        {/* Verdict actions */}
-        {isReviewer && review.verdict === "pending" && (
+        {/* Verdict actions — always visible for reviewer/assigned user */}
+        {isReviewer && (
           <div className="border-t border-border pt-4">
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Review comment</label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Review comment (optional for approve, recommended for others)"
-              className="w-full border border-border rounded-md p-3 min-h-[80px] bg-background text-sm mb-3"
-            />
-            <div className="flex gap-2">
-              <button onClick={() => handleVerdict("approved")} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm">Approve</button>
-              <button onClick={() => handleVerdict("changes_requested")} className="bg-yellow-600 text-white px-4 py-2 rounded-md text-sm">Request Changes</button>
-              <button onClick={() => handleVerdict("rejected")} className="bg-red-600 text-white px-4 py-2 rounded-md text-sm">Reject</button>
+            {isPending && (
+              <>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Review comment</label>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Review comment (optional for approve, recommended for others)"
+                  className="w-full border border-border rounded-md p-3 min-h-[80px] bg-background text-sm mb-3"
+                />
+              </>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <ActionButton label="Approve" onClick={() => handleVerdict("approved")} enabled={verdictPerm.enabled} disabledReason={verdictPerm.reason} disabledHint={verdictPerm.hint} variant="green" />
+              <ActionButton label="Request Changes" onClick={() => handleVerdict("changes_requested")} enabled={verdictPerm.enabled} disabledReason={verdictPerm.reason} disabledHint={verdictPerm.hint} variant="blue" />
+              <ActionButton label="Reject" onClick={() => handleVerdict("rejected")} enabled={verdictPerm.enabled} disabledReason={verdictPerm.reason} disabledHint={verdictPerm.hint} variant="danger" />
             </div>
           </div>
         )}
@@ -111,9 +129,7 @@ export function ReviewDetail() {
             <p className="text-sm">{c.body}</p>
           </div>
         ))}
-        {review.comments.length === 0 && (
-          <p className="text-sm text-muted-foreground">No comments yet.</p>
-        )}
+        {review.comments.length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}
       </div>
 
       <div className="flex gap-2">
