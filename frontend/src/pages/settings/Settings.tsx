@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, User } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
 
 const ALL_ROLES = ["admin", "author", "reviewer", "respondent"];
 
@@ -23,6 +24,7 @@ interface UsersResponse {
 }
 
 export function Settings() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,16 @@ export function Settings() {
   }, []);
 
   const toggleRole = async (userId: string, roleName: string, hasIt: boolean) => {
+    // Warn if the current user is removing their own admin role
+    if (hasIt && roleName === "admin" && currentUser && userId === currentUser.id) {
+      const confirmed = window.confirm(
+        "You are about to remove your own Admin role. " +
+        "This will lock you out of Settings and all admin features. " +
+        "Are you sure?"
+      );
+      if (!confirmed) return;
+    }
+
     const key = `${userId}-${roleName}`;
     setPendingAction(key);
     setActionError(null);
