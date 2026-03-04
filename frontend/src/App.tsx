@@ -11,6 +11,7 @@ import { ReviewDetail } from "@/pages/reviews/ReviewDetail";
 import { QuestionReviewQueue } from "@/pages/admin/QuestionReviewQueue";
 import { ServiceAccounts } from "@/pages/admin/ServiceAccounts";
 import { AILogs } from "@/pages/admin/AILogs";
+import { Settings } from "@/pages/settings/Settings";
 
 function App() {
   return (
@@ -26,6 +27,8 @@ function App() {
 
         <Route path="/reviews" element={<ProtectedRoute requiredRole="reviewer"><ReviewQueue /></ProtectedRoute>} />
         <Route path="/reviews/:id" element={<ReviewDetail />} />
+
+        <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
 
         <Route path="/admin/questions" element={<ProtectedRoute requiredRole="admin"><QuestionReviewQueue /></ProtectedRoute>} />
         <Route path="/admin/service-accounts" element={<ProtectedRoute requiredRole="admin"><ServiceAccounts /></ProtectedRoute>} />

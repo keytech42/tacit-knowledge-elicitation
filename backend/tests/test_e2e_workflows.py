@@ -1077,3 +1077,298 @@ class TestVersionDiffing:
         assert versions[1]["version"] == 2
         assert versions[0]["trigger"] == "initial_submit"
         assert versions[1]["trigger"] == "post_approval_update"
+
+
+class TestReviewQueueFiltering:
+    """Tests for filtering reviews by target_type (question vs answer)."""
+
+    async def test_filter_reviews_by_answer_type(
+        self, client: AsyncClient, admin_user: User, author_user: User,
+        respondent_user: User, reviewer_user: User,
+    ):
+        """Filtering reviews by target_type=answer returns only answer reviews."""
+        # Setup: create question, publish it, create answer, submit, create answer review
+        r = await client.post("/api/v1/questions", json={
+            "title": "Filter test Q", "body": "Body",
+        }, headers=auth_header(author_user))
+        q_id = r.json()["id"]
+        await client.post(f"/api/v1/questions/{q_id}/submit", headers=auth_header(author_user))
+        await client.post(f"/api/v1/questions/{q_id}/start-review", headers=auth_header(admin_user))
+        await client.post(f"/api/v1/questions/{q_id}/publish", headers=auth_header(admin_user))
+
+        r = await client.post(f"/api/v1/questions/{q_id}/answers", json={
+            "body": "Answer body",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Create answer review
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.status_code == 201
+        answer_review_id = r.json()["id"]
+
+        # Create question review on a different question
+        r = await client.post("/api/v1/questions", json={
+            "title": "Review target Q", "body": "Body for review",
+        }, headers=auth_header(author_user))
+        q2_id = r.json()["id"]
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "question", "target_id": q2_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.status_code == 201
+        question_review_id = r.json()["id"]
+
+        # Filter by answer type
+        r = await client.get(f"/api/v1/reviews?target_type=answer&reviewer_id={reviewer_user.id}",
+                             headers=auth_header(reviewer_user))
+        assert r.status_code == 200
+        ids = [rev["id"] for rev in r.json()]
+        assert answer_review_id in ids
+        assert question_review_id not in ids
+
+        # Filter by question type
+        r = await client.get(f"/api/v1/reviews?target_type=question&reviewer_id={reviewer_user.id}",
+                             headers=auth_header(reviewer_user))
+        assert r.status_code == 200
+        ids = [rev["id"] for rev in r.json()]
+        assert question_review_id in ids
+        assert answer_review_id not in ids
+
+    async def test_my_queue_returns_both_types(
+        self, client: AsyncClient, admin_user: User, author_user: User,
+        respondent_user: User, reviewer_user: User,
+    ):
+        """my-queue endpoint returns both question and answer reviews."""
+        r = await client.post("/api/v1/questions", json={
+            "title": "Queue test Q", "body": "Body",
+        }, headers=auth_header(author_user))
+        q_id = r.json()["id"]
+        await client.post(f"/api/v1/questions/{q_id}/submit", headers=auth_header(author_user))
+        await client.post(f"/api/v1/questions/{q_id}/start-review", headers=auth_header(admin_user))
+        await client.post(f"/api/v1/questions/{q_id}/publish", headers=auth_header(admin_user))
+
+        r = await client.post(f"/api/v1/questions/{q_id}/answers", json={
+            "body": "Answer for queue test",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Create reviews for both types
+        await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+
+        r2 = await client.post("/api/v1/questions", json={
+            "title": "Queue Q2", "body": "Body2",
+        }, headers=auth_header(author_user))
+        q2_id = r2.json()["id"]
+        await client.post("/api/v1/reviews", json={
+            "target_type": "question", "target_id": q2_id,
+        }, headers=auth_header(reviewer_user))
+
+        # my-queue should include both
+        r = await client.get("/api/v1/reviews/my-queue", headers=auth_header(reviewer_user))
+        assert r.status_code == 200
+        types = {rev["target_type"] for rev in r.json()}
+        assert "answer" in types
+        assert "question" in types
+
+    async def test_question_review_has_question_title(
+        self, client: AsyncClient, author_user: User, reviewer_user: User,
+    ):
+        """Question reviews include the question title in the response."""
+        r = await client.post("/api/v1/questions", json={
+            "title": "Titled Question", "body": "Body",
+        }, headers=auth_header(author_user))
+        q_id = r.json()["id"]
+
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "question", "target_id": q_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.status_code == 201
+        assert r.json()["question_title"] == "Titled Question"
+
+    async def test_answer_review_has_question_title_and_version(
+        self, client: AsyncClient, admin_user: User, author_user: User,
+        respondent_user: User, reviewer_user: User,
+    ):
+        """Answer reviews include question title and answer_version."""
+        r = await client.post("/api/v1/questions", json={
+            "title": "Versioned Q", "body": "Body",
+        }, headers=auth_header(author_user))
+        q_id = r.json()["id"]
+        await client.post(f"/api/v1/questions/{q_id}/submit", headers=auth_header(author_user))
+        await client.post(f"/api/v1/questions/{q_id}/start-review", headers=auth_header(admin_user))
+        await client.post(f"/api/v1/questions/{q_id}/publish", headers=auth_header(admin_user))
+
+        r = await client.post(f"/api/v1/questions/{q_id}/answers", json={
+            "body": "My answer",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        assert r.status_code == 201
+        data = r.json()
+        assert data["question_title"] == "Versioned Q"
+        assert data["answer_version"] == 1
+
+
+class TestMemberManagement:
+    """Tests for user listing and role assignment/removal (admin settings)."""
+
+    async def test_admin_can_list_users(
+        self, client: AsyncClient, admin_user: User, author_user: User,
+        respondent_user: User, reviewer_user: User,
+    ):
+        """Admin can list all users with pagination."""
+        r = await client.get("/api/v1/users", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        data = r.json()
+        assert "users" in data
+        assert "total" in data
+        assert data["total"] >= 4
+
+    async def test_non_admin_cannot_list_users(
+        self, client: AsyncClient, respondent_user: User,
+    ):
+        """Non-admin users cannot list all users."""
+        r = await client.get("/api/v1/users", headers=auth_header(respondent_user))
+        assert r.status_code == 403
+
+    async def test_admin_assigns_role(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+    ):
+        """Admin can assign a new role to a user."""
+        r = await client.get("/api/v1/users/me", headers=auth_header(respondent_user))
+        roles_before = {role["name"] for role in r.json()["roles"]}
+        assert "reviewer" not in roles_before
+
+        r = await client.post(f"/api/v1/users/{respondent_user.id}/roles", json={
+            "role_name": "reviewer",
+        }, headers=auth_header(admin_user))
+        assert r.status_code == 200
+        roles_after = {role["name"] for role in r.json()["roles"]}
+        assert "reviewer" in roles_after
+
+    async def test_admin_removes_role(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+    ):
+        """Admin can remove a role from a user."""
+        # First assign reviewer role
+        r = await client.post(f"/api/v1/users/{respondent_user.id}/roles", json={
+            "role_name": "reviewer",
+        }, headers=auth_header(admin_user))
+        assert r.status_code == 200
+
+        # Then remove it
+        r = await client.delete(f"/api/v1/users/{respondent_user.id}/roles/reviewer",
+                                headers=auth_header(admin_user))
+        assert r.status_code == 200
+        roles_after = {role["name"] for role in r.json()["roles"]}
+        assert "reviewer" not in roles_after
+
+    async def test_assign_duplicate_role_rejected(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+    ):
+        """Assigning a role the user already has returns 409."""
+        r = await client.post(f"/api/v1/users/{respondent_user.id}/roles", json={
+            "role_name": "respondent",
+        }, headers=auth_header(admin_user))
+        assert r.status_code == 409
+
+    async def test_remove_nonexistent_role_rejected(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+    ):
+        """Removing a role the user doesn't have returns 404."""
+        r = await client.delete(f"/api/v1/users/{respondent_user.id}/roles/admin",
+                                headers=auth_header(admin_user))
+        assert r.status_code == 404
+
+    async def test_assign_invalid_role_rejected(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+    ):
+        """Assigning a non-existent role name returns 400."""
+        r = await client.post(f"/api/v1/users/{respondent_user.id}/roles", json={
+            "role_name": "superuser",
+        }, headers=auth_header(admin_user))
+        assert r.status_code == 400
+
+    async def test_non_admin_cannot_assign_roles(
+        self, client: AsyncClient, author_user: User, respondent_user: User,
+    ):
+        """Non-admin users cannot assign roles."""
+        r = await client.post(f"/api/v1/users/{respondent_user.id}/roles", json={
+            "role_name": "reviewer",
+        }, headers=auth_header(author_user))
+        assert r.status_code == 403
+
+    async def test_non_admin_cannot_remove_roles(
+        self, client: AsyncClient, author_user: User, respondent_user: User,
+    ):
+        """Non-admin users cannot remove roles."""
+        r = await client.delete(f"/api/v1/users/{respondent_user.id}/roles/respondent",
+                                headers=auth_header(author_user))
+        assert r.status_code == 403
+
+    async def test_assign_role_to_nonexistent_user(
+        self, client: AsyncClient, admin_user: User,
+    ):
+        """Assigning role to non-existent user returns 404."""
+        fake_id = str(uuid.uuid4())
+        r = await client.post(f"/api/v1/users/{fake_id}/roles", json={
+            "role_name": "reviewer",
+        }, headers=auth_header(admin_user))
+        assert r.status_code == 404
+
+    async def test_user_list_includes_roles(
+        self, client: AsyncClient, admin_user: User,
+    ):
+        """User list includes role information for each user."""
+        r = await client.get("/api/v1/users", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        for user in r.json()["users"]:
+            assert "roles" in user
+            assert isinstance(user["roles"], list)
+            for role in user["roles"]:
+                assert "name" in role
+                assert "id" in role
+
+    async def test_role_change_reflects_in_user_me(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+    ):
+        """After granting reviewer role, /users/me reflects the change."""
+        r = await client.get("/api/v1/users/me", headers=auth_header(respondent_user))
+        roles_before = {role["name"] for role in r.json()["roles"]}
+        assert "reviewer" not in roles_before
+
+        # Admin grants reviewer role
+        await client.post(f"/api/v1/users/{respondent_user.id}/roles", json={
+            "role_name": "reviewer",
+        }, headers=auth_header(admin_user))
+
+        # /users/me should reflect the new role
+        r = await client.get("/api/v1/users/me", headers=auth_header(respondent_user))
+        assert r.status_code == 200
+        roles_after = {role["name"] for role in r.json()["roles"]}
+        assert "reviewer" in roles_after
+
+    async def test_user_list_pagination(
+        self, client: AsyncClient, admin_user: User, author_user: User,
+        respondent_user: User, reviewer_user: User,
+    ):
+        """User list supports pagination with skip/limit."""
+        r = await client.get("/api/v1/users?skip=0&limit=2", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["users"]) <= 2
+        assert data["total"] >= 4
+
+        r = await client.get("/api/v1/users?skip=2&limit=2", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        page2 = r.json()
+        assert len(page2["users"]) <= 2
