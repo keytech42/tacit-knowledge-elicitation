@@ -31,14 +31,19 @@ user_roles = Table(
 class Role(UUIDMixin, Base):
     __tablename__ = "roles"
 
-    name: Mapped[str] = mapped_column(SAEnum(RoleName, name="rolename"), unique=True)
+    name: Mapped[str] = mapped_column(
+        SAEnum(RoleName, name="rolename", values_callable=lambda e: [x.value for x in e]),
+        unique=True,
+    )
     permissions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class User(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
-    user_type: Mapped[str] = mapped_column(SAEnum(UserType, name="usertype"))
+    user_type: Mapped[str] = mapped_column(
+        SAEnum(UserType, name="usertype", values_callable=lambda e: [x.value for x in e])
+    )
     external_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     display_name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)

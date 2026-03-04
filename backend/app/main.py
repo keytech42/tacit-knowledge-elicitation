@@ -12,9 +12,10 @@ from app.api.v1.router import api_router
 from app.middleware.ai_logging import AILoggingMiddleware
 
 
-async def seed_roles():
+async def seed_roles(session_factory=None):
     """Seed default roles if they don't exist."""
-    async with async_session() as session:
+    factory = session_factory or async_session
+    async with factory() as session:
         for role_name in RoleName:
             existing = await session.execute(
                 select(Role).where(Role.name == role_name.value)

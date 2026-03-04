@@ -23,11 +23,16 @@ class ReviewVerdict(str, enum.Enum):
 class Review(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "reviews"
 
-    target_type: Mapped[str] = mapped_column(SAEnum(ReviewTargetType, name="reviewtargettype"))
+    target_type: Mapped[str] = mapped_column(
+        SAEnum(ReviewTargetType, name="reviewtargettype", values_callable=lambda e: [x.value for x in e])
+    )
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     reviewer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     assigned_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    verdict: Mapped[str] = mapped_column(SAEnum(ReviewVerdict, name="reviewverdict"), default=ReviewVerdict.PENDING)
+    verdict: Mapped[str] = mapped_column(
+        SAEnum(ReviewVerdict, name="reviewverdict", values_callable=lambda e: [x.value for x in e]),
+        default=ReviewVerdict.PENDING,
+    )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     reviewer = relationship("User", foreign_keys=[reviewer_id], lazy="selectin")
