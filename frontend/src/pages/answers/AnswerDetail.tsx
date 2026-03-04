@@ -57,16 +57,24 @@ export function AnswerDetail() {
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState("");
   const [error, setError] = useState("");
-  const [diffFrom, setDiffFrom] = useState<number | null>(null);
-  const [diffTo, setDiffTo] = useState<number | null>(null);
+  const [diffFrom, setDiffFrom] = useState<number>(0);
+  const [diffTo, setDiffTo] = useState<number>(0);
   const [diffText, setDiffText] = useState<string | null>(null);
   const [showAssignReview, setShowAssignReview] = useState(false);
+  const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const load = () => {
     if (!id) return;
     api.get<Answer>(`/answers/${id}`).then((a) => { setAnswer(a); setEditBody(a.body); });
-    api.get<AnswerRevision[]>(`/answers/${id}/versions`).then(setRevisions);
+    api.get<AnswerRevision[]>(`/answers/${id}/versions`).then((revs) => {
+      setRevisions(revs);
+      // Auto-select last two versions for diff
+      if (revs.length >= 2) {
+        setDiffFrom(revs[revs.length - 2].version);
+        setDiffTo(revs[revs.length - 1].version);
+      }
+    });
     api.get<Review[]>(`/reviews?target_type=answer&target_id=${id}`).then(setReviews);
   };
 
@@ -117,7 +125,7 @@ export function AnswerDetail() {
   };
 
   const handleViewDiff = async () => {
-    if (!id || diffFrom == null || diffTo == null) return;
+    if (!id || !diffFrom || !diffTo) return;
     try {
       const result = await api.get<{ diff: string }>(`/answers/${id}/diff?from=${diffFrom}&to=${diffTo}`);
       setDiffText(result.diff);
@@ -224,13 +232,22 @@ export function AnswerDetail() {
       <h2 className="font-semibold text-lg mb-3">Version History</h2>
       <div className="space-y-2 mb-4">
         {revisions.map((rev) => (
-          <div key={rev.id} className="bg-background p-3 rounded border border-border text-sm">
-            <div className="flex items-center gap-3">
+          <div key={rev.id} className="bg-background rounded border border-border text-sm">
+            <button
+              onClick={() => setExpandedVersion(expandedVersion === rev.version ? null : rev.version)}
+              className="flex items-center gap-3 w-full p-3 text-left hover:bg-muted/50"
+            >
               <span className="font-mono font-medium">v{rev.version}</span>
               <span className="text-xs bg-secondary px-2 py-0.5 rounded">{rev.trigger.replace(/_/g, " ")}</span>
               <span className="text-xs text-muted-foreground">{rev.created_by.display_name}</span>
               <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleString()}</span>
-            </div>
+              <span className="text-muted-foreground text-xs">{expandedVersion === rev.version ? "\u25B2" : "\u25BC"}</span>
+            </button>
+            {expandedVersion === rev.version && (
+              <div className="px-3 pb-3 border-t border-border">
+                <p className="whitespace-pre-wrap text-foreground/70 text-xs mt-2">{rev.body}</p>
+              </div>
+            )}
           </div>
         ))}
         {revisions.length === 0 && <p className="text-sm text-muted-foreground">No revisions yet.</p>}
@@ -241,18 +258,39 @@ export function AnswerDetail() {
         <div className="bg-background p-4 rounded-lg border border-border mb-6">
           <h3 className="text-sm font-semibold mb-2">Compare Versions</h3>
           <div className="flex items-center gap-2 mb-3">
-            <select value={diffFrom ?? ""} onChange={(e) => setDiffFrom(Number(e.target.value))} className="border border-border rounded px-2 py-1 text-sm bg-background">
-              <option value="">From...</option>
+            <select value={diffFrom} onChange={(e) => setDiffFrom(Number(e.target.value))} className="border border-border rounded px-2 py-1 text-sm bg-background">
+              <option value={0}>From...</option>
               {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
             </select>
             <span className="text-muted-foreground text-sm">&rarr;</span>
-            <select value={diffTo ?? ""} onChange={(e) => setDiffTo(Number(e.target.value))} className="border border-border rounded px-2 py-1 text-sm bg-background">
-              <option value="">To...</option>
+            <select value={diffTo} onChange={(e) => setDiffTo(Number(e.target.value))} className="border border-border rounded px-2 py-1 text-sm bg-background">
+              <option value={0}>To...</option>
               {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
             </select>
-            <button onClick={handleViewDiff} disabled={diffFrom == null || diffTo == null || diffFrom === diffTo} className="bg-secondary text-secondary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">View Diff</button>
+            <button onClick={handleViewDiff} disabled={!diffFrom || !diffTo || diffFrom === diffTo} className="bg-secondary text-secondary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">View Diff</button>
           </div>
-          {diffText !== null && <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap font-mono">{diffText}</pre>}
+          {diffText !== null && (
+            <div className="bg-muted rounded text-xs overflow-x-auto font-mono border border-border">
+              {diffText.split("\n").map((line, i) => {
+                let bg = "";
+                let fg = "text-foreground/70";
+                if (line.startsWith("+++") || line.startsWith("---")) {
+                  bg = "bg-muted"; fg = "text-muted-foreground font-semibold";
+                } else if (line.startsWith("@@")) {
+                  bg = "bg-blue-500/10"; fg = "text-blue-600 dark:text-blue-400";
+                } else if (line.startsWith("+")) {
+                  bg = "bg-green-500/15"; fg = "text-green-700 dark:text-green-400";
+                } else if (line.startsWith("-")) {
+                  bg = "bg-red-500/15"; fg = "text-red-700 dark:text-red-400";
+                }
+                return (
+                  <div key={i} className={`px-3 py-0.5 ${bg} ${fg} whitespace-pre-wrap`}>
+                    {line || "\u00a0"}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

@@ -701,6 +701,106 @@ class TestQuestionTerminalStates:
         assert r.status_code == 409
 
 
+class TestQuestionDelete:
+    """Test question deletion with cascade cleanup."""
+
+    async def test_delete_draft_question_as_author(
+        self, client: AsyncClient, author_user: User,
+    ):
+        """Author can delete their own draft question."""
+        r = await client.post("/api/v1/questions", json={
+            "title": "To Delete", "body": "Will be removed",
+        }, headers=auth_header(author_user))
+        assert r.status_code == 201
+        q_id = r.json()["id"]
+
+        # Delete
+        r = await client.delete(f"/api/v1/questions/{q_id}", headers=auth_header(author_user))
+        assert r.status_code == 204
+
+        # Verify gone
+        r = await client.get(f"/api/v1/questions/{q_id}", headers=auth_header(author_user))
+        assert r.status_code == 404
+
+    async def test_delete_question_with_answers_as_admin(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db,
+    ):
+        """Admin deletes a published question that has answers, revisions, and reviews."""
+        # Create published question
+        q = Question(
+            title="Full Question", body="With children",
+            created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+            review_policy={"min_approvals": 1},
+        )
+        db.add(q)
+        await db.flush()
+
+        # Create answer, submit, review, approve
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={
+            "body": "Answer body",
+        }, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        r = await client.post("/api/v1/reviews", json={
+            "target_type": "answer", "target_id": a_id,
+        }, headers=auth_header(reviewer_user))
+        review_id = r.json()["id"]
+
+        await client.patch(f"/api/v1/reviews/{review_id}", json={
+            "verdict": "approved",
+        }, headers=auth_header(reviewer_user))
+
+        # Edit and revise to create v2
+        await client.patch(f"/api/v1/answers/{a_id}", json={
+            "body": "Updated answer v2",
+        }, headers=auth_header(admin_user))
+        await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
+
+        # Admin deletes the question — should cascade through answers, revisions
+        r = await client.delete(f"/api/v1/questions/{q.id}", headers=auth_header(admin_user))
+        assert r.status_code == 204
+
+        # Verify question gone
+        r = await client.get(f"/api/v1/questions/{q.id}", headers=auth_header(admin_user))
+        assert r.status_code == 404
+
+        # Verify answer gone
+        r = await client.get(f"/api/v1/answers/{a_id}", headers=auth_header(admin_user))
+        assert r.status_code == 404
+
+    async def test_author_cannot_delete_submitted_question(
+        self, client: AsyncClient, author_user: User,
+    ):
+        """Author cannot delete a question once it's submitted (only draft)."""
+        r = await client.post("/api/v1/questions", json={
+            "title": "Submitted Q", "body": "Body",
+        }, headers=auth_header(author_user))
+        q_id = r.json()["id"]
+
+        # Submit → proposed
+        await client.post(f"/api/v1/questions/{q_id}/submit", headers=auth_header(author_user))
+
+        # Author tries to delete → 409
+        r = await client.delete(f"/api/v1/questions/{q_id}", headers=auth_header(author_user))
+        assert r.status_code == 409
+
+    async def test_non_owner_cannot_delete_question(
+        self, client: AsyncClient, author_user: User, respondent_user: User,
+    ):
+        """Non-owner, non-admin cannot delete a question."""
+        r = await client.post("/api/v1/questions", json={
+            "title": "Not yours", "body": "Body",
+        }, headers=auth_header(author_user))
+        q_id = r.json()["id"]
+
+        r = await client.delete(f"/api/v1/questions/{q_id}", headers=auth_header(respondent_user))
+        assert r.status_code == 403
+
+
 class TestVersionDiffing:
     """Test answer version history and diffing."""
 

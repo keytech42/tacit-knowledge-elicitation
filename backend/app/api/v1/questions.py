@@ -1,11 +1,12 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import distinct, func, select
+from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, require_role
 from app.database import get_db
+from app.models.answer import Answer, AnswerCollaborator, AnswerRevision
 from app.models.question import AnswerOption, Question, QuestionQualityFeedback, QuestionStatus
 from app.models.user import RoleName, User
 from app.schemas.question import (
@@ -111,7 +112,15 @@ async def delete_question(question_id: uuid.UUID, current_user: CurrentUser, db:
             raise HTTPException(status_code=403, detail="Not your question")
         if question.status != QuestionStatus.DRAFT.value:
             raise HTTPException(status_code=409, detail="Can only delete draft questions")
+    # Cascade-delete child records in FK-safe order
+    answer_ids = select(Answer.id).where(Answer.question_id == question_id)
+    await db.execute(delete(AnswerRevision).where(AnswerRevision.answer_id.in_(answer_ids)))
+    await db.execute(delete(AnswerCollaborator).where(AnswerCollaborator.answer_id.in_(answer_ids)))
+    await db.execute(delete(Answer).where(Answer.question_id == question_id))
+    await db.execute(delete(AnswerOption).where(AnswerOption.question_id == question_id))
+    await db.execute(delete(QuestionQualityFeedback).where(QuestionQualityFeedback.question_id == question_id))
     await db.delete(question)
+    await db.flush()
 
 
 @router.post("/{question_id}/submit", response_model=QuestionResponse)
