@@ -110,6 +110,7 @@ export function Layout() {
                 <NavLink to="/admin/questions">Admin Queue</NavLink>
                 <NavLink to="/admin/service-accounts">Service Accounts</NavLink>
                 <NavLink to="/admin/ai-logs">AI Logs</NavLink>
+                <NavLink to="/admin/ai">AI Controls</NavLink>
               </>
             )}
           </div>

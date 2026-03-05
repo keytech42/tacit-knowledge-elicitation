@@ -11,6 +11,7 @@ import { ReviewDetail } from "@/pages/reviews/ReviewDetail";
 import { QuestionReviewQueue } from "@/pages/admin/QuestionReviewQueue";
 import { ServiceAccounts } from "@/pages/admin/ServiceAccounts";
 import { AILogs } from "@/pages/admin/AILogs";
+import { AIControls } from "@/pages/admin/AIControls";
 import { Settings } from "@/pages/settings/Settings";
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
         <Route path="/admin/questions" element={<ProtectedRoute requiredRole="admin"><QuestionReviewQueue /></ProtectedRoute>} />
         <Route path="/admin/service-accounts" element={<ProtectedRoute requiredRole="admin"><ServiceAccounts /></ProtectedRoute>} />
         <Route path="/admin/ai-logs" element={<ProtectedRoute requiredRole="admin"><AILogs /></ProtectedRoute>} />
+        <Route path="/admin/ai" element={<ProtectedRoute requiredRole="admin"><AIControls /></ProtectedRoute>} />
       </Route>
     </Routes>
   );

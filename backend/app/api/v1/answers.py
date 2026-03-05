@@ -35,6 +35,8 @@ from app.services.answer import (
     revise_approved_answer,
     submit_answer,
 )
+from app.services import worker_client
+from app.services.embeddings import update_answer_embedding
 
 router = APIRouter(tags=["answers"])
 
@@ -182,11 +184,18 @@ async def submit_answer_endpoint(
         # If reviewers were reset, move directly to under_review
         if prev_reviews:
             answer.status = AnswerStatus.UNDER_REVIEW.value
+        await update_answer_embedding(db, answer)
         await db.flush()
         await db.refresh(answer)
     else:
         revision = submit_answer(answer, current_user)
         db.add(revision)
+        await update_answer_embedding(db, answer)
+        await db.flush()
+        await db.refresh(answer)
+
+    # Fire-and-forget: trigger AI review assist
+    await worker_client.trigger_review_assist(answer.id)
 
     return answer
 

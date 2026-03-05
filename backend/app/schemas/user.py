@@ -35,6 +35,7 @@ class ServiceAccountCreate(BaseModel):
     display_name: str
     model_id: str | None = None
     system_version: str | None = None
+    roles: list[str] | None = None  # e.g. ["author", "reviewer"]; defaults to ["author"]
 
 
 class ServiceAccountResponse(BaseModel):
