@@ -322,9 +322,9 @@ export function QuestionDetail() {
           {scaffoldTask && (
             <div className="mt-2 text-xs">
               <span className={`inline-block px-2 py-0.5 rounded-full ${
-                scaffoldTask.status === "completed" ? "bg-green-100 text-green-700" :
-                scaffoldTask.status === "failed" ? "bg-red-100 text-red-700" :
-                "bg-blue-100 text-blue-700"
+                scaffoldTask.status === "completed" ? "bg-muted text-foreground" :
+                scaffoldTask.status === "failed" ? "bg-destructive/10 text-destructive" :
+                "bg-muted text-muted-foreground"
               }`}>{scaffoldTask.status}</span>
               {scaffoldTask.error && <span className="text-destructive ml-2">{scaffoldTask.error}</span>}
             </div>
@@ -376,7 +376,7 @@ export function QuestionDetail() {
           <h2 className="font-semibold mb-1">Submit Your Answer</h2>
 
           {/* Answer templates */}
-          {question.show_suggestions && question.answer_options.length > 0 && (
+          {(question.show_suggestions || isAdmin) && question.answer_options.length > 0 && (
             <div className="mb-5">
               <p className="text-xs text-muted-foreground mb-3">Select a template to start with, or write from scratch</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

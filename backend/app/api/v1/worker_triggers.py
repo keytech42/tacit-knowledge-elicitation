@@ -25,6 +25,9 @@ class ScaffoldOptionsRequest(BaseModel):
     question_id: uuid.UUID
     num_options: int = 4
 
+    def capped_options(self) -> int:
+        return min(self.num_options, 4)
+
 
 class ReviewAssistRequest(BaseModel):
     answer_id: uuid.UUID
@@ -77,7 +80,7 @@ async def scaffold_options(
     _require_worker()
     result = await worker_client.trigger_scaffold_options(
         question_id=request.question_id,
-        num_options=request.num_options,
+        num_options=request.capped_options(),
     )
     if not result:
         raise HTTPException(status_code=502, detail="Worker did not respond")

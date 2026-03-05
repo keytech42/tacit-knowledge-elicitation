@@ -54,6 +54,12 @@ class PlatformClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def update_question(self, question_id: uuid.UUID, data: dict) -> dict:
+        async with self._client() as client:
+            resp = await client.patch(f"/api/v1/questions/{question_id}", json=data)
+            resp.raise_for_status()
+            return resp.json()
+
     async def create_answer_options(self, question_id: uuid.UUID, options: list[dict]) -> list[dict]:
         async with self._client() as client:
             resp = await client.post(
@@ -92,6 +98,11 @@ class PlatformClient:
             resp = await client.get("/api/v1/questions/categories")
             resp.raise_for_status()
             return resp.json()
+
+    async def delete_answer_options(self, question_id: uuid.UUID) -> None:
+        async with self._client() as client:
+            resp = await client.delete(f"/api/v1/questions/{question_id}/options")
+            resp.raise_for_status()
 
     async def get_answer_options(self, question_id: uuid.UUID) -> list[dict]:
         async with self._client() as client:
