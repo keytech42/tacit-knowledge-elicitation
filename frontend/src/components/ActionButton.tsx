@@ -1,11 +1,11 @@
 const VARIANT_CLASSES: Record<string, string> = {
   primary: "bg-primary text-primary-foreground",
   secondary: "bg-secondary text-secondary-foreground",
-  danger: "bg-red-600 text-white",
-  green: "bg-green-600 text-white",
-  blue: "bg-blue-600 text-white",
-  purple: "bg-purple-600 text-white",
-  gray: "bg-gray-500 text-white",
+  danger: "bg-destructive text-destructive-foreground",
+  green: "bg-primary text-primary-foreground",
+  blue: "bg-primary/80 text-primary-foreground",
+  purple: "bg-primary text-primary-foreground",
+  gray: "bg-muted text-muted-foreground",
 };
 
 interface ActionButtonProps {
@@ -44,7 +44,7 @@ export function ActionButton({
     <span className={`relative group inline-block ${className}`}>
       <button
         disabled
-        className={`px-3 py-1.5 rounded text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200`}
+        className={`px-3 py-1.5 rounded text-sm font-medium bg-muted text-muted-foreground/50 cursor-not-allowed border border-border`}
         aria-disabled="true"
         aria-describedby={disabledReason ? undefined : undefined}
       >

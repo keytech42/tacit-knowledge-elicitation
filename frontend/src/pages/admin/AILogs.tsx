@@ -58,7 +58,7 @@ export function AILogs() {
                 <td className="py-2 pr-4">{log.service_user.display_name}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{log.endpoint}</td>
                 <td className="py-2 pr-4">
-                  <span className={`text-xs px-2 py-0.5 rounded ${log.response_status < 400 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded ${log.response_status < 400 ? "bg-secondary text-secondary-foreground" : "bg-destructive/10 text-destructive"}`}>
                     {log.response_status}
                   </span>
                 </td>
@@ -67,7 +67,7 @@ export function AILogs() {
                   {log.feedback_rating ? (
                     <span className="text-xs">{"★".repeat(log.feedback_rating)}{"☆".repeat(5 - log.feedback_rating)}</span>
                   ) : (
-                    <button onClick={() => setFeedbackId(log.id)} className="text-xs text-blue-600 hover:underline">Add feedback</button>
+                    <button onClick={() => setFeedbackId(log.id)} className="text-xs text-primary hover:underline">Add feedback</button>
                   )}
                 </td>
                 <td className="py-2 text-xs text-muted-foreground">{new Date(log.created_at).toLocaleString()}</td>

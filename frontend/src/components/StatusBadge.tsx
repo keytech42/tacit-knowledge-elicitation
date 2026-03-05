@@ -1,20 +1,20 @@
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   // Question statuses
-  draft: { label: "Draft", color: "bg-gray-200 text-gray-700" },
-  proposed: { label: "Proposed", color: "bg-yellow-100 text-yellow-800" },
-  in_review: { label: "In Review", color: "bg-blue-100 text-blue-800" },
-  published: { label: "Published", color: "bg-green-100 text-green-800" },
-  closed: { label: "Closed", color: "bg-red-100 text-red-800" },
-  archived: { label: "Archived", color: "bg-gray-100 text-gray-500" },
+  draft: { label: "Draft", color: "bg-muted text-muted-foreground" },
+  proposed: { label: "Proposed", color: "bg-secondary text-secondary-foreground border border-border" },
+  in_review: { label: "In Review", color: "bg-primary/10 text-primary border border-primary/20" },
+  published: { label: "Published", color: "bg-primary text-primary-foreground" },
+  closed: { label: "Closed", color: "bg-destructive/10 text-destructive border border-destructive/20" },
+  archived: { label: "Archived", color: "bg-muted text-muted-foreground/60" },
   // Answer statuses
-  submitted: { label: "Submitted", color: "bg-yellow-100 text-yellow-800" },
-  under_review: { label: "Under Review", color: "bg-blue-100 text-blue-800" },
-  approved: { label: "Approved", color: "bg-green-100 text-green-800" },
-  revision_requested: { label: "Revision Requested", color: "bg-orange-100 text-orange-800" },
-  rejected: { label: "Rejected", color: "bg-red-100 text-red-800" },
+  submitted: { label: "Submitted", color: "bg-secondary text-secondary-foreground border border-border" },
+  under_review: { label: "Under Review", color: "bg-primary/10 text-primary border border-primary/20" },
+  approved: { label: "Approved", color: "bg-primary text-primary-foreground" },
+  revision_requested: { label: "Revision Requested", color: "bg-destructive/10 text-destructive border border-destructive/20" },
+  rejected: { label: "Rejected", color: "bg-destructive text-destructive-foreground" },
   // Review verdicts
-  pending: { label: "Pending", color: "bg-gray-200 text-gray-700" },
-  changes_requested: { label: "Changes Requested", color: "bg-yellow-100 text-yellow-800" },
+  pending: { label: "Pending", color: "bg-muted text-muted-foreground" },
+  changes_requested: { label: "Changes Requested", color: "bg-secondary text-secondary-foreground border border-border" },
 };
 
 /** Workflow hints shown below status badges */
@@ -40,7 +40,7 @@ export function statusLabel(status: string): string {
 }
 
 export function statusColor(status: string): string {
-  return STATUS_CONFIG[status]?.color ?? "bg-gray-100 text-gray-600";
+  return STATUS_CONFIG[status]?.color ?? "bg-muted text-muted-foreground";
 }
 
 interface StatusBadgeProps {
