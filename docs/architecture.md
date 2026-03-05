@@ -86,7 +86,7 @@ PostgreSQL 16 with the `asyncpg` driver. All primary keys are UUIDs. Timestamps 
 
 ### Migrations
 
-Alembic manages schema migrations. The initial migration (`001_initial_schema.py`) creates all 12 tables and 8 PostgreSQL enum types.
+Alembic manages schema migrations. The initial migration (`001_initial_schema.py`) creates 13 tables and 8 PostgreSQL enum types. Subsequent migrations add fields: `002_add_review_answer_version.py` (review → answer version tracking) and `003_add_revision_content_hash.py` (content deduplication via SHA-256 hash).
 
 Migrations run automatically on `docker compose up` via the api service command: `alembic upgrade head && uvicorn ...`.
 

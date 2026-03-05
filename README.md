@@ -41,7 +41,7 @@ docker compose exec api pytest tests/test_auth.py -xvs
 ## Authentication
 
 - **Production**: Google OAuth — set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`
-- **Local dev**: type `test` at the login prompt (available when `GOOGLE_CLIENT_ID` is empty)
+- **Local dev**: click **Sign in as Test User** (available when `DEV_LOGIN_ENABLED` is true, which is the default)
 - **Service accounts**: authenticate via `X-API-Key` header
 
 ## Configuration
@@ -56,6 +56,7 @@ See `.env.example` for all environment variables. Key settings:
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
 | `GOOGLE_REDIRECT_URI` | OAuth redirect URI (must match GCP config) | empty |
 | `BOOTSTRAP_ADMIN_EMAIL` | Email that auto-receives all roles on first login | empty |
+| `DEV_LOGIN_ENABLED` | Enable dev login endpoint | `true` |
 | `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:5173"]` |
 
 ## Workflow State Machines
