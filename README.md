@@ -51,7 +51,7 @@ See `.env.example` for all environment variables. Key settings:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://app:devpassword@db:5432/knowledge_elicitation` |
-| `JWT_SECRET` | Token signing key | `dev-secret-change-me` |
+| `JWT_SECRET` | Token signing key (min 32 bytes) | `dev-secret-change-me-at-least-32b` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID (empty = dev login enabled) | empty |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
 | `GOOGLE_REDIRECT_URI` | OAuth redirect URI (must match GCP config) | empty |
