@@ -61,6 +61,28 @@ class QuestionListResponse(BaseModel):
     total: int
 
 
+class AdminQueueItem(BaseModel):
+    id: uuid.UUID
+    title: str
+    body: str
+    category: str | None = None
+    status: str
+    quality_score: float | None = None
+    created_by: UserResponse
+    created_at: datetime
+    updated_at: datetime
+    published_at: datetime | None = None
+    answer_count: int = 0
+    model_config = {"from_attributes": True}
+
+
+class AdminQueueResponse(BaseModel):
+    proposed: list[AdminQueueItem] = []
+    in_review: list[AdminQueueItem] = []
+    published: list[AdminQueueItem] = []
+    closed: list[AdminQueueItem] = []
+
+
 class AnswerOptionCreate(BaseModel):
     body: str
     display_order: int = 0

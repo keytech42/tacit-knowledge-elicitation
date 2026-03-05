@@ -45,7 +45,7 @@ async def list_ai_logs(
 async def export_ai_logs(
     current_user: User = require_role(RoleName.ADMIN),
     db: AsyncSession = Depends(get_db),
-    format: str = Query("json", regex="^(json|csv)$"),
+    format: str = Query("json", pattern="^(json|csv)$"),
 ):
     result = await db.execute(select(AIInteractionLog).order_by(AIInteractionLog.created_at.desc()))
     logs = result.scalars().all()

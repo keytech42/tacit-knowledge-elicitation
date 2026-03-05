@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://app:devpassword@db:5432/knowledge_elicitation"
-    JWT_SECRET: str = "dev-secret-change-me"
+    JWT_SECRET: str = "dev-secret-change-me-at-least-32b"
     JWT_EXPIRY_HOURS: int = 24
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
