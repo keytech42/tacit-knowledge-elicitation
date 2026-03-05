@@ -166,7 +166,7 @@ async def submit_answer_endpoint(
         db.add(revision)
         await db.flush()
 
-        # Auto-reassign reviewers who requested changes on the previous version
+        # Reset reviews that requested changes: same reviewer re-reviews the new version
         prev_reviews_result = await db.execute(
             select(Review).where(
                 Review.target_type == ReviewTargetType.ANSWER.value,
@@ -175,17 +175,13 @@ async def submit_answer_endpoint(
                 Review.verdict == ReviewVerdict.CHANGES_REQUESTED.value,
             )
         )
-        prev_reviewers = prev_reviews_result.scalars().all()
-        for prev_review in prev_reviewers:
-            new_review = Review(
-                target_type=ReviewTargetType.ANSWER.value,
-                target_id=answer.id,
-                reviewer_id=prev_review.reviewer_id,
-                answer_version=answer.current_version,
-            )
-            db.add(new_review)
-        # If reviewers were auto-reassigned, move directly to under_review
-        if prev_reviewers:
+        prev_reviews = prev_reviews_result.scalars().all()
+        for review in prev_reviews:
+            review.verdict = ReviewVerdict.PENDING.value
+            review.answer_version = answer.current_version
+            review.comment = None
+        # If reviewers were reset, move directly to under_review
+        if prev_reviews:
             answer.status = AnswerStatus.UNDER_REVIEW.value
         await db.flush()
         await db.refresh(answer)
