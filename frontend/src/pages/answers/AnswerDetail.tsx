@@ -254,7 +254,7 @@ export function AnswerDetail() {
               <button
                 onClick={handleAiReview}
                 disabled={aiReviewLoading}
-                className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 ml-auto"
+                className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 ml-auto"
               >
                 {aiReviewLoading ? "Running..." : "AI Review"}
               </button>

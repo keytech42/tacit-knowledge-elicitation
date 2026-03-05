@@ -77,6 +77,7 @@ export function QuestionDetail() {
   const [feedbackRating, setFeedbackRating] = useState(0);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
 
   // AI features
   const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
@@ -140,9 +141,30 @@ export function QuestionDetail() {
       const answer = await api.post<Answer>(`/questions/${id}/answers`, { body: newAnswer });
       await api.post<Answer>(`/answers/${answer.id}/submit`);
       setNewAnswer("");
+      setSelectedOptionId(null);
       loadQuestion();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submit failed");
+    }
+  };
+
+  const handleOptionClick = (optId: string, optBody: string) => {
+    if (selectedOptionId === optId) {
+      setSelectedOptionId(null);
+      setNewAnswer("");
+    } else {
+      setSelectedOptionId(optId);
+      setNewAnswer(optBody);
+    }
+  };
+
+  const handleAnswerChange = (value: string) => {
+    setNewAnswer(value);
+    if (selectedOptionId && question) {
+      const selectedOpt = question.answer_options.find((o) => o.id === selectedOptionId);
+      if (selectedOpt && value !== selectedOpt.body) {
+        setSelectedOptionId(null);
+      }
     }
   };
 
@@ -285,14 +307,14 @@ export function QuestionDetail() {
             <button
               onClick={handleScaffoldOptions}
               disabled={scaffoldLoading}
-              className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50"
+              className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50"
             >
               {scaffoldLoading ? "Generating..." : "Generate Answer Options"}
             </button>
             <button
               onClick={handleGetRecommendations}
               disabled={recLoading}
-              className="bg-purple-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50"
+              className="border border-border text-foreground px-3 py-1.5 rounded text-sm hover:bg-muted disabled:opacity-50"
             >
               {recLoading ? "Loading..." : "Recommend Respondents"}
             </button>
@@ -351,19 +373,60 @@ export function QuestionDetail() {
       {/* Answer form */}
       {question.status === "published" && (
         <div className="bg-background p-6 rounded-lg border border-border mb-6">
-          <h2 className="font-semibold mb-3">Submit Your Answer</h2>
+          <h2 className="font-semibold mb-1">Submit Your Answer</h2>
+
+          {/* Answer templates */}
           {question.show_suggestions && question.answer_options.length > 0 && (
-            <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-2">Suggested starting points:</p>
-              <div className="space-y-2">
-                {question.answer_options.map((opt) => (
-                  <button key={opt.id} onClick={() => setNewAnswer(opt.body)} className="block w-full text-left p-3 border border-border rounded-md hover:bg-muted text-sm">{opt.body}</button>
-                ))}
+            <div className="mb-5">
+              <p className="text-xs text-muted-foreground mb-3">Select a template to start with, or write from scratch</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {question.answer_options.map((opt, idx) => {
+                  const isSelected = selectedOptionId === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => handleOptionClick(opt.id, opt.body)}
+                      className={`group relative text-left rounded-lg border transition-all duration-200 ${
+                        isSelected
+                          ? "border-primary ring-1 ring-primary"
+                          : "border-border hover:border-foreground/20"
+                      }`}
+                    >
+                      <div className="p-3">
+                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {idx + 1}
+                        </span>
+                        <div className="relative overflow-hidden max-h-[5rem] group-hover:max-h-[20rem] transition-[max-height] duration-300 ease-in-out">
+                          <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">{opt.body}</p>
+                        </div>
+                        {/* Gradient fade — hidden on hover */}
+                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent group-hover:opacity-0 transition-opacity duration-200 pointer-events-none" />
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
-          <textarea value={newAnswer} onChange={(e) => setNewAnswer(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[120px] bg-background text-sm" placeholder="Write your answer..." />
-          <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="mt-3 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50">Submit Answer</button>
+
+          <textarea
+            value={newAnswer}
+            onChange={(e) => handleAnswerChange(e.target.value)}
+            className="w-full border border-border rounded-lg p-3 min-h-[120px] bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+            placeholder="Write your answer..."
+          />
+          <div className="flex items-center justify-between mt-3">
+            <div>
+              {selectedOptionId && (
+                <span className="text-xs text-muted-foreground">Editing from template — changes are saved to your answer</span>
+              )}
+            </div>
+            <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50">
+              Submit Answer
+            </button>
+          </div>
         </div>
       )}
 
