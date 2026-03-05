@@ -12,10 +12,10 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  admin: "bg-destructive/10 text-destructive border border-destructive/20",
-  author: "bg-primary/10 text-primary border border-primary/20",
-  reviewer: "bg-secondary text-secondary-foreground border border-border",
-  respondent: "bg-muted text-muted-foreground border border-border",
+  admin: "bg-status-red/10 text-status-red border border-status-red/20",
+  author: "bg-status-blue/10 text-status-blue border border-status-blue/20",
+  reviewer: "bg-status-amber/10 text-status-amber border border-status-amber/20",
+  respondent: "bg-status-green/10 text-status-green border border-status-green/20",
 };
 
 interface UsersResponse {

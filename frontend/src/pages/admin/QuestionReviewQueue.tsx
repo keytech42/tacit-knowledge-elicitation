@@ -177,9 +177,9 @@ export function QuestionReviewQueue() {
                               }
                             }}
                             className={`px-3 py-1.5 rounded text-sm font-medium disabled:opacity-50 ${
-                              a.variant === "green" ? "bg-primary text-primary-foreground hover:bg-primary/90" :
-                              a.variant === "blue" ? "border border-border bg-secondary text-secondary-foreground hover:bg-muted" :
-                              a.variant === "danger" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" :
+                              a.variant === "green" ? "bg-status-green text-white hover:bg-status-green/90" :
+                              a.variant === "blue" ? "bg-status-blue text-white hover:bg-status-blue/90" :
+                              a.variant === "danger" ? "bg-status-red text-white hover:bg-status-red/90" :
                               "bg-muted text-muted-foreground hover:bg-muted/80"
                             } transition-colors`}
                           >

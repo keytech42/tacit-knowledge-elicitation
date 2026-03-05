@@ -58,7 +58,7 @@ export function AILogs() {
                 <td className="py-2 pr-4">{log.service_user.display_name}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{log.endpoint}</td>
                 <td className="py-2 pr-4">
-                  <span className={`text-xs px-2 py-0.5 rounded ${log.response_status < 400 ? "bg-secondary text-secondary-foreground" : "bg-destructive/10 text-destructive"}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded ${log.response_status < 400 ? "bg-status-green/10 text-status-green" : "bg-status-red/10 text-status-red"}`}>
                     {log.response_status}
                   </span>
                 </td>
