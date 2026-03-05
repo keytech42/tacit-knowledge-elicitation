@@ -3,15 +3,7 @@ import { Link } from "react-router-dom";
 import { api, Question } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { StatusBadge, statusLabel, statusColor } from "@/components/StatusBadge";
-
-const STATUS_BORDER_COLORS: Record<string, string> = {
-  draft: "border-status-gray/30",
-  proposed: "border-status-amber/30",
-  in_review: "border-status-blue/30",
-  published: "border-status-green/30",
-  closed: "border-status-red/30",
-  archived: "border-border",
-};
+import { STATUS_COLOR_TOKEN, borderColor } from "@/components/statusColors";
 
 const ALL_STATUSES = ["draft", "proposed", "in_review", "published", "closed", "archived"];
 
@@ -50,7 +42,7 @@ function KanbanBoard({ questions }: { questions: Question[] }) {
             </span>
             <span className="text-xs text-muted-foreground">{grouped[status].length}</span>
           </div>
-          <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${STATUS_BORDER_COLORS[status]} min-h-[200px]`}>
+          <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${STATUS_COLOR_TOKEN[status] ? borderColor(STATUS_COLOR_TOKEN[status]) : "border-border"} min-h-[200px]`}>
             {grouped[status].map((q) => <KanbanCard key={q.id} q={q} />)}
             {grouped[status].length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No items</p>}
           </div>
