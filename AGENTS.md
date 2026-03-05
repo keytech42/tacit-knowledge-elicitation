@@ -82,7 +82,7 @@ Tests use transaction-per-test with savepoint rollback (see `conftest.py`). The 
 Three auth methods:
 - JWT bearer token (`Authorization: Bearer <token>`) for human users
 - API key (`X-API-Key: <key>`) for service accounts
-- Dev login (`POST /auth/dev-login`) when `GOOGLE_CLIENT_ID` is empty
+- Dev login (`POST /auth/dev-login`) when `DEV_LOGIN_ENABLED` is true (the default)
 
 Use `Depends(require_role(RoleName.ADMIN))` for role-based access control in routes.
 
@@ -107,7 +107,7 @@ Python 3.12 is required. Tests cannot run outside Docker without it.
 ### Test Structure
 
 - `conftest.py`: Fixtures for db sessions, HTTP client, user/role factories
-- Each test file covers one domain: `test_auth.py`, `test_questions.py`, `test_answers.py`, `test_reviews.py`, `test_permissions.py`, `test_ai_logging.py`, `test_startup.py`
+- Each test file covers one domain: `test_auth.py`, `test_questions.py`, `test_answers.py`, `test_reviews.py`, `test_permissions.py`, `test_ai_logging.py`, `test_startup.py`, `test_admin_queue.py`, `test_e2e_workflows.py`
 
 ### Writing Tests
 

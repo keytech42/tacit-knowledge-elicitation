@@ -93,10 +93,11 @@ DRAFT ──[submit]──▶ PROPOSED ──[start-review]──▶ IN_REVIEW �
   "min_approvals": 1,
   "auto_assign": false,
   "allow_self_review": false,
-  "require_comment_on_reject": true,
-  "auto_assign_count": 1
+  "require_comment_on_reject": true
 }
 ```
+
+The optional field `auto_assign_count` (default: 1) controls how many reviewers are auto-assigned when `auto_assign` is true.
 
 ### AnswerOption
 
@@ -139,7 +140,19 @@ DRAFT ──[submit]──▶ SUBMITTED ──[review starts]──▶ UNDER_REV
 
 ### AnswerRevision
 
-Immutable snapshot of an answer at a point in time. Tracks the `trigger`:
+Immutable snapshot of an answer at a point in time.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| answer_id | UUID | FK → answers |
+| version | integer | Sequential version number |
+| body | text | Content at this version |
+| trigger | enum | See triggers below |
+| content_hash | string | SHA-256 of normalized content (duplicate detection) |
+| previous_status | string | Answer status before this revision |
+| created_by_id | UUID | FK → users |
+
+**Revision triggers:**
 
 | Trigger | When |
 |---------|------|
@@ -165,6 +178,7 @@ Grants a user edit access to an answer. The answer author or admin can manage co
 | assigned_by_id | UUID | FK → users, nullable |
 | verdict | enum | `pending`, `approved`, `changes_requested`, `rejected` |
 | comment | text | Nullable |
+| answer_version | integer | Nullable — which answer version this review applies to |
 
 Indexed on (target_type, target_id).
 
@@ -185,6 +199,9 @@ Automatically populated by the AI logging middleware for all write operations fr
 | response_status | integer | HTTP status code |
 | latency_ms | integer | Request duration |
 | token_usage | JSONB | Reserved for token tracking |
+| created_entity_type | string | Nullable — type of entity created (question, answer, etc.) |
+| created_entity_id | UUID | Nullable — ID of the created entity |
 | feedback_rating | integer | Human rating (1-5) |
 | feedback_comment | text | Human feedback |
 | feedback_by_id | UUID | FK → users |
+| feedback_at | datetime | Nullable — when feedback was provided |

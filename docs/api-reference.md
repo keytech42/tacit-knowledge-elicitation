@@ -29,7 +29,7 @@ When a user authenticates via Google for the first time, an account is created a
 
 ### Dev login side effects
 
-`POST /auth/dev-login` creates a `dev@localhost` user with all roles on first call. Subsequent calls return the same user. Returns 404 when `GOOGLE_CLIENT_ID` is configured, so it cannot be reached in production.
+`POST /auth/dev-login` creates a `dev@localhost` user with all roles on first call. Subsequent calls return the same user. Returns 404 when `DEV_LOGIN_ENABLED` is false, so it can be disabled in production.
 
 ---
 
@@ -58,10 +58,11 @@ DRAFT ──[submit]──▶ PROPOSED ──[start-review]──▶ IN_REVIEW �
   "min_approvals": 1,
   "auto_assign": false,
   "allow_self_review": false,
-  "require_comment_on_reject": true,
-  "auto_assign_count": 1
+  "require_comment_on_reject": true
 }
 ```
+
+The optional field `auto_assign_count` (default: 1) controls how many reviewers are auto-assigned when `auto_assign` is true.
 
 ---
 

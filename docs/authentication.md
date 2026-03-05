@@ -24,12 +24,13 @@ Set these environment variables:
 ```
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:5173 (must match GCP authorized redirect URI)
 BOOTSTRAP_ADMIN_EMAIL=admin@yourcompany.com
 ```
 
 ## Dev Login (Local Development)
 
-Available when `DEV_LOGIN_ENABLED` is true (the default) or when `GOOGLE_CLIENT_ID` is empty.
+Available when `DEV_LOGIN_ENABLED` is true (the default).
 
 Click **Sign in as Test User** on the login page. The frontend calls `POST /api/v1/auth/dev-login`, which creates (or returns) a `dev@localhost` user with all roles. When Google OAuth is also configured, both options appear on the login page.
 
