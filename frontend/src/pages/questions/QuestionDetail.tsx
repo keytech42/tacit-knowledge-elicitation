@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { api, Question, Answer } from "@/api/client";
+import { api, ai, Question, Answer, Recommendation, TaskStatus } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
@@ -78,6 +78,12 @@ export function QuestionDetail() {
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
+  // AI features
+  const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
+  const [scaffoldLoading, setScaffoldLoading] = useState(false);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [recLoading, setRecLoading] = useState(false);
+
   const loadQuestion = () => {
     if (!id) return;
     api.get<Question>(`/questions/${id}`).then((q) => {
@@ -152,6 +158,42 @@ export function QuestionDetail() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Feedback failed");
     }
+  };
+
+  const handleScaffoldOptions = async () => {
+    if (!id || scaffoldLoading) return;
+    setScaffoldLoading(true);
+    try {
+      const result = await ai.scaffoldOptions(id);
+      setScaffoldTask({ task_id: result.task_id, status: result.status });
+      const poll = async () => {
+        try {
+          const status = await ai.getTaskStatus(result.task_id);
+          setScaffoldTask(status);
+          if (status.status === "accepted" || status.status === "running") {
+            setTimeout(poll, 2000);
+          } else if (status.status === "completed") {
+            loadQuestion(); // Reload to show new options
+          }
+        } catch { /* stop polling */ }
+      };
+      poll();
+    } catch (e: unknown) {
+      setScaffoldTask({ task_id: "", status: "failed", error: e instanceof Error ? e.message : "Failed" });
+    }
+    setScaffoldLoading(false);
+  };
+
+  const handleGetRecommendations = async () => {
+    if (!id || recLoading) return;
+    setRecLoading(true);
+    try {
+      const results = await ai.recommend(id);
+      setRecommendations(results);
+    } catch {
+      setRecommendations([]);
+    }
+    setRecLoading(false);
   };
 
   if (!question) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
@@ -234,6 +276,61 @@ export function QuestionDetail() {
           </div>
         )}
       </div>
+
+      {/* AI actions for admin on published questions */}
+      {isAdmin && question.status === "published" && (
+        <div className="bg-background p-4 rounded-lg border border-border mb-6">
+          <h2 className="font-semibold text-sm mb-3">AI Actions</h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleScaffoldOptions}
+              disabled={scaffoldLoading}
+              className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50"
+            >
+              {scaffoldLoading ? "Generating..." : "Generate Answer Options"}
+            </button>
+            <button
+              onClick={handleGetRecommendations}
+              disabled={recLoading}
+              className="bg-purple-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50"
+            >
+              {recLoading ? "Loading..." : "Recommend Respondents"}
+            </button>
+          </div>
+          {scaffoldTask && (
+            <div className="mt-2 text-xs">
+              <span className={`inline-block px-2 py-0.5 rounded-full ${
+                scaffoldTask.status === "completed" ? "bg-green-100 text-green-700" :
+                scaffoldTask.status === "failed" ? "bg-red-100 text-red-700" :
+                "bg-blue-100 text-blue-700"
+              }`}>{scaffoldTask.status}</span>
+              {scaffoldTask.error && <span className="text-destructive ml-2">{scaffoldTask.error}</span>}
+            </div>
+          )}
+          {recommendations.length > 0 && (
+            <div className="mt-3 border border-border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left px-3 py-1.5 text-xs font-medium">Respondent</th>
+                    <th className="text-left px-3 py-1.5 text-xs font-medium">Score</th>
+                    <th className="text-left px-3 py-1.5 text-xs font-medium">Reasoning</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recommendations.map((r) => (
+                    <tr key={r.user_id} className="border-t border-border">
+                      <td className="px-3 py-1.5 text-xs">{r.display_name}</td>
+                      <td className="px-3 py-1.5 text-xs">{(r.score * 100).toFixed(0)}%</td>
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.reasoning}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <p className="text-destructive text-sm mb-4">{error}</p>}
 

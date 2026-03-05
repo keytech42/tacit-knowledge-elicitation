@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, Answer, AnswerRevision, Review } from "@/api/client";
+import { api, ai, Answer, AnswerRevision, Review, TaskStatus } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
@@ -63,6 +63,8 @@ export function AnswerDetail() {
   const [showAssignReview, setShowAssignReview] = useState(false);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [aiReviewTask, setAiReviewTask] = useState<TaskStatus | null>(null);
+  const [aiReviewLoading, setAiReviewLoading] = useState(false);
 
   const load = () => {
     if (!id) return;
@@ -147,6 +149,30 @@ export function AnswerDetail() {
     }
   };
 
+  const handleAiReview = async () => {
+    if (!id || aiReviewLoading) return;
+    setAiReviewLoading(true);
+    try {
+      const result = await ai.reviewAssist(id);
+      setAiReviewTask({ task_id: result.task_id, status: result.status });
+      const poll = async () => {
+        try {
+          const status = await ai.getTaskStatus(result.task_id);
+          setAiReviewTask(status);
+          if (status.status === "accepted" || status.status === "running") {
+            setTimeout(poll, 2000);
+          } else if (status.status === "completed") {
+            load(); // Reload to show new review
+          }
+        } catch { /* stop polling */ }
+      };
+      poll();
+    } catch (e: unknown) {
+      setAiReviewTask({ task_id: "", status: "failed", error: e instanceof Error ? e.message : "Failed" });
+    }
+    setAiReviewLoading(false);
+  };
+
   if (!answer) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
 
   const isAuthor = user?.id === answer.author.id;
@@ -223,6 +249,31 @@ export function AnswerDetail() {
                 <button onClick={handleCreateReview} className="bg-purple-600 text-white px-3 py-1.5 rounded text-sm">Confirm — Assign to Me</button>
                 <button onClick={() => setShowAssignReview(false)} className="border border-border px-3 py-1.5 rounded text-sm">Cancel</button>
               </>
+            )}
+            {isAdmin && (answer.status === "submitted" || answer.status === "under_review") && (
+              <button
+                onClick={handleAiReview}
+                disabled={aiReviewLoading}
+                className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 ml-auto"
+              >
+                {aiReviewLoading ? "Running..." : "AI Review"}
+              </button>
+            )}
+          </div>
+        )}
+        {aiReviewTask && (
+          <div className="mt-2 px-1 text-xs">
+            <span className={`inline-block px-2 py-0.5 rounded-full ${
+              aiReviewTask.status === "completed" ? "bg-green-100 text-green-700" :
+              aiReviewTask.status === "failed" ? "bg-red-100 text-red-700" :
+              "bg-blue-100 text-blue-700"
+            }`}>{aiReviewTask.status}</span>
+            {aiReviewTask.error && <span className="text-destructive ml-2">{aiReviewTask.error}</span>}
+            {aiReviewTask.result && (
+              <span className="ml-2 text-muted-foreground">
+                Confidence: {String((aiReviewTask.result as Record<string, unknown>).confidence)},
+                Submitted: {String((aiReviewTask.result as Record<string, unknown>).submitted)}
+              </span>
             )}
           </div>
         )}
@@ -305,6 +356,9 @@ export function AnswerDetail() {
               <StatusBadge status={rev.verdict} />
               <span className="text-xs text-muted-foreground font-mono">v{rev.answerVersion}</span>
               <span className="text-muted-foreground">{rev.reviewer.display_name}</span>
+              {rev.reviewer.user_type === "service" && (
+                <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">AI</span>
+              )}
               <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleDateString()}</span>
             </div>
             {rev.comment && <p className="text-xs text-muted-foreground mt-1 truncate">{rev.comment}</p>}
