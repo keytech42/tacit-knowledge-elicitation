@@ -241,23 +241,24 @@ class TestQuestionAnswerReviewLifecycle:
         }, headers=auth_header(respondent_user))
         assert r.status_code == 200
 
-        # Author resubmits — reviewer is auto-reassigned
+        # Author resubmits — same review is reset to pending for the new version
         r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
         assert r.status_code == 200
-        assert r.json()["status"] == "under_review"  # auto-reassigned reviewers
+        assert r.json()["status"] == "under_review"  # review reset to pending
 
-        # Find the auto-created pending review for the new version
+        # The original review should now be pending with updated version
         r = await client.get("/api/v1/reviews", params={
             "target_type": "answer", "target_id": a_id,
         }, headers=auth_header(reviewer_user))
         reviews = r.json()
         pending_reviews = [rv for rv in reviews if rv["verdict"] == "pending"]
         assert len(pending_reviews) == 1
-        review2_id = pending_reviews[0]["id"]
+        assert pending_reviews[0]["id"] == review_id  # same review, not a new one
         assert pending_reviews[0]["answer_version"] == 2
+        assert pending_reviews[0]["comment"] is None  # comment cleared
 
-        # Approve the auto-created review
-        r = await client.patch(f"/api/v1/reviews/{review2_id}", json={
+        # Approve the reset review
+        r = await client.patch(f"/api/v1/reviews/{review_id}", json={
             "verdict": "approved",
         }, headers=auth_header(reviewer_user))
         assert r.status_code == 200
