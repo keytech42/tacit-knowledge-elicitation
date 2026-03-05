@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ai, TaskAccepted, TaskStatus, Recommendation } from "@/api/client";
+import { ai, TaskStatus, Recommendation } from "@/api/client";
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -161,7 +161,7 @@ export function AIControls() {
             {genTask.error && <p className="text-destructive mt-1">{genTask.error}</p>}
             {genTask.result && (
               <p className="mt-1 text-muted-foreground">
-                Created {(genTask.result as Record<string, unknown>).count} questions
+                Created {String((genTask.result as Record<string, unknown>).count)} questions
               </p>
             )}
           </div>
@@ -221,7 +221,7 @@ export function AIControls() {
             {reviewTask.error && <p className="text-destructive mt-1">{reviewTask.error}</p>}
             {reviewTask.result && (
               <p className="mt-1 text-muted-foreground">
-                Verdict: {(reviewTask.result as Record<string, unknown>).verdict},
+                Verdict: {String((reviewTask.result as Record<string, unknown>).verdict)},
                 Confidence: {String((reviewTask.result as Record<string, unknown>).confidence)},
                 Submitted: {String((reviewTask.result as Record<string, unknown>).submitted)}
               </p>
