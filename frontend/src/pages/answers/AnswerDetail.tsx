@@ -6,14 +6,13 @@ import { ActionButton } from "@/components/ActionButton";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
-  if (isAdmin) return { enabled: true };
-  if (isAuthor && (status === "draft" || status === "revision_requested")) return { enabled: true };
-  if (isAuthor && status === "submitted")
+  if ((isAdmin || isAuthor) && (status === "draft" || status === "revision_requested")) return { enabled: true };
+  if (status === "submitted")
     return { enabled: false, reason: "Answer is awaiting review", hint: "Wait for the review outcome" };
-  if (isAuthor && status === "under_review")
+  if (status === "under_review")
     return { enabled: false, reason: "Answer is under review", hint: "Changes will be possible if revision is requested" };
-  if (isAuthor && status === "approved")
-    return { enabled: false, reason: "Answer is finalized", hint: "Use 'Revise' to create a new version instead" };
+  if (status === "approved")
+    return { enabled: false, reason: "Committed answers can only be edited through revision", hint: "Use 'Revise' to propose changes" };
   if (status === "rejected")
     return { enabled: false, reason: "Rejected answers cannot be edited" };
   return { enabled: false, reason: "Only the author or an admin can edit" };
@@ -55,6 +54,7 @@ export function AnswerDetail() {
   const [revisions, setRevisions] = useState<AnswerRevision[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [editing, setEditing] = useState(false);
+  const [revising, setRevising] = useState(false);
   const [editBody, setEditBody] = useState("");
   const [error, setError] = useState("");
   const [diffFrom, setDiffFrom] = useState<number>(0);
@@ -114,8 +114,9 @@ export function AnswerDetail() {
     if (!id || isLoading) return;
     setIsLoading(true);
     try {
-      const updated = await api.post<Answer>(`/answers/${id}/revise`);
+      const updated = await api.post<Answer>(`/answers/${id}/revise`, { body: editBody });
       setAnswer(updated);
+      setRevising(false);
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Revise failed");
@@ -176,13 +177,21 @@ export function AnswerDetail() {
         </div>
         <p className="text-xs text-muted-foreground mb-4">{WORKFLOW_HINTS[`a:${answer.status}`]}</p>
 
-        {editing ? (
+        {editing || revising ? (
           <>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Answer body</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              {revising ? "Revise answer (this will create a new version)" : "Answer body"}
+            </label>
             <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[200px] bg-background text-sm" />
             <div className="flex gap-2 mt-3">
-              <button onClick={handleSave} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm">Save</button>
-              <button onClick={() => { setEditing(false); setEditBody(answer.body); }} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
+              {revising ? (
+                <button onClick={handleRevise} disabled={isLoading || editBody === answer.body} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm disabled:opacity-50">
+                  Submit Revision
+                </button>
+              ) : (
+                <button onClick={handleSave} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm">Save</button>
+              )}
+              <button onClick={() => { setEditing(false); setRevising(false); setEditBody(answer.body); }} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
             </div>
           </>
         ) : (
@@ -195,16 +204,16 @@ export function AnswerDetail() {
         )}
 
         {/* Author actions — always visible */}
-        {!editing && showAuthorActions && (
+        {!editing && !revising && showAuthorActions && (
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
             <ActionButton label="Edit" onClick={() => setEditing(true)} enabled={editPerm.enabled && !isLoading} disabledReason={editPerm.reason} disabledHint={editPerm.hint} variant="secondary" />
             <ActionButton label={answer.status === "revision_requested" ? "Resubmit" : "Submit for Review"} onClick={handleSubmit} enabled={submitPerm.enabled && !isLoading} disabledReason={submitPerm.reason} disabledHint={submitPerm.hint} variant="primary" />
-            <ActionButton label="Revise (new version)" onClick={handleRevise} enabled={revisePerm.enabled && !isLoading} disabledReason={revisePerm.reason} variant="blue" />
+            <ActionButton label="Revise (new version)" onClick={() => { setEditBody(answer.body); setRevising(true); }} enabled={revisePerm.enabled && !isLoading} disabledReason={revisePerm.reason} variant="blue" />
           </div>
         )}
 
         {/* Reviewer actions — always visible */}
-        {!editing && showReviewerActions && (
+        {!editing && !revising && showReviewerActions && (
           <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
             <span className="text-xs text-muted-foreground self-center mr-1">Review:</span>
             {!showAssignReview ? (

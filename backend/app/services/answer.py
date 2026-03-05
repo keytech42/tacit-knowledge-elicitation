@@ -25,10 +25,12 @@ def compute_content_hash(text: str) -> str:
 
 
 def can_edit_answer(answer: Answer, user: User) -> bool:
+    if answer.status not in (AnswerStatus.DRAFT.value, AnswerStatus.REVISION_REQUESTED.value):
+        return False
     user_roles = {r.name for r in user.roles}
     if RoleName.ADMIN.value in user_roles:
         return True
-    if answer.author_id == user.id and answer.status in (AnswerStatus.DRAFT.value, AnswerStatus.REVISION_REQUESTED.value):
+    if answer.author_id == user.id:
         return True
     return False
 
@@ -92,11 +94,19 @@ def resubmit_answer(answer: Answer, user: User) -> AnswerRevision:
     return revision
 
 
-async def revise_approved_answer(answer: Answer, user: User, db: AsyncSession) -> AnswerRevision:
+async def revise_approved_answer(
+    answer: Answer, user: User, db: AsyncSession,
+    *, new_body: str | None = None, new_selected_option_id=None,
+) -> AnswerRevision:
     if answer.status != AnswerStatus.APPROVED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Can only revise approved answers")
     if not await can_revise_answer(answer, user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No permission to revise this answer")
+    # Apply new content before snapshotting the revision
+    if new_body is not None:
+        answer.body = new_body
+    if new_selected_option_id is not None:
+        answer.selected_option_id = new_selected_option_id
     revision = create_revision(answer, user, RevisionTrigger.POST_APPROVAL_UPDATE, check_duplicate=True)
     answer.status = AnswerStatus.SUBMITTED.value
     answer.confirmed_by_id = None
@@ -109,6 +119,23 @@ def generate_diff(rev_from: AnswerRevision, rev_to: AnswerRevision) -> str:
     from_lines = [line + "\n" for line in rev_from.body.splitlines()]
     to_lines = [line + "\n" for line in rev_to.body.splitlines()]
     diff = difflib.unified_diff(from_lines, to_lines, fromfile=f"version {rev_from.version}", tofile=f"version {rev_to.version}")
+    return "".join(diff)
+
+
+def generate_staging_diff(answer: Answer) -> str | None:
+    """Diff between the latest committed revision and the current working copy.
+
+    Returns None when there are no committed revisions yet or the content
+    is identical (nothing staged).
+    """
+    if not answer.revisions:
+        return None
+    latest = answer.revisions[-1]
+    if normalize_body(answer.body) == normalize_body(latest.body):
+        return None
+    from_lines = [line + "\n" for line in latest.body.splitlines()]
+    to_lines = [line + "\n" for line in answer.body.splitlines()]
+    diff = difflib.unified_diff(from_lines, to_lines, fromfile=f"version {latest.version}", tofile="working copy")
     return "".join(diff)
 
 

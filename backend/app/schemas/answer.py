@@ -58,6 +58,12 @@ class AnswerDiffResponse(BaseModel):
     to_created_at: datetime
 
 
+class StagingDiffResponse(BaseModel):
+    has_changes: bool
+    latest_version: int | None = None
+    diff: str | None = None
+
+
 class CollaboratorAdd(BaseModel):
     user_id: uuid.UUID
 
