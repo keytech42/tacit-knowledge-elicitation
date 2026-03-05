@@ -163,24 +163,21 @@ async def submit_answer_endpoint(
         raise HTTPException(status_code=404, detail="Answer not found")
 
     if answer.status == AnswerStatus.REVISION_REQUESTED.value:
-        previous_version = answer.current_version
-        revision = resubmit_answer(answer, current_user)
-        db.add(revision)
+        resubmit_answer(answer, current_user)
         await db.flush()
 
-        # Reset reviews that requested changes: same reviewer re-reviews the new version
+        # Reset reviews that requested changes: same reviewer re-reviews the same version
         prev_reviews_result = await db.execute(
             select(Review).where(
                 Review.target_type == ReviewTargetType.ANSWER.value,
                 Review.target_id == answer.id,
-                Review.answer_version == previous_version,
+                Review.answer_version == answer.current_version,
                 Review.verdict == ReviewVerdict.CHANGES_REQUESTED.value,
             )
         )
         prev_reviews = prev_reviews_result.scalars().all()
         for review in prev_reviews:
             review.verdict = ReviewVerdict.PENDING.value
-            review.answer_version = answer.current_version
             review.comment = None
         # If reviewers were reset, move directly to under_review
         if prev_reviews:
