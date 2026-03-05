@@ -2,16 +2,21 @@
 
 ## System Overview
 
-The platform is a three-service stack deployed via Docker Compose.
+The platform is a four-service stack deployed via Docker Compose.
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   web :5173  │────▶│  api :8000   │────▶│  db :5432    │
-│  React/Vite  │     │   FastAPI    │     │ PostgreSQL 16│
-└──────────────┘     └──────────────┘     └──────────────┘
+┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
+│   web :5173  │────▶│  api :8000   │────▶│    db :5432      │
+│  React/Vite  │     │   FastAPI    │     │ pgvector/pg16    │
+└──────────────┘     └──────┬───────┘     └──────────────────┘
+                            │
+                     ┌──────▼───────┐
+                     │ worker :8001 │
+                     │ FastAPI+LLM  │
+                     └──────────────┘
 ```
 
-All communication is HTTP. The frontend calls the backend API at `/api/v1/*`, proxied through Vite in development.
+The frontend calls the backend API at `/api/v1/*`, proxied through Vite in development. The worker service is optional — the platform functions fully without it. When configured, the backend triggers LLM tasks on the worker via HTTP, and the worker calls back to the platform API as a service account.
 
 ## Backend (FastAPI)
 
@@ -80,16 +85,64 @@ A thin wrapper around `fetch()` that:
 - Redirects to `/login` on 401 responses
 - Parses JSON responses and error details
 
+## Worker (LLM Tasks)
+
+A separate FastAPI service that handles LLM-powered capabilities via litellm (provider-agnostic). Authenticates to the platform API as a service account using `X-API-Key`.
+
+### Tasks
+
+| Task | Endpoint | Trigger |
+|------|----------|---------|
+| Question generation | `POST /tasks/generate-questions` | Admin on-demand |
+| Answer option scaffolding | `POST /tasks/scaffold-options` | Auto on question publish, or on-demand |
+| Review assistance | `POST /tasks/review-assist` | Auto on answer submit, or on-demand |
+
+Tasks run as background `asyncio.Task` instances with in-memory status tracking. The backend proxies trigger requests via admin-only `/api/v1/ai/*` endpoints.
+
+### Architecture
+
+```
+worker/
+├── main.py              # FastAPI app, task endpoints, in-memory tracking
+├── config.py            # WorkerSettings (pydantic-settings)
+├── platform_client.py   # httpx async client for platform REST API
+├── llm.py               # litellm wrapper (structured output + retries)
+├── schemas.py           # Pydantic models for LLM outputs
+├── tasks/               # Task implementations
+│   ├── question_gen.py
+│   ├── answer_scaffold.py
+│   └── review_assist.py
+└── prompts/             # System/user prompt templates
+```
+
+The LLM wrapper (`llm.py`) appends JSON schemas from Pydantic models to system prompts for structured output, strips markdown code fences from responses, and retries with exponential backoff.
+
 ## Database
 
-PostgreSQL 16 with the `asyncpg` driver. All primary keys are UUIDs. Timestamps are timezone-aware with server-side defaults.
+PostgreSQL 16 with pgvector extension (`pgvector/pgvector:pg16` Docker image) and the `asyncpg` driver. All primary keys are UUIDs. Timestamps are timezone-aware with server-side defaults.
+
+### pgvector
+
+The `vector` extension enables embedding storage and cosine similarity search. The `questions` and `answers` tables have optional `embedding vector(1536)` columns with hnsw indexes. Embeddings are generated via litellm when `EMBEDDING_MODEL` is configured.
 
 ### Migrations
 
-Alembic manages schema migrations. The initial migration (`001_initial_schema.py`) creates 13 tables and 8 PostgreSQL enum types. Subsequent migrations add fields: `002_add_review_answer_version.py` (review → answer version tracking) and `003_add_revision_content_hash.py` (content deduplication via SHA-256 hash).
+Alembic manages schema migrations:
+- `001_initial_schema.py` — creates 13 tables and 8 PostgreSQL enum types
+- `002_add_review_answer_version.py` — review → answer version tracking
+- `003_add_revision_content_hash.py` — content deduplication via SHA-256 hash
+- `004_add_pgvector_embeddings.py` — enables pgvector extension, adds embedding columns and hnsw indexes
 
 Migrations run automatically on `docker compose up` via the api service command: `alembic upgrade head && uvicorn ...`.
 
 ## Service Accounts
 
-LLM agents and automated systems authenticate as service accounts via API keys. The AI logging middleware automatically records all their write operations for audit and monitoring.
+LLM agents and automated systems authenticate as service accounts via API keys. Service accounts can be created with multiple roles (e.g., `["author", "reviewer"]` for the worker). The AI logging middleware automatically records all their write operations for audit and monitoring.
+
+## Respondent Recommendation
+
+Embedding-based respondent recommendation runs entirely in the backend (no LLM call at query time):
+
+1. Questions and answers get embeddings generated on create/update (via litellm)
+2. `POST /api/v1/ai/recommend` finds answers with similar embeddings using pgvector cosine similarity
+3. Results are grouped by author and scored: `0.4 * semantic_similarity + 0.3 * approval_rate + 0.2 * category_match + 0.1 * recency`

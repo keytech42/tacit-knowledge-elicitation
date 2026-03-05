@@ -124,6 +124,43 @@ Human users' requests are **not** logged. The middleware fails silently to avoid
 
 ---
 
+## AI Trigger Endpoints (Admin Only)
+
+These endpoints proxy requests to the LLM worker service. They return 503 if `WORKER_URL` is not configured.
+
+| Endpoint | Description | Request Body |
+|----------|-------------|-------------|
+| `POST /api/v1/ai/generate-questions` | Trigger question generation | `{topic, domain, count?, context?}` |
+| `POST /api/v1/ai/scaffold-options` | Trigger answer option scaffolding | `{question_id, num_options?}` |
+| `POST /api/v1/ai/review-assist` | Trigger AI review of an answer | `{answer_id}` |
+| `POST /api/v1/ai/recommend` | Get respondent recommendations (runs in backend, no worker needed) | `{question_id, top_k?}` |
+| `GET /api/v1/ai/tasks/{task_id}` | Check task status (proxied to worker) | — |
+
+Task responses return `{task_id, status}` on acceptance (HTTP 202). Poll `GET /api/v1/ai/tasks/{task_id}` for completion.
+
+### Auto-Triggers
+
+These fire automatically when `WORKER_URL` is configured (fire-and-forget, failures don't block the main operation):
+
+- **Question published** → triggers `scaffold-options`
+- **Answer submitted** → triggers `review-assist`
+
+### Recommendation Response
+
+`POST /api/v1/ai/recommend` returns results immediately (no async task):
+
+```json
+{
+  "recommendations": [
+    {"user_id": "...", "display_name": "...", "score": 0.85, "reasoning": "..."}
+  ]
+}
+```
+
+Requires pgvector embeddings to be enabled (`EMBEDDING_MODEL` set). Returns an empty list if no embeddings exist.
+
+---
+
 ## Visibility Rules
 
 Not captured in OpenAPI:

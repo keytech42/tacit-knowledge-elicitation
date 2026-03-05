@@ -69,6 +69,7 @@ The `permissions` JSONB field is reserved for future fine-grained permission con
 | review_policy | JSONB | Review configuration (see below) |
 | show_suggestions | boolean | Show answer options to respondents |
 | quality_score | float | Average of feedback ratings |
+| embedding | vector(1536) | pgvector embedding, nullable (generated when `EMBEDDING_MODEL` is set) |
 | created_by_id | UUID | FK → users |
 | confirmed_by_id | UUID | FK → users, nullable |
 
@@ -120,6 +121,7 @@ Per-user rating and optional comment. Unique constraint on (question_id, user_id
 | selected_option_id | UUID | FK → answer_options, nullable |
 | status | enum | See state machine below |
 | current_version | integer | Incremented on each revision |
+| embedding | vector(1536) | pgvector embedding, nullable (generated when `EMBEDDING_MODEL` is set) |
 
 ### Answer State Machine
 

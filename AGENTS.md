@@ -21,13 +21,22 @@ backend/
   alembic/          Database migrations
   tests/            pytest test suite
 
+worker/
+  worker/main.py          FastAPI app — task trigger endpoints + health check
+  worker/config.py        WorkerSettings (pydantic-settings)
+  worker/platform_client.py  httpx async client for platform REST API
+  worker/llm.py           litellm wrapper (structured output + retries)
+  worker/tasks/           Task implementations (question_gen, answer_scaffold, review_assist)
+  worker/prompts/         System/user prompt templates
+  worker/schemas.py       Pydantic models for LLM structured outputs
+
 frontend/
   src/api/          HTTP client (fetch wrapper with JWT)
   src/auth/         Auth context and login page
   src/components/   Layout, route guards
   src/pages/        Feature pages
 
-docker-compose.yml  Three services: db, api, web
+docker-compose.yml  Four services: db, api, web, worker
 Makefile            Development shortcuts
 ```
 
@@ -106,8 +115,8 @@ Python 3.12 is required. Tests cannot run outside Docker without it.
 
 ### Test Structure
 
-- `conftest.py`: Fixtures for db sessions, HTTP client, user/role factories
-- Each test file covers one domain: `test_auth.py`, `test_questions.py`, `test_answers.py`, `test_reviews.py`, `test_permissions.py`, `test_ai_logging.py`, `test_startup.py`, `test_admin_queue.py`, `test_e2e_workflows.py`
+- `conftest.py`: Fixtures for db sessions, HTTP client, user/role factories. Enables the `vector` pgvector extension before creating tables.
+- Each test file covers one domain: `test_auth.py`, `test_questions.py`, `test_answers.py`, `test_reviews.py`, `test_permissions.py`, `test_ai_logging.py`, `test_startup.py`, `test_admin_queue.py`, `test_e2e_workflows.py`, `test_ai_integration.py`
 
 ### Writing Tests
 
@@ -166,6 +175,25 @@ async def test_create_question(client, author_user):
 - New pages: `frontend/src/pages/`, add route in `App.tsx`
 - Auth changes: `frontend/src/auth/AuthContext.tsx`
 
+### Worker Service
+
+The worker is a separate FastAPI service that calls the platform REST API as a service account. It handles LLM-powered tasks:
+
+- **Question generation**: `POST /tasks/generate-questions` — generates elicitation questions for a topic
+- **Answer option scaffolding**: `POST /tasks/scaffold-options` — generates answer options for a question
+- **Review assistance**: `POST /tasks/review-assist` — AI-assisted preliminary review with confidence threshold (only submits if confidence >= 0.6)
+
+The backend proxies trigger requests via `POST /api/v1/ai/*` endpoints (admin-only). Auto-triggers fire on question publish (scaffold options) and answer submit (review assist) when `WORKER_URL` is configured.
+
+Backend services for the worker integration:
+- `app/services/worker_client.py` — fire-and-forget HTTP calls to worker (wrapped in try/except)
+- `app/services/embeddings.py` — embedding generation via litellm (optional, guarded by `EMBEDDING_MODEL`)
+- `app/services/recommendation.py` — respondent recommendation using pgvector cosine similarity
+
+### Embeddings and pgvector
+
+The Question and Answer models have optional `embedding` columns (`Vector(1536)`) backed by pgvector with hnsw indexes. Embeddings are generated via litellm when `EMBEDDING_MODEL` is set to a non-empty value. Anthropic does not offer embeddings — use OpenAI (`text-embedding-3-small`) or Voyage AI models. The corresponding API key must be set.
+
 ## Gotchas
 
 - The Dockerfile copies `pyproject.toml` before source for layer caching. `PYTHONPATH=/app` is set so `alembic` can find the `app` module.
@@ -173,3 +201,6 @@ async def test_create_question(client, author_user):
 - The `async_session` from `database.py` auto-commits. In tests, the `db` fixture wraps everything in a transaction that rolls back.
 - All relationships use `lazy="selectin"` to avoid async lazy-load errors. Never use `lazy="select"` (the default) with async sessions.
 - The AI logging middleware only logs write operations from service accounts. Human user requests are not logged.
+- The worker uses in-memory task tracking (dict). If the worker restarts, in-flight tasks are lost.
+- The `conftest.py` test fixture creates the pgvector extension (`CREATE EXTENSION IF NOT EXISTS vector`) before `Base.metadata.create_all()`. Without this, tests fail because the Question/Answer models reference the `vector` type.
+- The `EMBEDDING_MODEL` default is empty (disabled). Setting it requires a corresponding API key (e.g., `OPENAI_API_KEY` for `text-embedding-3-small`).
