@@ -131,7 +131,7 @@ These endpoints proxy requests to the LLM worker service. They return 503 if `WO
 | Endpoint | Description | Request Body |
 |----------|-------------|-------------|
 | `POST /api/v1/ai/generate-questions` | Trigger question generation | `{topic, domain, count?, context?}` |
-| `POST /api/v1/ai/scaffold-options` | Trigger answer option scaffolding | `{question_id, num_options?}` |
+| `POST /api/v1/ai/scaffold-options` | Trigger answer option scaffolding (replaces existing options, max 4) | `{question_id, num_options?}` |
 | `POST /api/v1/ai/review-assist` | Trigger AI review of an answer | `{answer_id}` |
 | `POST /api/v1/ai/recommend` | Get respondent recommendations (runs in backend, no worker needed) | `{question_id, top_k?}` |
 | `GET /api/v1/ai/tasks/{task_id}` | Check task status (proxied to worker) | — |
@@ -144,6 +144,14 @@ These fire automatically when `WORKER_URL` is configured (fire-and-forget, failu
 
 - **Question published** → triggers `scaffold-options`
 - **Answer submitted** → triggers `review-assist`
+
+### Answer Option Scaffolding Behavior
+
+Each scaffold run **replaces** all existing options for the question (deletes then recreates). A maximum of **4 options** are generated per run, emphasizing maximally distinct perspectives. After scaffolding, `show_suggestions` is automatically set to `true` on the question. Admins always see answer options regardless of the `show_suggestions` flag.
+
+### Delete Answer Options
+
+`DELETE /api/v1/questions/{id}/options` — removes all answer options for a question. Restricted to admin or the question author.
 
 ### Recommendation Response
 
@@ -168,4 +176,5 @@ Not captured in OpenAPI:
 - **`GET /questions`** returns all published questions **plus** the caller's own questions in any status. Other users' drafts are not visible.
 - **`GET /questions/{question_id}/answers`** visibility depends on the caller's relationship to the question and answer.
 - **Quality feedback** is limited to one entry per user per question (enforced by unique constraint).
+- **Answer options** are shown to respondents only when `show_suggestions` is true. Admins always see options regardless of the flag.
 - **Service account API keys** are returned exactly once at creation (and on rotation). They cannot be retrieved later.

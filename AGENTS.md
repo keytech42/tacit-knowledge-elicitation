@@ -180,7 +180,7 @@ async def test_create_question(client, author_user):
 The worker is a separate FastAPI service that calls the platform REST API as a service account. It handles LLM-powered tasks:
 
 - **Question generation**: `POST /tasks/generate-questions` — generates elicitation questions for a topic
-- **Answer option scaffolding**: `POST /tasks/scaffold-options` — generates answer options for a question
+- **Answer option scaffolding**: `POST /tasks/scaffold-options` — generates up to 4 maximally distinct answer options for a question. Each run replaces all existing options (delete + recreate). The question's `show_suggestions` flag is auto-enabled after scaffolding.
 - **Review assistance**: `POST /tasks/review-assist` — AI-assisted preliminary review with confidence threshold (only submits if confidence >= 0.6)
 
 The backend proxies trigger requests via `POST /api/v1/ai/*` endpoints (admin-only). Auto-triggers fire on question publish (scaffold options) and answer submit (review assist) when `WORKER_URL` is configured.
