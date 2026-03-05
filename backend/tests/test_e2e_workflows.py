@@ -122,14 +122,10 @@ class TestQuestionAnswerReviewLifecycle:
         assert r.json()["status"] == "approved"
         assert r.json()["current_version"] == 1
 
-        # Author edits the answer body
-        r = await client.patch(f"/api/v1/answers/{a_id}", json={
+        # Author revises atomically with new content → submitted, new version
+        r = await client.post(f"/api/v1/answers/{a_id}/revise", json={
             "body": "Version 2 of my answer — improved",
-        }, headers=auth_header(admin_user))
-        assert r.status_code == 200
-
-        # Author revises → submitted, new version
-        r = await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
+        }, headers=auth_header(respondent_user))
         assert r.status_code == 200
         assert r.json()["status"] == "submitted"
         assert r.json()["current_version"] == 2
@@ -241,12 +237,13 @@ class TestQuestionAnswerReviewLifecycle:
         }, headers=auth_header(respondent_user))
         assert r.status_code == 200
 
-        # Author resubmits — same review is reset to pending for the new version
+        # Author resubmits — same review is reset to pending, version stays the same
         r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
         assert r.status_code == 200
         assert r.json()["status"] == "under_review"  # review reset to pending
+        assert r.json()["current_version"] == 1  # no version bump on resubmit
 
-        # The original review should now be pending with updated version
+        # The original review should now be pending on the same version
         r = await client.get("/api/v1/reviews", params={
             "target_type": "answer", "target_id": a_id,
         }, headers=auth_header(reviewer_user))
@@ -254,7 +251,7 @@ class TestQuestionAnswerReviewLifecycle:
         pending_reviews = [rv for rv in reviews if rv["verdict"] == "pending"]
         assert len(pending_reviews) == 1
         assert pending_reviews[0]["id"] == review_id  # same review, not a new one
-        assert pending_reviews[0]["answer_version"] == 2
+        assert pending_reviews[0]["answer_version"] == 1  # stays on same version
         assert pending_reviews[0]["comment"] is None  # comment cleared
 
         # Approve the reset review
@@ -478,18 +475,17 @@ class TestConcurrencyGuards:
             "verdict": "approved",
         }, headers=auth_header(reviewer_user))
 
-        # Edit body before revising (identical content is now rejected)
-        await client.patch(f"/api/v1/answers/{a_id}", json={
+        # First revise with new content → success
+        r = await client.post(f"/api/v1/answers/{a_id}/revise", json={
             "body": "Revised answer content",
-        }, headers=auth_header(admin_user))
-
-        # First revise → success
-        r = await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
+        }, headers=auth_header(respondent_user))
         assert r.status_code == 200
         assert r.json()["status"] == "submitted"
 
         # Second revise → 409 (no longer approved)
-        r = await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
+        r = await client.post(f"/api/v1/answers/{a_id}/revise", json={
+            "body": "Another revision",
+        }, headers=auth_header(respondent_user))
         assert r.status_code == 409
 
     async def test_review_after_answer_approved(
@@ -765,11 +761,10 @@ class TestQuestionDelete:
             "verdict": "approved",
         }, headers=auth_header(reviewer_user))
 
-        # Edit and revise to create v2
-        await client.patch(f"/api/v1/answers/{a_id}", json={
+        # Revise atomically with new content to create v2
+        await client.post(f"/api/v1/answers/{a_id}/revise", json={
             "body": "Updated answer v2",
-        }, headers=auth_header(admin_user))
-        await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
+        }, headers=auth_header(respondent_user))
 
         # Verify the review exists before deletion
         r = await client.get(f"/api/v1/reviews/{review_id}", headers=auth_header(reviewer_user))
@@ -1011,10 +1006,10 @@ class TestIdenticalRevisionGuard:
             "body": "Second version with improvements",
         }, headers=auth_header(respondent_user))
 
-        # Resubmit → success
+        # Resubmit → success, version stays at 1 (in-place update)
         r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
         assert r.status_code == 200
-        assert r.json()["current_version"] == 2
+        assert r.json()["current_version"] == 1
 
 
 class TestVersionDiffing:
@@ -1053,13 +1048,10 @@ class TestVersionDiffing:
             "verdict": "approved",
         }, headers=auth_header(reviewer_user))
 
-        # Edit answer body for v2
-        await client.patch(f"/api/v1/answers/{a_id}", json={
+        # Revise atomically with new content → creates revision v2
+        r = await client.post(f"/api/v1/answers/{a_id}/revise", json={
             "body": "Revised answer text with improvements",
-        }, headers=auth_header(admin_user))
-
-        # Revise → creates revision v2
-        r = await client.post(f"/api/v1/answers/{a_id}/revise", headers=auth_header(respondent_user))
+        }, headers=auth_header(respondent_user))
         assert r.json()["current_version"] == 2
 
         # Get diff between v1 and v2

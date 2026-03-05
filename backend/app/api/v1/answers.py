@@ -24,11 +24,13 @@ from app.schemas.answer import (
     AnswerUpdate,
     CollaboratorAdd,
     CollaboratorResponse,
+    StagingDiffResponse,
 )
 from app.services.answer import (
     can_edit_answer,
     can_manage_collaborators,
     generate_diff,
+    generate_staging_diff,
     resubmit_answer,
     revise_approved_answer,
     submit_answer,
@@ -161,24 +163,21 @@ async def submit_answer_endpoint(
         raise HTTPException(status_code=404, detail="Answer not found")
 
     if answer.status == AnswerStatus.REVISION_REQUESTED.value:
-        previous_version = answer.current_version
-        revision = resubmit_answer(answer, current_user)
-        db.add(revision)
+        resubmit_answer(answer, current_user)
         await db.flush()
 
-        # Reset reviews that requested changes: same reviewer re-reviews the new version
+        # Reset reviews that requested changes: same reviewer re-reviews the same version
         prev_reviews_result = await db.execute(
             select(Review).where(
                 Review.target_type == ReviewTargetType.ANSWER.value,
                 Review.target_id == answer.id,
-                Review.answer_version == previous_version,
+                Review.answer_version == answer.current_version,
                 Review.verdict == ReviewVerdict.CHANGES_REQUESTED.value,
             )
         )
         prev_reviews = prev_reviews_result.scalars().all()
         for review in prev_reviews:
             review.verdict = ReviewVerdict.PENDING.value
-            review.answer_version = answer.current_version
             review.comment = None
         # If reviewers were reset, move directly to under_review
         if prev_reviews:
@@ -196,15 +195,20 @@ async def submit_answer_endpoint(
 async def revise_answer_endpoint(
     answer_id: uuid.UUID,
     current_user: CurrentUser,
+    request: AnswerUpdate | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Post-approval revision. Creates new revision and resets to submitted."""
+    """Post-approval revision. Accepts optional new content, creates new revision and resets to submitted."""
     result = await db.execute(select(Answer).where(Answer.id == answer_id))
     answer = result.scalar_one_or_none()
     if not answer:
         raise HTTPException(status_code=404, detail="Answer not found")
 
-    revision = await revise_approved_answer(answer, current_user, db)
+    revision = await revise_approved_answer(
+        answer, current_user, db,
+        new_body=request.body if request else None,
+        new_selected_option_id=request.selected_option_id if request else None,
+    )
     db.add(revision)
     return answer
 
@@ -282,6 +286,28 @@ async def get_diff(
         diff=diff_text,
         from_created_at=rev_from.created_at,
         to_created_at=rev_to.created_at,
+    )
+
+
+@answers_router.get("/{answer_id}/staging-diff", response_model=StagingDiffResponse)
+async def get_staging_diff(
+    answer_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Compare the current working copy against the latest committed revision."""
+    result = await db.execute(select(Answer).where(Answer.id == answer_id))
+    answer = result.scalar_one_or_none()
+    if not answer:
+        raise HTTPException(status_code=404, detail="Answer not found")
+
+    diff_text = generate_staging_diff(answer)
+    latest_version = answer.revisions[-1].version if answer.revisions else None
+
+    return StagingDiffResponse(
+        has_changes=diff_text is not None,
+        latest_version=latest_version,
+        diff=diff_text,
     )
 
 
