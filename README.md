@@ -117,7 +117,7 @@ stateDiagram-v2
 
 ### Review Verdict Flow
 
-Reviews follow a simpler one-shot flow: **Pending** → **Approved** / **Changes Requested** / **Rejected**. Only the assigned reviewer (or an admin) can set the verdict. Once set, the verdict is final.
+Reviews follow a simpler flow: **Pending** → **Approved** / **Changes Requested** / **Rejected**. Only the assigned reviewer (or an admin) can set the verdict.
 
 ## Documentation
 
