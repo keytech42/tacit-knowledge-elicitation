@@ -19,6 +19,8 @@ from app.services.question import (
     apply_archive, apply_close, apply_publish, apply_reject,
     apply_start_review, apply_submit, can_edit_question,
 )
+from app.services import worker_client
+from app.services.embeddings import update_question_embedding
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -205,8 +207,11 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
     apply_publish(question, current_user)
+    await update_question_embedding(db, question)
     await db.flush()
     await db.refresh(question)
+    # Fire-and-forget: scaffold answer options + recommendation
+    await worker_client.trigger_scaffold_options(question_id)
     return question
 
 

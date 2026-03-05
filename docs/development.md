@@ -14,7 +14,7 @@ cp .env.example .env
 make up
 ```
 
-This starts all three services with hot-reload. Open http://localhost:5173 and type `test` to log in.
+This starts all four services (db, api, web, worker) with hot-reload. Open http://localhost:5173 and type `test` to log in.
 
 ## Project Layout
 
@@ -22,7 +22,7 @@ This starts all three services with hot-reload. Open http://localhost:5173 and t
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/          # Route handlers
-│   │   ├── services/        # Business logic
+│   │   ├── services/        # Business logic (incl. worker_client, embeddings, recommendation)
 │   │   ├── models/          # SQLAlchemy ORM models
 │   │   ├── schemas/         # Pydantic request/response schemas
 │   │   ├── middleware/       # AI logging middleware
@@ -33,12 +33,23 @@ This starts all three services with hot-reload. Open http://localhost:5173 and t
 │   ├── tests/               # pytest test suite
 │   ├── Dockerfile
 │   └── pyproject.toml
+├── worker/
+│   ├── worker/
+│   │   ├── main.py          # FastAPI app with task endpoints
+│   │   ├── config.py        # Worker settings
+│   │   ├── platform_client.py  # httpx client for platform API
+│   │   ├── llm.py           # litellm wrapper
+│   │   ├── schemas.py       # LLM output models
+│   │   ├── tasks/           # Task implementations
+│   │   └── prompts/         # Prompt templates
+│   ├── Dockerfile
+│   └── pyproject.toml
 ├── frontend/
 │   ├── src/
 │   │   ├── api/             # HTTP client
 │   │   ├── auth/            # Auth context and login
 │   │   ├── components/      # Layout, route guards
-│   │   └── pages/           # Feature pages
+│   │   └── pages/           # Feature pages (incl. admin/AIControls)
 │   ├── Dockerfile
 │   └── package.json
 ├── docker-compose.yml
@@ -106,6 +117,18 @@ API calls go through `src/api/client.ts`. Add new API functions there to keep HT
 ## Environment Variables
 
 See `.env.example`. All backend config is loaded from environment via `pydantic-settings`. The frontend reads the API base URL from a hardcoded constant (`/api/v1`), proxied through Vite's dev server config.
+
+### AI / Worker Variables
+
+The worker service and AI features are optional. To enable:
+
+| Variable | Service | Purpose |
+|----------|---------|---------|
+| `WORKER_URL` | api | Worker endpoint (e.g., `http://worker:8001`). Empty = disabled |
+| `ANTHROPIC_API_KEY` | api, worker | Anthropic API key for LLM calls |
+| `LLM_MODEL` | worker | litellm model ID (default: `anthropic/claude-sonnet-4-5-20250929`) |
+| `EMBEDDING_MODEL` | api | Embedding model for pgvector (e.g., `text-embedding-3-small`). Empty = disabled |
+| `WORKER_API_KEY` | worker | Service account API key for platform auth |
 
 ## CI
 

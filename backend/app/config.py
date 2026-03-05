@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     BOOTSTRAP_ADMIN_EMAIL: str = ""
     DEV_LOGIN_ENABLED: bool = True
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    WORKER_URL: str = ""  # e.g. "http://worker:8001", empty = worker disabled
+    ANTHROPIC_API_KEY: str = ""
+    EMBEDDING_MODEL: str = ""  # e.g. "text-embedding-3-small" (OpenAI) or "voyage/voyage-3" (Voyage AI)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

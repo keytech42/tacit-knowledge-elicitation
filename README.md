@@ -17,9 +17,10 @@ Open http://localhost:5173 and click **Sign in as Test User** to log in as a dev
 |---------|------|------|
 | **api** | FastAPI + SQLAlchemy (async) | 8000 |
 | **web** | React 18 + TypeScript + Vite | 5173 |
-| **db** | PostgreSQL 16 | 5432 |
+| **worker** | FastAPI + litellm (LLM tasks) | 8001 |
+| **db** | PostgreSQL 16 + pgvector | 5432 |
 
-Migrations run automatically on container start via Alembic.
+Migrations run automatically on container start via Alembic. The worker service is optional — the platform functions fully without it.
 
 ## Development
 
@@ -58,6 +59,31 @@ See `.env.example` for all environment variables. Key settings:
 | `BOOTSTRAP_ADMIN_EMAIL` | Email that auto-receives all roles on first login | empty |
 | `DEV_LOGIN_ENABLED` | Enable dev login endpoint | `true` |
 | `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:5173"]` |
+| `WORKER_URL` | LLM worker service URL (empty = disabled) | empty |
+| `ANTHROPIC_API_KEY` | Anthropic API key for LLM tasks | empty |
+| `LLM_MODEL` | litellm model identifier for the worker | `anthropic/claude-sonnet-4-5-20250929` |
+| `EMBEDDING_MODEL` | Embedding model for pgvector (empty = disabled) | empty |
+| `WORKER_API_KEY` | Service account API key for the worker | empty |
+
+## AI Integration
+
+The platform includes optional LLM-powered capabilities via a separate worker service:
+
+| Capability | Trigger | Description |
+|-----------|---------|-------------|
+| **Question generation** | Admin on-demand | Generate elicitation questions for a topic/domain |
+| **Answer option scaffolding** | Auto on publish or on-demand | Generate answer options for a published question |
+| **Review assistance** | Auto on submit or on-demand | AI-assisted preliminary review with confidence scoring |
+| **Respondent recommendation** | On-demand | Embedding-based similarity matching via pgvector |
+
+### Setup
+
+1. Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) in `.env`
+2. Create a service account with `author` and `reviewer` roles via the admin UI
+3. Set the service account's API key as `WORKER_API_KEY` in `.env`
+4. Restart services — the worker connects to the API as a service account
+
+AI controls are available in the admin UI at `/admin/ai`. All worker operations are logged via the AI logging middleware.
 
 ## Workflow State Machines
 

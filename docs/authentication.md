@@ -50,9 +50,24 @@ X-API-Key: kep_a1b2c3d4e5f6...
 ### Lifecycle
 
 1. An admin creates a service account via `POST /api/v1/service-accounts`
+   - Optional `roles` field accepts a list of role names (e.g., `["author", "reviewer"]`). Defaults to `["author"]` if omitted.
 2. The response includes the API key — this is shown only once
 3. The key is stored as a SHA256 hash in the database
 4. Keys can be rotated via `POST /api/v1/service-accounts/{id}/rotate-key`
+
+### Worker Service Account
+
+The LLM worker needs both `author` (to create questions and answer options) and `reviewer` (to submit AI reviews) roles:
+
+```json
+{
+  "display_name": "LLM Worker",
+  "model_id": "claude-sonnet-4-5-20250929",
+  "roles": ["author", "reviewer"]
+}
+```
+
+Set the returned API key as `WORKER_API_KEY` in the backend environment and `PLATFORM_API_KEY` in the worker environment.
 
 ### Middleware Logging
 

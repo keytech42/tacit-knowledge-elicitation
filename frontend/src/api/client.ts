@@ -147,3 +147,49 @@ export interface AnswerRevision {
   previous_status: string | null;
   created_at: string;
 }
+
+// AI-related types
+
+export interface TaskAccepted {
+  task_id: string;
+  status: string;
+}
+
+export interface TaskStatus {
+  task_id: string;
+  status: string; // accepted, running, completed, failed
+  result?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface Recommendation {
+  user_id: string;
+  display_name: string;
+  score: number;
+  reasoning: string;
+}
+
+// AI-related API functions
+
+export const ai = {
+  generateQuestions: (topic: string, domain = "", count = 3, context?: string) =>
+    api.post<TaskAccepted>("/ai/generate-questions", { topic, domain, count, context }),
+
+  scaffoldOptions: (questionId: string, numOptions = 4) =>
+    api.post<TaskAccepted>("/ai/scaffold-options", {
+      question_id: questionId,
+      num_options: numOptions,
+    }),
+
+  reviewAssist: (answerId: string) =>
+    api.post<TaskAccepted>("/ai/review-assist", { answer_id: answerId }),
+
+  recommend: (questionId: string, topK = 5) =>
+    api.post<Recommendation[]>("/ai/recommend", {
+      question_id: questionId,
+      top_k: topK,
+    }),
+
+  getTaskStatus: (taskId: string) =>
+    api.get<TaskStatus>(`/ai/tasks/${taskId}`),
+};

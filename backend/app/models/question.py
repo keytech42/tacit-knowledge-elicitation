@@ -15,6 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
@@ -58,6 +59,8 @@ class Question(UUIDMixin, TimestampMixin, Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    embedding = mapped_column(Vector(1536), nullable=True)
 
     created_by = relationship("User", foreign_keys=[created_by_id], lazy="selectin")
     confirmed_by = relationship("User", foreign_keys=[confirmed_by_id], lazy="selectin")

@@ -28,10 +28,16 @@ async def create_service_account(
     db.add(user)
     await db.flush()
 
-    author_role = await db.execute(select(Role).where(Role.name == RoleName.AUTHOR.value))
-    role = author_role.scalar_one_or_none()
-    if role:
-        await db.refresh(user, ["roles"])
+    # Determine which roles to assign (default: ["author"])
+    role_names = request.roles or ["author"]
+    valid_role_values = {r.value for r in RoleName}
+    for rn in role_names:
+        if rn not in valid_role_values:
+            raise HTTPException(status_code=400, detail=f"Invalid role: {rn}")
+    roles_result = await db.execute(select(Role).where(Role.name.in_(role_names)))
+    roles = roles_result.scalars().all()
+    await db.refresh(user, ["roles"])
+    for role in roles:
         user.roles.append(role)
     await db.flush()
     await db.refresh(user, ["roles"])
