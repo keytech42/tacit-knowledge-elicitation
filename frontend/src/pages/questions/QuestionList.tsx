@@ -5,12 +5,12 @@ import { useAuth } from "@/auth/AuthContext";
 import { StatusBadge, statusLabel, statusColor } from "@/components/StatusBadge";
 
 const STATUS_BORDER_COLORS: Record<string, string> = {
-  draft: "border-gray-300",
-  proposed: "border-yellow-300",
-  in_review: "border-blue-300",
-  published: "border-green-300",
-  closed: "border-red-300",
-  archived: "border-gray-200",
+  draft: "border-border",
+  proposed: "border-border",
+  in_review: "border-primary/30",
+  published: "border-primary/40",
+  closed: "border-destructive/30",
+  archived: "border-border/60",
 };
 
 const ALL_STATUSES = ["draft", "proposed", "in_review", "published", "closed", "archived"];

@@ -383,28 +383,42 @@ export function QuestionDetail() {
                 {question.answer_options.map((opt, idx) => {
                   const isSelected = selectedOptionId === opt.id;
                   return (
-                    <button
-                      key={opt.id}
-                      onClick={() => handleOptionClick(opt.id, opt.body)}
-                      className={`group relative text-left rounded-lg border transition-all duration-200 ${
-                        isSelected
-                          ? "border-primary ring-1 ring-primary"
-                          : "border-border hover:border-foreground/20"
-                      }`}
-                    >
-                      <div className="p-3">
-                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
-                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                        }`}>
-                          {idx + 1}
-                        </span>
-                        <div className="relative overflow-hidden max-h-[5rem] group-hover:max-h-[20rem] transition-[max-height] duration-300 ease-in-out">
-                          <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">{opt.body}</p>
+                    <div key={opt.id} className="group relative">
+                      <button
+                        onClick={() => handleOptionClick(opt.id, opt.body)}
+                        className={`relative w-full text-left rounded-lg border transition-all duration-200 h-[7rem] overflow-hidden ${
+                          isSelected
+                            ? "border-primary ring-1 ring-primary"
+                            : "border-border hover:border-foreground/20"
+                        }`}
+                      >
+                        <div className="p-3">
+                          <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
                         </div>
-                        {/* Gradient fade — hidden on hover */}
-                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent group-hover:opacity-0 transition-opacity duration-200 pointer-events-none" />
+                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+                      </button>
+                      {/* Expanded overlay on hover — no layout shift */}
+                      <div className="absolute left-0 right-0 top-0 z-10 hidden group-hover:block">
+                        <button
+                          onClick={() => handleOptionClick(opt.id, opt.body)}
+                          className={`w-full text-left rounded-lg border shadow-lg bg-background p-3 ${
+                            isSelected ? "border-primary ring-1 ring-primary" : "border-foreground/20"
+                          }`}
+                        >
+                          <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">{opt.body}</p>
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
