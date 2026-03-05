@@ -117,6 +117,8 @@ Use the fixtures from `conftest.py`:
 - `admin_user`, `author_user`, `respondent_user`, `reviewer_user` — pre-configured users
 - `roles` — dict of all Role objects
 - `auth_header(user)` — returns `{"Authorization": "Bearer <jwt>"}` dict
+- `service_user` — returns `(User, api_key)` tuple for service account tests
+- `api_key_header(api_key)` — returns `{"X-API-Key": key}` dict
 
 Example:
 ```python
