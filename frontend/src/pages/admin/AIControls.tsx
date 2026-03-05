@@ -201,9 +201,10 @@ interface UserSearchProps {
   loading: boolean;
   selected: User[];
   onChange: (users: User[]) => void;
+  error: string | null;
 }
 
-function UserSearch({ users, loading, selected, onChange }: UserSearchProps) {
+function UserSearch({ users, loading, selected, onChange, error }: UserSearchProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -329,11 +330,15 @@ function UserSearch({ users, loading, selected, onChange }: UserSearchProps) {
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
         placeholder={loading ? "Loading users..." : "Search by name or email..."}
-        disabled={loading}
+        disabled={loading || !!error}
         className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
       />
 
-      {open && !loading && (
+      {error && (
+        <p className="mt-1 text-xs text-destructive">{error}</p>
+      )}
+
+      {open && !loading && !error && (
         <div
           ref={listRef}
           className="absolute z-50 mt-1 w-full max-h-[240px] overflow-y-auto border border-border rounded-md bg-background shadow-lg"
@@ -446,6 +451,58 @@ function AnswerSelected({ answer }: { answer: Answer }) {
 }
 
 // ---------------------------------------------------------------------------
+// Combined respondent entry type for unified list
+// ---------------------------------------------------------------------------
+
+interface CombinedRespondent {
+  user_id: string;
+  display_name: string;
+  email?: string | null;
+  aiRecommended: boolean;
+  manuallySelected: boolean;
+  score?: number;
+  reasoning?: string;
+}
+
+function buildCombinedList(
+  recommendations: Recommendation[],
+  manualSelections: User[]
+): CombinedRespondent[] {
+  const map = new Map<string, CombinedRespondent>();
+
+  // Add AI recommendations first
+  for (const rec of recommendations) {
+    map.set(rec.user_id, {
+      user_id: rec.user_id,
+      display_name: rec.display_name,
+      aiRecommended: true,
+      manuallySelected: false,
+      score: rec.score,
+      reasoning: rec.reasoning,
+    });
+  }
+
+  // Merge in manual selections
+  for (const user of manualSelections) {
+    const existing = map.get(user.id);
+    if (existing) {
+      existing.manuallySelected = true;
+      existing.email = user.email;
+    } else {
+      map.set(user.id, {
+        user_id: user.id,
+        display_name: user.display_name,
+        email: user.email,
+        aiRecommended: false,
+        manuallySelected: true,
+      });
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+// ---------------------------------------------------------------------------
 // Main AIControls page
 // ---------------------------------------------------------------------------
 
@@ -455,6 +512,7 @@ export function AIControls() {
   const [questionsLoading, setQuestionsLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -477,8 +535,12 @@ export function AIControls() {
       try {
         const data = await api.get<{ users: User[]; total: number }>("/users");
         if (!cancelled) setUsers(data.users);
-      } catch {
-        // silently fail
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setUsersError(
+            e instanceof Error ? e.message : "Failed to load users"
+          );
+        }
       } finally {
         if (!cancelled) setUsersLoading(false);
       }
@@ -541,6 +603,12 @@ export function AIControls() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recLoading, setRecLoading] = useState(false);
   const [selectedRespondents, setSelectedRespondents] = useState<User[]>([]);
+
+  // ---- Combined respondent list ----
+  const combinedRespondents = useMemo(
+    () => buildCombinedList(recommendations, selectedRespondents),
+    [recommendations, selectedRespondents]
+  );
 
   // ---- Task polling ----
   const pollTask = useCallback(
@@ -890,7 +958,8 @@ export function AIControls() {
       <section className="bg-background border border-border rounded-lg p-6">
         <h2 className="text-lg font-semibold mb-1">Respondent Recommendations</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          Find the best respondents for a published question using embeddings.
+          Find the best respondents for a published question using AI embeddings,
+          or manually select users. Combine both to build a notification list.
         </p>
         <div className="space-y-4 mb-4">
           <EntitySearch<Question>
@@ -905,64 +974,87 @@ export function AIControls() {
             label="Question *"
           />
 
+          <button
+            onClick={handleRecommend}
+            disabled={recLoading || !recQuestion}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium disabled:opacity-50 transition-opacity"
+          >
+            {recLoading ? "Loading..." : "Get Recommendations"}
+          </button>
+
           <div className="border-t border-border pt-4">
             <UserSearch
               users={users}
               loading={usersLoading}
               selected={selectedRespondents}
               onChange={setSelectedRespondents}
+              error={usersError}
             />
           </div>
         </div>
 
-        <button
-          onClick={handleRecommend}
-          disabled={recLoading || !recQuestion}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium disabled:opacity-50 transition-opacity"
-        >
-          {recLoading ? "Loading..." : "Get Recommendations"}
-        </button>
-
-        {recommendations.length > 0 && (
-          <div className="mt-4 border border-border rounded-md overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-muted">
-                <tr>
-                  <th className="text-left px-3 py-2 font-medium text-foreground">Respondent</th>
-                  <th className="text-left px-3 py-2 font-medium text-foreground">Score</th>
-                  <th className="text-left px-3 py-2 font-medium text-foreground">Reasoning</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recommendations.map((r) => (
-                  <tr key={r.user_id} className="border-t border-border">
-                    <td className="px-3 py-2 text-foreground">{r.display_name}</td>
-                    <td className="px-3 py-2 text-foreground">{(r.score * 100).toFixed(0)}%</td>
-                    <td className="px-3 py-2 text-muted-foreground">{r.reasoning}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {selectedRespondents.length > 0 && (
-          <div className="mt-4 p-3 bg-muted rounded-md">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Manually Selected ({selectedRespondents.length})
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {selectedRespondents.map((user) => (
-                <span
-                  key={user.id}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-background border border-border text-sm text-foreground"
+        {/* Combined respondent list */}
+        {combinedRespondents.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-foreground">
+                Selected Respondents ({combinedRespondents.length})
+              </h3>
+              <div className="relative group">
+                <button
+                  disabled
+                  className="px-3 py-1.5 bg-muted text-muted-foreground rounded-md text-sm font-medium cursor-not-allowed opacity-60"
                 >
-                  {user.display_name}
-                  {user.email && (
-                    <span className="text-muted-foreground text-xs">{user.email}</span>
-                  )}
-                </span>
-              ))}
+                  Notify Selected
+                </button>
+                <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 bg-foreground text-background text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  Slack integration coming soon
+                </div>
+              </div>
+            </div>
+            <div className="border border-border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-foreground">Respondent</th>
+                    <th className="text-left px-3 py-2 font-medium text-foreground">Source</th>
+                    <th className="text-left px-3 py-2 font-medium text-foreground">Score</th>
+                    <th className="text-left px-3 py-2 font-medium text-foreground">Reasoning</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {combinedRespondents.map((r) => (
+                    <tr key={r.user_id} className="border-t border-border">
+                      <td className="px-3 py-2">
+                        <div className="text-foreground">{r.display_name}</div>
+                        {r.email && (
+                          <div className="text-xs text-muted-foreground">{r.email}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {r.aiRecommended && (
+                            <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-medium border border-border">
+                              AI recommended
+                            </span>
+                          )}
+                          {r.manuallySelected && (
+                            <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground font-medium border border-border">
+                              Manual
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-foreground">
+                        {r.score != null ? `${(r.score * 100).toFixed(0)}%` : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {r.reasoning || "\u2014"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
