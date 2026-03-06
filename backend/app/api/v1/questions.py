@@ -325,6 +325,13 @@ async def assign_respondent(
     question.assigned_respondent_id = request.user_id
     await db.flush()
     await db.refresh(question)
+    await slack.notify_respondent_assigned(
+        question_title=question.title,
+        question_id=str(question.id),
+        respondent_email=target_user.email,
+        respondent_name=target_user.display_name,
+        assigner_name=current_user.display_name,
+    )
     return question
 
 
