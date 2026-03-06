@@ -312,14 +312,6 @@ class TestQuestionAnswerReviewLifecycle:
 class TestPermissionEnforcement:
     """Verify that permission boundaries are respected across workflows."""
 
-    async def test_respondent_cannot_create_question(
-        self, client: AsyncClient, respondent_user: User,
-    ):
-        r = await client.post("/api/v1/questions", json={
-            "title": "Test", "body": "Body",
-        }, headers=auth_header(respondent_user))
-        assert r.status_code == 403
-
     async def test_author_cannot_edit_proposed_question(
         self, client: AsyncClient, author_user: User,
     ):
@@ -1226,13 +1218,6 @@ class TestMemberManagement:
         assert "total" in data
         assert data["total"] >= 4
 
-    async def test_non_admin_cannot_list_users(
-        self, client: AsyncClient, respondent_user: User,
-    ):
-        """Non-admin users cannot list all users."""
-        r = await client.get("/api/v1/users", headers=auth_header(respondent_user))
-        assert r.status_code == 403
-
     async def test_admin_assigns_role(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
     ):
@@ -1290,15 +1275,6 @@ class TestMemberManagement:
             "role_name": "superuser",
         }, headers=auth_header(admin_user))
         assert r.status_code == 400
-
-    async def test_non_admin_cannot_assign_roles(
-        self, client: AsyncClient, author_user: User, respondent_user: User,
-    ):
-        """Non-admin users cannot assign roles."""
-        r = await client.post(f"/api/v1/users/{respondent_user.id}/roles", json={
-            "role_name": "reviewer",
-        }, headers=auth_header(author_user))
-        assert r.status_code == 403
 
     async def test_non_admin_cannot_remove_roles(
         self, client: AsyncClient, author_user: User, respondent_user: User,

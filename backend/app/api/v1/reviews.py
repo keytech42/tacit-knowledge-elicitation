@@ -11,6 +11,7 @@ from app.models.question import Question
 from app.models.review import Review, ReviewComment, ReviewTargetType, ReviewVerdict
 from app.models.user import RoleName, User
 from app.schemas.review import ReviewCommentCreate, ReviewCommentResponse, ReviewCreate, ReviewResponse, ReviewUpdate
+from app.services import slack
 from app.services.review import auto_assign_reviewers, resolve_answer_reviews
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -183,12 +184,52 @@ async def update_review(
     review.comment = request.comment
 
     # Resolve answer status if this is an answer review
+    answer_status_before = None
     if review.target_type == ReviewTargetType.ANSWER.value:
+        answer_result = await db.execute(select(Answer).where(Answer.id == review.target_id))
+        answer = answer_result.scalar_one_or_none()
+        answer_status_before = answer.status if answer else None
         await db.flush()
         await resolve_answer_reviews(review.target_id, db)
 
     await db.refresh(review)
     await _enrich_question_titles([review], db)
+
+    # Slack notifications for review verdicts on answers
+    if review.target_type == ReviewTargetType.ANSWER.value and answer:
+        await db.refresh(answer)
+        question_result = await db.execute(select(Question).where(Question.id == answer.question_id))
+        question = question_result.scalar_one_or_none()
+        q_title = question.title if question else "Unknown"
+
+        # Notify about the individual review verdict
+        await slack.notify_review_verdict(
+            question_title=q_title,
+            answer_id=str(answer.id),
+            verdict=verdict.value,
+            reviewer_name=current_user.display_name,
+            author_email=answer.author.email if answer.author else None,
+            author_name=answer.author.display_name if answer.author else "Unknown",
+            comment=request.comment,
+        )
+
+        # Notify about answer status changes from review resolution
+        if answer.status != answer_status_before:
+            if answer.status == AnswerStatus.APPROVED.value:
+                await slack.notify_answer_approved(
+                    question_title=q_title,
+                    answer_id=str(answer.id),
+                    author_email=answer.author.email if answer.author else None,
+                    author_name=answer.author.display_name if answer.author else "Unknown",
+                )
+            elif answer.status == AnswerStatus.REVISION_REQUESTED.value:
+                await slack.notify_revision_requested(
+                    question_title=q_title,
+                    answer_id=str(answer.id),
+                    author_email=answer.author.email if answer.author else None,
+                    author_name=answer.author.display_name if answer.author else "Unknown",
+                )
+
     return review
 
 

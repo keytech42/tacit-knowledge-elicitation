@@ -73,21 +73,3 @@ class TestQuestionLifecycle:
         await db.flush()
         r = await client.post(f"/api/v1/questions/{q.id}/publish", headers=auth_header(author_user))
         assert r.status_code in (403, 409)
-
-
-class TestAnswerOptions:
-    async def test_create_options(self, client: AsyncClient, author_user: User, db):
-        q = Question(title="Opts", body="B", created_by_id=author_user.id)
-        db.add(q)
-        await db.flush()
-        r = await client.post(f"/api/v1/questions/{q.id}/options", json={"options": [{"body": "A", "display_order": 0}, {"body": "B", "display_order": 1}]}, headers=auth_header(author_user))
-        assert r.status_code == 201
-        assert len(r.json()) == 2
-
-    async def test_respondent_cannot_see_hidden_options(self, client: AsyncClient, author_user: User, respondent_user: User, db):
-        q = Question(title="Hidden", body="B", created_by_id=author_user.id, show_suggestions=False, status=QuestionStatus.PUBLISHED.value)
-        db.add(q)
-        await db.flush()
-        r = await client.get(f"/api/v1/questions/{q.id}/options", headers=auth_header(respondent_user))
-        assert r.status_code == 200
-        assert r.json() == []

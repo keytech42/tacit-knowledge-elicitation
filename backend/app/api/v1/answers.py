@@ -35,7 +35,7 @@ from app.services.answer import (
     revise_approved_answer,
     submit_answer,
 )
-from app.services import worker_client
+from app.services import slack, worker_client
 from app.services.embeddings import update_answer_embedding
 
 router = APIRouter(tags=["answers"])
@@ -196,6 +196,15 @@ async def submit_answer_endpoint(
 
     # Fire-and-forget: trigger AI review assist
     await worker_client.trigger_review_assist(answer.id)
+
+    # Notify Slack
+    question_result = await db.execute(select(Question).where(Question.id == answer.question_id))
+    question = question_result.scalar_one_or_none()
+    await slack.notify_answer_submitted(
+        question_title=question.title if question else "Unknown",
+        answer_id=str(answer.id),
+        author_name=current_user.display_name,
+    )
 
     return answer
 

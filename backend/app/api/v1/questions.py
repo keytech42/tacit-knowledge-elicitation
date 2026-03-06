@@ -19,7 +19,7 @@ from app.services.question import (
     apply_archive, apply_close, apply_publish, apply_reject,
     apply_start_review, apply_submit, can_edit_question,
 )
-from app.services import worker_client
+from app.services import slack, worker_client
 from app.services.embeddings import update_question_embedding
 
 router = APIRouter(prefix="/questions", tags=["questions"])
@@ -212,6 +212,11 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
     await db.refresh(question)
     # Fire-and-forget: scaffold answer options + recommendation
     await worker_client.trigger_scaffold_options(question_id)
+    await slack.notify_question_published(
+        question_title=question.title,
+        question_id=str(question.id),
+        publisher_name=current_user.display_name,
+    )
     return question
 
 
@@ -226,6 +231,13 @@ async def reject_question(
         raise HTTPException(status_code=404, detail="Question not found")
     comment = request.comment if request else None
     apply_reject(question, current_user, comment)
+    await slack.notify_question_rejected(
+        question_title=question.title,
+        question_id=str(question.id),
+        author_email=question.created_by.email if question.created_by else None,
+        author_name=question.created_by.display_name if question.created_by else "Unknown",
+        comment=comment,
+    )
     return question
 
 
