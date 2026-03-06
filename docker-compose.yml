@@ -30,6 +30,8 @@ services:
       WORKER_URL: http://worker:8001
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:

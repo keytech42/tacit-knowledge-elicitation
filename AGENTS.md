@@ -195,7 +195,22 @@ Backend services for the worker integration:
 
 ### Embeddings and pgvector
 
-The Question and Answer models have optional `embedding` columns (`Vector(1536)`) backed by pgvector with hnsw indexes. Embeddings are generated via litellm when `EMBEDDING_MODEL` is set to a non-empty value. Anthropic does not offer embeddings — use OpenAI (`text-embedding-3-small`) or Voyage AI models. The corresponding API key must be set.
+The Question and Answer models have optional `embedding` columns (`Vector(1024)`) backed by pgvector with hnsw indexes. Embeddings are generated via litellm when `EMBEDDING_MODEL` is set to a non-empty value.
+
+**Model**: bge-m3 (1024 dimensions, 8K context, excellent English + Korean support).
+
+**Inference engines**:
+- **Development (macOS)**: llama.cpp with Metal GPU acceleration. Run natively (not in Docker — Docker on macOS cannot access Metal GPU). Use `llama-server` with `--embeddings` flag.
+- **Production (Linux)**: HuggingFace TEI with CUDA GPU support, runs in Docker.
+
+**litellm config**: Use `openai/` prefix with `api_base` pointing to the local server:
+```
+EMBEDDING_MODEL=openai/bge-m3
+EMBEDDING_API_BASE=http://host.docker.internal:8090/v1/
+EMBEDDING_API_KEY=no-key
+```
+
+For cloud providers, use the provider's model name directly (e.g., `text-embedding-3-small` for OpenAI).
 
 ## Gotchas
 
