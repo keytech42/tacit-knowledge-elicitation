@@ -45,6 +45,11 @@ class RecommendationItem(BaseModel):
     reasoning: str
 
 
+class RecommendationResponse(BaseModel):
+    items: list[RecommendationItem]
+    reason: str | None = None
+
+
 class TaskAcceptedResponse(BaseModel):
     task_id: str
     status: str
@@ -101,14 +106,17 @@ async def review_assist(
     return TaskAcceptedResponse(task_id=result["task_id"], status=result["status"])
 
 
-@router.post("/recommend", response_model=list[RecommendationItem])
+@router.post("/recommend", response_model=RecommendationResponse)
 async def recommend(
     request: RecommendRequest,
     admin: User = require_role(RoleName.ADMIN),
     db: AsyncSession = Depends(get_db),
 ):
-    results = await recommend_respondents(db, request.question_id, request.top_k)
-    return [RecommendationItem(**r) for r in results]
+    result = await recommend_respondents(db, request.question_id, request.top_k)
+    return RecommendationResponse(
+        items=[RecommendationItem(**r) for r in result["items"]],
+        reason=result.get("reason"),
+    )
 
 
 @router.get("/tasks/{task_id}")

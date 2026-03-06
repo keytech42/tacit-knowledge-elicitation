@@ -111,7 +111,9 @@ async def test_ai_recommend_returns_empty_for_missing_question(client, admin_use
         headers=auth_header(admin_user),
     )
     assert resp.status_code == 200
-    assert resp.json() == []
+    data = resp.json()
+    assert data["items"] == []
+    assert data["reason"] is not None
 
 
 # --- Service account multi-role creation ---

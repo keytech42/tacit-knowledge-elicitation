@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { api, ai, Question, Answer, User, TaskStatus, Recommendation } from "@/api/client";
+import { api, ai, Question, Answer, User, TaskStatus, Recommendation, RecommendationResponse } from "@/api/client";
 import { StatusBadge } from "@/components/StatusBadge";
 
 // ---------------------------------------------------------------------------
@@ -601,6 +601,7 @@ export function AIControls() {
   // ---- Recommendation state ----
   const [recQuestion, setRecQuestion] = useState<Question | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [recReason, setRecReason] = useState<string | null>(null);
   const [recLoading, setRecLoading] = useState(false);
   const [selectedRespondents, setSelectedRespondents] = useState<User[]>([]);
 
@@ -684,11 +685,14 @@ export function AIControls() {
   const handleRecommend = async () => {
     if (!recQuestion) return;
     setRecLoading(true);
+    setRecReason(null);
     try {
-      const results = await ai.recommend(recQuestion.id);
-      setRecommendations(results);
-    } catch {
+      const resp = await ai.recommend(recQuestion.id);
+      setRecommendations(resp.items);
+      setRecReason(resp.reason);
+    } catch (e: unknown) {
       setRecommendations([]);
+      setRecReason(e instanceof Error ? e.message : "Failed to get recommendations.");
     }
     setRecLoading(false);
   };
@@ -981,6 +985,19 @@ export function AIControls() {
           >
             {recLoading ? "Loading..." : "Get Recommendations"}
           </button>
+
+          {recReason && recommendations.length === 0 && (
+            <div className="p-3 rounded-md border border-status-amber/20 bg-status-amber/5 text-sm">
+              <p className="font-medium text-status-amber mb-1">No recommendations available</p>
+              <p className="text-muted-foreground">{recReason}</p>
+            </div>
+          )}
+
+          {recommendations.length > 0 && (
+            <div className="p-3 rounded-md border border-status-green/20 bg-status-green/5 text-sm text-status-green">
+              {recommendations.length} respondent{recommendations.length !== 1 ? "s" : ""} recommended
+            </div>
+          )}
 
           <div className="border-t border-border pt-4">
             <UserSearch

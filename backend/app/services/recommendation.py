@@ -17,23 +17,30 @@ async def recommend_respondents(
     db: AsyncSession,
     question_id: uuid.UUID,
     top_k: int = 5,
-) -> list[dict]:
+) -> dict:
     """Recommend respondents for a question based on embedding similarity and scoring.
 
     Scoring formula:
     0.4 * semantic_similarity + 0.3 * approval_rate + 0.2 * category_match + 0.1 * recency
 
-    Returns a list of dicts: [{user_id, display_name, score, reasoning}]
+    Returns a dict: {items: [{user_id, display_name, score, reasoning}], reason: str | None}
     """
+    def _empty(reason: str) -> dict:
+        return {"items": [], "reason": reason}
+
     # Get the question
     result = await db.execute(select(Question).where(Question.id == question_id))
     question = result.scalar_one_or_none()
     if not question:
-        return []
+        return _empty("Question not found.")
 
     if question.embedding is None:
         logger.warning(f"Question {question_id} has no embedding, cannot recommend")
-        return []
+        return _empty(
+            "This question has no embedding. "
+            "Set EMBEDDING_MODEL and the corresponding API key (e.g. OPENAI_API_KEY) "
+            "in your environment, then re-publish the question to generate embeddings."
+        )
 
     # Find answers with embeddings, compute cosine similarity
     # pgvector: 1 - (embedding <=> query_embedding) gives cosine similarity
@@ -47,7 +54,10 @@ async def recommend_respondents(
     author_similarities = {row.author_id: row.max_similarity for row in answers_with_similarity.all()}
 
     if not author_similarities:
-        return []
+        return _empty(
+            "No answers with embeddings found. "
+            "Recommendations require submitted answers that have been embedded."
+        )
 
     # Get approval rates per author
     approval_counts = await db.execute(
@@ -132,4 +142,4 @@ async def recommend_respondents(
         })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:top_k]
+    return {"items": scored[:top_k], "reason": None}
