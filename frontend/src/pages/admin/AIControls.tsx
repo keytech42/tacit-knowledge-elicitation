@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { api, ai, Question, Answer, User, TaskStatus, Recommendation, RecommendationResponse } from "@/api/client";
+import { api, ai, Question, Answer, User, TaskStatus, Recommendation } from "@/api/client";
 import { Admonition } from "@/components/Admonition";
 import { StatusBadge } from "@/components/StatusBadge";
 
