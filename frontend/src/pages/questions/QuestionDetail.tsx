@@ -96,8 +96,8 @@ export function QuestionDetail() {
       setEditTitle(q.title);
       setEditBody(q.body);
       setEditCategory(q.category || "");
-    }).catch(() => setError("Question not found"));
-    api.get<{ answers: Answer[]; total: number }>(`/questions/${id}/answers`).then((d) => setAnswers(d.answers));
+    }).catch((err) => setError(err instanceof Error ? err.message : "Question not found"));
+    api.get<{ answers: Answer[]; total: number }>(`/questions/${id}/answers`).then((d) => setAnswers(d.answers)).catch(() => {});
   };
 
   useEffect(loadQuestion, [id]);

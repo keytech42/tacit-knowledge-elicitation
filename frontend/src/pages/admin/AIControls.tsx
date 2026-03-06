@@ -698,6 +698,22 @@ export function AIControls() {
     setRecLoading(false);
   };
 
+  // ---- Slack backfill state ----
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ backfilled: number; total: number } | null>(null);
+
+  const handleBackfillSlack = async () => {
+    setBackfillLoading(true);
+    try {
+      const result = await api.post<{ backfilled: number; total: number }>("/questions/backfill-slack-threads");
+      setBackfillResult(result);
+    } catch (e: unknown) {
+      setBackfillResult(null);
+      alert(e instanceof Error ? e.message : "Backfill failed");
+    }
+    setBackfillLoading(false);
+  };
+
   // ---- Search field extractors (stable references) ----
   const questionSearchFields = useCallback(
     (q: Question) => `${q.title} ${q.category || ""} ${q.created_by.display_name}`,
@@ -1073,6 +1089,28 @@ export function AIControls() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+      </section>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Slack Thread Backfill */}
+      {/* ---------------------------------------------------------------- */}
+      <section className="bg-background border border-border rounded-lg p-6">
+        <h2 className="text-lg font-semibold mb-1">Slack Thread Backfill</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Create Slack threads for published questions that were published before the thread feature was deployed.
+        </p>
+        <button
+          onClick={handleBackfillSlack}
+          disabled={backfillLoading}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium disabled:opacity-50 transition-opacity"
+        >
+          {backfillLoading ? "Creating threads..." : "Backfill Slack Threads"}
+        </button>
+        {backfillResult && (
+          <div className="mt-3 p-3 bg-muted rounded-md text-sm">
+            Created {backfillResult.backfilled} Slack thread{backfillResult.backfilled !== 1 ? "s" : ""} out of {backfillResult.total} question{backfillResult.total !== 1 ? "s" : ""} without threads.
           </div>
         )}
       </section>

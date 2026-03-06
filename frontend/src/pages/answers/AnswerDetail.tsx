@@ -69,7 +69,9 @@ export function AnswerDetail() {
 
   const load = () => {
     if (!id) return;
-    api.get<Answer>(`/answers/${id}`).then((a) => { setAnswer(a); setEditBody(a.body); });
+    api.get<Answer>(`/answers/${id}`)
+      .then((a) => { setAnswer(a); setEditBody(a.body); })
+      .catch((err) => setError(err instanceof Error ? err.message : "Answer not found"));
     api.get<AnswerRevision[]>(`/answers/${id}/versions`).then((revs) => {
       setRevisions(revs);
       // Auto-select last two versions for diff
@@ -77,8 +79,8 @@ export function AnswerDetail() {
         setDiffFrom(revs[revs.length - 2].version);
         setDiffTo(revs[revs.length - 1].version);
       }
-    });
-    api.get<Review[]>(`/reviews?target_type=answer&target_id=${id}`).then(setReviews);
+    }).catch(() => {});
+    api.get<Review[]>(`/reviews?target_type=answer&target_id=${id}`).then(setReviews).catch(() => {});
   };
 
   useEffect(load, [id]);

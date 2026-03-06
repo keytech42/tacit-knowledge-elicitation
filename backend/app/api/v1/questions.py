@@ -111,6 +111,35 @@ async def list_categories(current_user: CurrentUser, db: AsyncSession = Depends(
     return [row[0] for row in result.all()]
 
 
+@router.post("/backfill-slack-threads")
+async def backfill_slack_threads(
+    current_user: User = require_role(RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create Slack threads for published/closed questions that don't have one."""
+    result = await db.execute(
+        select(Question).where(
+            Question.status.in_([QuestionStatus.PUBLISHED.value, QuestionStatus.CLOSED.value]),
+            Question.slack_thread_ts.is_(None),
+        )
+    )
+    questions = result.scalars().all()
+    created = 0
+    for q in questions:
+        thread_ts, slack_ch = await slack.notify_question_published(
+            question_title=q.title,
+            question_id=str(q.id),
+            question_body=q.body,
+            publisher_name=current_user.display_name,
+        )
+        if thread_ts and slack_ch:
+            q.slack_thread_ts = thread_ts
+            q.slack_channel = slack_ch
+            created += 1
+    await db.flush()
+    return {"backfilled": created, "total": len(questions)}
+
+
 @router.get("/{question_id}", response_model=QuestionResponse)
 async def get_question(question_id: uuid.UUID, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Question).where(Question.id == question_id))
@@ -375,3 +404,5 @@ async def list_quality_feedback(question_id: uuid.UUID, current_user: CurrentUse
         select(QuestionQualityFeedback).where(QuestionQualityFeedback.question_id == question_id).order_by(QuestionQualityFeedback.created_at.desc())
     )
     return result.scalars().all()
+
+
