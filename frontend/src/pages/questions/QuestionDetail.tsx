@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { api, ai, Question, Answer, Recommendation, TaskStatus } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { Admonition } from "@/components/Admonition";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
@@ -83,6 +84,7 @@ export function QuestionDetail() {
   const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
   const [scaffoldLoading, setScaffoldLoading] = useState(false);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [recReason, setRecReason] = useState<string | null>(null);
   const [recLoading, setRecLoading] = useState(false);
 
   const loadQuestion = () => {
@@ -209,11 +211,14 @@ export function QuestionDetail() {
   const handleGetRecommendations = async () => {
     if (!id || recLoading) return;
     setRecLoading(true);
+    setRecReason(null);
     try {
-      const results = await ai.recommend(id);
-      setRecommendations(results);
-    } catch {
+      const resp = await ai.recommend(id);
+      setRecommendations(resp.items);
+      setRecReason(resp.reason);
+    } catch (e: unknown) {
       setRecommendations([]);
+      setRecReason(e instanceof Error ? e.message : "Failed to get recommendations.");
     }
     setRecLoading(false);
   };
@@ -327,6 +332,13 @@ export function QuestionDetail() {
                 "bg-muted text-muted-foreground"
               }`}>{scaffoldTask.status}</span>
               {scaffoldTask.error && <span className="text-destructive ml-2">{scaffoldTask.error}</span>}
+            </div>
+          )}
+          {recReason && recommendations.length === 0 && (
+            <div className="mt-3">
+              <Admonition variant="warning" title="No recommendations available" size="xs">
+                {recReason}
+              </Admonition>
             </div>
           )}
           {recommendations.length > 0 && (

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { api, ai, Question, Answer, User, TaskStatus, Recommendation, RecommendationResponse } from "@/api/client";
+import { Admonition } from "@/components/Admonition";
 import { StatusBadge } from "@/components/StatusBadge";
 
 // ---------------------------------------------------------------------------
@@ -987,16 +988,15 @@ export function AIControls() {
           </button>
 
           {recReason && recommendations.length === 0 && (
-            <div className="p-3 rounded-md border border-status-amber/20 bg-status-amber/5 text-sm">
-              <p className="font-medium text-status-amber mb-1">No recommendations available</p>
-              <p className="text-muted-foreground">{recReason}</p>
-            </div>
+            <Admonition variant="warning" title="No recommendations available">
+              {recReason}
+            </Admonition>
           )}
 
           {recommendations.length > 0 && (
-            <div className="p-3 rounded-md border border-status-green/20 bg-status-green/5 text-sm text-status-green">
+            <Admonition variant="success">
               {recommendations.length} respondent{recommendations.length !== 1 ? "s" : ""} recommended
-            </div>
+            </Admonition>
           )}
 
           <div className="border-t border-border pt-4">
