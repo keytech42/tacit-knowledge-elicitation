@@ -49,7 +49,7 @@ class Answer(UUIDMixin, TimestampMixin, Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    embedding = mapped_column(Vector(1536), nullable=True)
+    embedding = mapped_column(Vector(1024), nullable=True)
 
     question = relationship("Question", lazy="selectin")
     author = relationship("User", foreign_keys=[author_id], lazy="selectin")

@@ -60,7 +60,7 @@ class Question(UUIDMixin, TimestampMixin, Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    embedding = mapped_column(Vector(1536), nullable=True)
+    embedding = mapped_column(Vector(1024), nullable=True)
 
     created_by = relationship("User", foreign_keys=[created_by_id], lazy="selectin")
     confirmed_by = relationship("User", foreign_keys=[confirmed_by_id], lazy="selectin")
