@@ -105,8 +105,8 @@ class TestThreadCreation:
                 question_body="Body text",
             )
 
-        # The function should return the thread_ts string
-        assert result == "1234567890.999"
+        # The function should return (thread_ts, channel) tuple
+        assert result == ("1234567890.999", "#test")
 
     async def test_notify_published_no_op_when_disabled(self):
         """When Slack is disabled, no messages sent, returns None."""
@@ -122,7 +122,7 @@ class TestThreadCreation:
             )
 
         mock_client.chat_postMessage.assert_not_called()
-        assert result is None
+        assert result == (None, None)
 
     async def test_thread_creation_failure_returns_none(self):
         """If the main message fails, return None without raising."""
@@ -139,7 +139,7 @@ class TestThreadCreation:
                 question_body="Body",
             )
 
-        assert result is None
+        assert result == (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -173,49 +173,59 @@ class TestLinkFormatting:
         assert "<https://app.example.com/questions/abc-123|View question>" in msg
         assert "Question ID: `abc-123`" not in msg
 
-    async def test_link_fallback_when_no_frontend_url(self):
-        """Without FRONTEND_URL, fall back to Question ID format."""
+    async def test_link_includes_question_id(self):
+        """Even with empty FRONTEND_URL, message still includes the question ID."""
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.return_value = _mock_slack_response({
+            "ts": "123.456", "ok": True,
+        })
+
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack, "_channel", return_value="#test"), \
-             patch.object(slack, "_send_message", new_callable=AsyncMock) as mock_send, \
+             patch.object(slack, "_get_client", return_value=mock_client), \
              patch.object(slack.settings, "FRONTEND_URL", ""):
             await slack.notify_question_published(
                 question_title="Test Q",
                 question_id="abc-123",
                 publisher_name="Admin",
+                question_body="Body",
             )
 
-        if mock_send.called:
-            msg = mock_send.call_args[0][1]
-            assert "abc-123" in msg
+        first_call = mock_client.chat_postMessage.call_args_list[0]
+        msg = first_call.kwargs.get("text", "")
+        assert "abc-123" in msg
 
     async def test_answer_notification_uses_link(self):
         """notify_answer_submitted should also use clickable links."""
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.return_value = _mock_slack_response({
+            "ts": "123.456", "ok": True,
+        })
+
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack, "_channel", return_value="#test"), \
-             patch.object(slack, "_send_message", new_callable=AsyncMock) as mock_send, \
+             patch.object(slack, "_get_client", return_value=mock_client), \
              patch.object(slack.settings, "FRONTEND_URL", "https://app.example.com"):
             await slack.notify_answer_submitted(
                 question_title="Q",
+                question_id="q-789",
                 answer_id="ans-456",
                 author_name="Respondent",
-                question_id="q-789",
             )
 
-        if mock_send.called:
-            msg = mock_send.call_args[0][1]
-            # Should link to the question, not just show raw ID
-            assert "https://app.example.com" in msg
+        call_kwargs = mock_client.chat_postMessage.call_args.kwargs
+        msg = call_kwargs.get("text", "")
+        assert "https://app.example.com" in msg
 
 
 # ---------------------------------------------------------------------------
 # State Change Thread Replies
 # ---------------------------------------------------------------------------
 
-class TestStateChangeThreadReplies:
-    """notify_state_change posts to the question's existing Slack thread."""
+class TestThreadUpdateAndClosure:
+    """notify_thread_update and notify_question_closed post to existing threads."""
 
-    async def test_state_change_posts_to_thread(self):
+    async def test_thread_update_posts_to_thread(self):
         """Posts a reply using the stored slack_thread_ts."""
         mock_client = AsyncMock()
         mock_client.chat_postMessage.return_value = _mock_slack_response({
@@ -223,89 +233,79 @@ class TestStateChangeThreadReplies:
         })
 
         with patch.object(slack, "_is_enabled", return_value=True), \
-             patch.object(slack, "_channel", return_value="#test"), \
              patch.object(slack, "_get_client", return_value=mock_client):
-            await slack.notify_state_change(
-                question_title="My Question",
-                question_id="q-123",
-                new_state="closed",
-                actor_name="Admin User",
-                thread_ts="1234567890.123456",
+            await slack.notify_thread_update(
+                slack_channel="#test",
+                slack_thread_ts="1234567890.123456",
+                text="Status update",
             )
 
         mock_client.chat_postMessage.assert_called_once()
         call_kwargs = mock_client.chat_postMessage.call_args.kwargs
         assert call_kwargs["thread_ts"] == "1234567890.123456"
 
-    async def test_state_change_no_op_when_no_thread(self):
-        """If no thread_ts, do nothing."""
+    async def test_thread_update_disabled_no_op(self):
+        """When Slack is disabled, thread update is a no-op."""
         mock_client = AsyncMock()
 
-        with patch.object(slack, "_is_enabled", return_value=True), \
+        with patch.object(slack, "_is_enabled", return_value=False), \
              patch.object(slack, "_get_client", return_value=mock_client):
-            await slack.notify_state_change(
-                question_title="Q",
-                question_id="q-1",
-                new_state="closed",
-                actor_name="Admin",
-                thread_ts=None,
+            await slack.notify_thread_update(
+                slack_channel="#test",
+                slack_thread_ts="123.456",
+                text="Update",
             )
 
         mock_client.chat_postMessage.assert_not_called()
 
-    async def test_state_change_message_content(self):
-        """Thread reply includes the new state and actor name."""
+    async def test_question_closed_posts_to_thread(self):
+        """notify_question_closed posts a closure message to the thread."""
         mock_client = AsyncMock()
         mock_client.chat_postMessage.return_value = _mock_slack_response({
             "ts": "999.999", "ok": True,
         })
 
         with patch.object(slack, "_is_enabled", return_value=True), \
-             patch.object(slack, "_channel", return_value="#test"), \
              patch.object(slack, "_get_client", return_value=mock_client):
-            await slack.notify_state_change(
-                question_title="My Q",
+            await slack.notify_question_closed(
+                slack_channel="#test",
+                slack_thread_ts="123.456",
+                question_title="My Question",
                 question_id="q-1",
-                new_state="archived",
-                actor_name="Admin User",
-                thread_ts="123.456",
             )
 
-        msg = mock_client.chat_postMessage.call_args.kwargs.get("text", "")
-        assert "archived" in msg.lower()
-        assert "Admin User" in msg
+        mock_client.chat_postMessage.assert_called_once()
+        call_kwargs = mock_client.chat_postMessage.call_args.kwargs
+        assert call_kwargs["thread_ts"] == "123.456"
+        assert "closed" in call_kwargs["text"].lower()
 
-    async def test_state_change_disabled_no_op(self):
-        """When Slack is disabled, state change is a no-op."""
+    async def test_question_closed_disabled_no_op(self):
+        """When Slack is disabled, closure notification is a no-op."""
         mock_client = AsyncMock()
 
         with patch.object(slack, "_is_enabled", return_value=False), \
              patch.object(slack, "_get_client", return_value=mock_client):
-            await slack.notify_state_change(
+            await slack.notify_question_closed(
+                slack_channel="#test",
+                slack_thread_ts="123.456",
                 question_title="Q",
                 question_id="q-1",
-                new_state="closed",
-                actor_name="Admin",
-                thread_ts="123.456",
             )
 
         mock_client.chat_postMessage.assert_not_called()
 
-    async def test_state_change_handles_error_gracefully(self):
+    async def test_thread_update_handles_error_gracefully(self):
         """Slack API errors during thread reply don't propagate."""
         mock_client = AsyncMock()
         mock_client.chat_postMessage.side_effect = ConnectionError("network down")
 
         with patch.object(slack, "_is_enabled", return_value=True), \
-             patch.object(slack, "_channel", return_value="#test"), \
              patch.object(slack, "_get_client", return_value=mock_client):
             # Should not raise
-            await slack.notify_state_change(
-                question_title="Q",
-                question_id="q-1",
-                new_state="closed",
-                actor_name="Admin",
-                thread_ts="123.456",
+            await slack.notify_thread_update(
+                slack_channel="#test",
+                slack_thread_ts="123.456",
+                text="Update",
             )
 
 
@@ -328,8 +328,10 @@ class TestSlackThreadRouteIntegration:
         db.add(q)
         await db.flush()
 
-        with patch("app.api.v1.questions.slack.notify_question_published", new_callable=AsyncMock) as mock_notify:
-            mock_notify.return_value = "1234567890.thread"
+        with patch("app.api.v1.questions.slack.notify_question_published",
+                    new_callable=AsyncMock, return_value=("1234567890.thread", "#test")) as mock_notify, \
+             patch("app.api.v1.questions.update_question_embedding", new_callable=AsyncMock), \
+             patch("app.api.v1.questions.worker_client.trigger_scaffold_options", new_callable=AsyncMock):
             r = await client.post(
                 f"/api/v1/questions/{q.id}/publish",
                 headers=auth_header(admin_user),
@@ -338,19 +340,18 @@ class TestSlackThreadRouteIntegration:
             mock_notify.assert_called_once()
 
             # Verify question_body is passed to the notification
-            call_kwargs = mock_notify.call_args
-            # Check both positional and keyword args for question_body
-            all_kwargs = call_kwargs.kwargs if call_kwargs.kwargs else {}
-            assert "question_body" in all_kwargs or len(call_kwargs.args) > 3
+            call_kwargs = mock_notify.call_args.kwargs
+            assert "question_body" in call_kwargs
 
-        # The route should store the returned thread_ts on the question
+        # The route should store the returned thread_ts and channel on the question
         await db.refresh(q)
         assert q.slack_thread_ts == "1234567890.thread"
+        assert q.slack_channel == "#test"
 
     async def test_close_triggers_thread_reply(
         self, client: AsyncClient, admin_user: User, db: AsyncSession,
     ):
-        """Closing a question triggers a state change thread reply."""
+        """Closing a question triggers a thread closure notification."""
         q = Question(
             title="Close Thread Q", body="B",
             created_by_id=admin_user.id,
@@ -358,72 +359,25 @@ class TestSlackThreadRouteIntegration:
         )
         # Simulate question already having a thread
         q.slack_thread_ts = "111.222"
+        q.slack_channel = "#test"
         db.add(q)
         await db.flush()
 
-        with patch("app.api.v1.questions.slack.notify_state_change", new_callable=AsyncMock) as mock_state:
+        with patch("app.api.v1.questions.slack.notify_question_closed", new_callable=AsyncMock) as mock_closed:
             r = await client.post(
                 f"/api/v1/questions/{q.id}/close",
                 headers=auth_header(admin_user),
             )
             assert r.status_code == 200
-            mock_state.assert_called_once()
-            call_kwargs = mock_state.call_args.kwargs
-            assert call_kwargs["thread_ts"] == "111.222"
-            assert call_kwargs["new_state"] == "closed"
-
-    async def test_archive_triggers_thread_reply(
-        self, client: AsyncClient, admin_user: User, db: AsyncSession,
-    ):
-        """Archiving a question triggers a state change thread reply."""
-        q = Question(
-            title="Archive Thread Q", body="B",
-            created_by_id=admin_user.id,
-            status=QuestionStatus.CLOSED.value,
-        )
-        q.slack_thread_ts = "333.444"
-        db.add(q)
-        await db.flush()
-
-        with patch("app.api.v1.questions.slack.notify_state_change", new_callable=AsyncMock) as mock_state:
-            r = await client.post(
-                f"/api/v1/questions/{q.id}/archive",
-                headers=auth_header(admin_user),
-            )
-            assert r.status_code == 200
-            mock_state.assert_called_once()
-            call_kwargs = mock_state.call_args.kwargs
-            assert call_kwargs["thread_ts"] == "333.444"
-            assert call_kwargs["new_state"] == "archived"
-
-    async def test_reject_triggers_thread_reply(
-        self, client: AsyncClient, author_user: User, admin_user: User, db: AsyncSession,
-    ):
-        """Rejecting a question triggers a thread reply if thread exists."""
-        q = Question(
-            title="Reject Thread Q", body="B",
-            created_by_id=author_user.id,
-            status=QuestionStatus.IN_REVIEW.value,
-        )
-        q.slack_thread_ts = "555.666"
-        db.add(q)
-        await db.flush()
-
-        with patch("app.api.v1.questions.slack.notify_question_rejected", new_callable=AsyncMock), \
-             patch("app.api.v1.questions.slack.notify_state_change", new_callable=AsyncMock) as mock_state:
-            r = await client.post(
-                f"/api/v1/questions/{q.id}/reject",
-                json={"comment": "Too vague"},
-                headers=auth_header(admin_user),
-            )
-            assert r.status_code == 200
-            mock_state.assert_called_once()
-            assert mock_state.call_args.kwargs["thread_ts"] == "555.666"
+            mock_closed.assert_called_once()
+            call_kwargs = mock_closed.call_args.kwargs
+            assert call_kwargs["slack_thread_ts"] == "111.222"
+            assert call_kwargs["slack_channel"] == "#test"
 
     async def test_no_thread_reply_when_no_thread_ts(
         self, client: AsyncClient, admin_user: User, db: AsyncSession,
     ):
-        """If question has no slack_thread_ts, no state change reply is sent."""
+        """If question has no slack_thread_ts, no closure notification is sent."""
         q = Question(
             title="No Thread Q", body="B",
             created_by_id=admin_user.id,
@@ -433,15 +387,13 @@ class TestSlackThreadRouteIntegration:
         db.add(q)
         await db.flush()
 
-        with patch("app.api.v1.questions.slack.notify_state_change", new_callable=AsyncMock) as mock_state:
+        with patch("app.api.v1.questions.slack.notify_question_closed", new_callable=AsyncMock) as mock_closed:
             r = await client.post(
                 f"/api/v1/questions/{q.id}/close",
                 headers=auth_header(admin_user),
             )
             assert r.status_code == 200
-            # Should either not be called, or called with thread_ts=None
-            if mock_state.called:
-                assert mock_state.call_args.kwargs.get("thread_ts") is None
+            mock_closed.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

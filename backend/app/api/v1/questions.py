@@ -223,6 +223,8 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
     if thread_ts and slack_ch:
         question.slack_thread_ts = thread_ts
         question.slack_channel = slack_ch
+        await db.flush()
+        await db.refresh(question)
     return question
 
 

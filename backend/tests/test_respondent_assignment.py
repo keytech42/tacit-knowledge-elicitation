@@ -138,12 +138,12 @@ class TestAssignRespondentPermissions:
         assert r.status_code == 403
 
     async def test_respondent_forbidden(
-        self, client: AsyncClient, respondent_user: User, db: AsyncSession,
+        self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
     ):
         """Respondent role cannot assign."""
         q = Question(
             title="Respondent Forbidden", body="B",
-            created_by_id=uuid.uuid4(),
+            created_by_id=admin_user.id,
             status=QuestionStatus.PUBLISHED.value,
         )
         db.add(q)
@@ -157,12 +157,12 @@ class TestAssignRespondentPermissions:
         assert r.status_code == 403
 
     async def test_reviewer_forbidden(
-        self, client: AsyncClient, reviewer_user: User, respondent_user: User, db: AsyncSession,
+        self, client: AsyncClient, admin_user: User, reviewer_user: User, respondent_user: User, db: AsyncSession,
     ):
         """Reviewer role cannot assign."""
         q = Question(
             title="Reviewer Forbidden", body="B",
-            created_by_id=uuid.uuid4(),
+            created_by_id=admin_user.id,
             status=QuestionStatus.PUBLISHED.value,
         )
         db.add(q)
