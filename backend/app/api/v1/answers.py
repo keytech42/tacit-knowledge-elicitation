@@ -202,8 +202,11 @@ async def submit_answer_endpoint(
     question = question_result.scalar_one_or_none()
     await slack.notify_answer_submitted(
         question_title=question.title if question else "Unknown",
+        question_id=str(answer.question_id),
         answer_id=str(answer.id),
         author_name=current_user.display_name,
+        slack_channel=question.slack_channel if question else None,
+        slack_thread_ts=question.slack_thread_ts if question else None,
     )
 
     return answer

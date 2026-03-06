@@ -2,10 +2,11 @@
 
 All public functions catch exceptions internally so Slack outages or
 misconfiguration never affect platform operations.
+
+Thread lifecycle: When a question is published, a Slack thread is created.
+All subsequent events for that question post as replies in that thread.
 """
-import asyncio
 import logging
-from functools import lru_cache
 
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
@@ -65,17 +66,32 @@ async def _mention_or_name(email: str | None, display_name: str) -> str:
     return display_name
 
 
-async def _send_message(channel: str, text: str) -> None:
-    """Post a message to a Slack channel. Fire-and-forget."""
+async def _post_message(channel: str, text: str, thread_ts: str | None = None) -> str | None:
+    """Post a message. Returns the message ts, or None on failure."""
     try:
         client = _get_client()
-        await client.chat_postMessage(channel=channel, text=text)
+        resp = await client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
+        return resp.get("ts")
     except Exception:
         logger.exception("Failed to send Slack message to %s", channel)
+        return None
+
+
+async def _send_message(channel: str, text: str) -> None:
+    """Post a message to a Slack channel. Fire-and-forget. (backward compat)"""
+    await _post_message(channel, text)
 
 
 def _channel() -> str:
     return settings.SLACK_DEFAULT_CHANNEL
+
+
+def _question_link(question_id: str, text: str = "View question") -> str:
+    return f"<{settings.FRONTEND_URL}/questions/{question_id}|{text}>"
+
+
+def _answer_link(answer_id: str, text: str = "View answer") -> str:
+    return f"<{settings.FRONTEND_URL}/answers/{answer_id}|{text}>"
 
 
 # --- Public notification functions ---
@@ -85,17 +101,43 @@ def _channel() -> str:
 async def notify_question_published(
     question_title: str,
     question_id: str,
+    question_body: str,
     publisher_name: str,
-) -> None:
-    """Notify channel when a question is published and open for answers."""
+) -> tuple[str | None, str | None]:
+    """Notify channel when a question is published. Creates a thread.
+
+    Returns (thread_ts, channel) so the caller can store them on the Question.
+    """
     if not _is_enabled() or not _channel():
-        return
+        return (None, None)
+
+    channel = _channel()
+    link = _question_link(question_id)
     text = (
         f":clipboard: *New question published* by {publisher_name}\n"
         f"*{question_title}*\n"
-        f"Question ID: `{question_id}`"
+        f"{link}"
     )
-    await _send_message(_channel(), text)
+    thread_ts = await _post_message(channel, text)
+    if not thread_ts:
+        return (None, None)
+
+    # Post the question body as the first reply in the thread
+    body_preview = question_body[:2000] if len(question_body) > 2000 else question_body
+    await _post_message(channel, body_preview, thread_ts=thread_ts)
+
+    return (thread_ts, channel)
+
+
+async def notify_thread_update(
+    slack_channel: str,
+    slack_thread_ts: str,
+    text: str,
+) -> None:
+    """Post a status update as a reply in an existing question thread."""
+    if not _is_enabled():
+        return
+    await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
 
 
 async def notify_question_rejected(
@@ -109,10 +151,11 @@ async def notify_question_rejected(
     if not _is_enabled() or not _channel():
         return
     mention = await _mention_or_name(author_email, author_name)
+    link = _question_link(question_id)
     text = (
         f":x: *Question rejected* — {mention}\n"
         f"*{question_title}*\n"
-        f"Question ID: `{question_id}`"
+        f"{link}"
     )
     if comment:
         text += f"\nReason: {comment}"
@@ -121,18 +164,28 @@ async def notify_question_rejected(
 
 async def notify_answer_submitted(
     question_title: str,
+    question_id: str,
     answer_id: str,
     author_name: str,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
-    """Notify channel when an answer is submitted for review."""
-    if not _is_enabled() or not _channel():
+    """Notify channel when an answer is submitted for review.
+
+    If the question has a thread, posts as a reply. Otherwise posts to the default channel.
+    """
+    if not _is_enabled():
         return
+    link = _answer_link(answer_id)
     text = (
         f":pencil: *Answer submitted* by {author_name}\n"
         f"For question: *{question_title}*\n"
-        f"Answer ID: `{answer_id}`"
+        f"{link}"
     )
-    await _send_message(_channel(), text)
+    if slack_channel and slack_thread_ts:
+        await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+    elif _channel():
+        await _send_message(_channel(), text)
 
 
 async def notify_review_verdict(
@@ -143,9 +196,11 @@ async def notify_review_verdict(
     author_email: str | None,
     author_name: str,
     comment: str | None = None,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
     """Notify when a review verdict is submitted."""
-    if not _is_enabled() or not _channel():
+    if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
     emoji_map = {
@@ -154,13 +209,17 @@ async def notify_review_verdict(
         "rejected": ":no_entry:",
     }
     emoji = emoji_map.get(verdict, ":speech_balloon:")
+    link = _answer_link(answer_id)
     text = (
         f"{emoji} *Review: {verdict.replace('_', ' ')}* by {reviewer_name}\n"
-        f"For answer `{answer_id}` on *{question_title}* — {mention}\n"
+        f"For {link} on *{question_title}* — {mention}\n"
     )
     if comment:
         text += f"Comment: {comment}"
-    await _send_message(_channel(), text)
+    if slack_channel and slack_thread_ts:
+        await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+    elif _channel():
+        await _send_message(_channel(), text)
 
 
 async def notify_answer_approved(
@@ -168,17 +227,23 @@ async def notify_answer_approved(
     answer_id: str,
     author_email: str | None,
     author_name: str,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
     """Notify when an answer reaches approved status (review threshold met)."""
-    if not _is_enabled() or not _channel():
+    if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
+    link = _answer_link(answer_id)
     text = (
         f":tada: *Answer approved!* — {mention}\n"
         f"For question: *{question_title}*\n"
-        f"Answer ID: `{answer_id}`"
+        f"{link}"
     )
-    await _send_message(_channel(), text)
+    if slack_channel and slack_thread_ts:
+        await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+    elif _channel():
+        await _send_message(_channel(), text)
 
 
 async def notify_revision_requested(
@@ -186,14 +251,38 @@ async def notify_revision_requested(
     answer_id: str,
     author_email: str | None,
     author_name: str,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
     """Notify the answer author when changes are requested."""
-    if not _is_enabled() or not _channel():
+    if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
+    link = _answer_link(answer_id)
     text = (
         f":arrows_counterclockwise: *Revision requested* — {mention}\n"
         f"For question: *{question_title}*\n"
-        f"Answer ID: `{answer_id}` — please revise and resubmit."
+        f"{link} — please revise and resubmit."
     )
-    await _send_message(_channel(), text)
+    if slack_channel and slack_thread_ts:
+        await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+    elif _channel():
+        await _send_message(_channel(), text)
+
+
+async def notify_question_closed(
+    slack_channel: str,
+    slack_thread_ts: str,
+    question_title: str,
+    question_id: str,
+) -> None:
+    """Post a closure message to a question's thread."""
+    if not _is_enabled():
+        return
+    link = _question_link(question_id)
+    text = (
+        f":lock: *Question closed* — *{question_title}*\n"
+        f"{link}\n"
+        f"This question is no longer accepting new answers."
+    )
+    await _post_message(slack_channel, text, thread_ts=slack_thread_ts)

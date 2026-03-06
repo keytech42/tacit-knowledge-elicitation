@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     EMBEDDING_API_KEY: str = ""  # e.g. "no-key" (local) or actual API key (cloud)
     SLACK_BOT_TOKEN: str = ""  # xoxb-... Bot User OAuth Token
     SLACK_DEFAULT_CHANNEL: str = ""  # e.g. "#knowledge-elicitation" or channel ID
+    FRONTEND_URL: str = "http://localhost:5173"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
