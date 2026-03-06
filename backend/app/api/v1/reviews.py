@@ -211,6 +211,8 @@ async def update_review(
             author_email=answer.author.email if answer.author else None,
             author_name=answer.author.display_name if answer.author else "Unknown",
             comment=request.comment,
+            slack_channel=question.slack_channel if question else None,
+            slack_thread_ts=question.slack_thread_ts if question else None,
         )
 
         # Notify about answer status changes from review resolution
@@ -221,6 +223,8 @@ async def update_review(
                     answer_id=str(answer.id),
                     author_email=answer.author.email if answer.author else None,
                     author_name=answer.author.display_name if answer.author else "Unknown",
+                    slack_channel=question.slack_channel if question else None,
+                    slack_thread_ts=question.slack_thread_ts if question else None,
                 )
             elif answer.status == AnswerStatus.REVISION_REQUESTED.value:
                 await slack.notify_revision_requested(
@@ -228,6 +232,8 @@ async def update_review(
                     answer_id=str(answer.id),
                     author_email=answer.author.email if answer.author else None,
                     author_name=answer.author.display_name if answer.author else "Unknown",
+                    slack_channel=question.slack_channel if question else None,
+                    slack_thread_ts=question.slack_thread_ts if question else None,
                 )
 
     return review

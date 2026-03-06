@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api, Review, Answer, Question } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, statusLabel } from "@/components/StatusBadge";
 
 export function ReviewDetail() {
@@ -112,7 +113,7 @@ export function ReviewDetail() {
         {review.verdict !== "pending" && review.comment && (
           <div className="mt-4 pt-4 border-t border-border">
             <p className="text-xs font-medium text-muted-foreground mb-1">Review Comment</p>
-            <p className="text-sm">{review.comment}</p>
+            <MarkdownContent className="text-sm">{review.comment}</MarkdownContent>
           </div>
         )}
       </div>
@@ -126,7 +127,7 @@ export function ReviewDetail() {
               <span className="font-medium text-xs">{c.author.display_name}</span>
               <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
             </div>
-            <p className="text-sm">{c.body}</p>
+            <MarkdownContent className="text-sm">{c.body}</MarkdownContent>
           </div>
         ))}
         {review.comments.length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}

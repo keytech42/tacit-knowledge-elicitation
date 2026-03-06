@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api, ai, Answer, AnswerRevision, Review, TaskStatus } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
@@ -68,7 +69,9 @@ export function AnswerDetail() {
 
   const load = () => {
     if (!id) return;
-    api.get<Answer>(`/answers/${id}`).then((a) => { setAnswer(a); setEditBody(a.body); });
+    api.get<Answer>(`/answers/${id}`)
+      .then((a) => { setAnswer(a); setEditBody(a.body); })
+      .catch((err) => setError(err instanceof Error ? err.message : "Answer not found"));
     api.get<AnswerRevision[]>(`/answers/${id}/versions`).then((revs) => {
       setRevisions(revs);
       // Auto-select last two versions for diff
@@ -76,8 +79,8 @@ export function AnswerDetail() {
         setDiffFrom(revs[revs.length - 2].version);
         setDiffTo(revs[revs.length - 1].version);
       }
-    });
-    api.get<Review[]>(`/reviews?target_type=answer&target_id=${id}`).then(setReviews);
+    }).catch(() => {});
+    api.get<Review[]>(`/reviews?target_type=answer&target_id=${id}`).then(setReviews).catch(() => {});
   };
 
   useEffect(load, [id]);
@@ -222,7 +225,7 @@ export function AnswerDetail() {
           </>
         ) : (
           <>
-            <p className="whitespace-pre-wrap text-foreground/80">{answer.body}</p>
+            <MarkdownContent className="text-foreground/80">{answer.body}</MarkdownContent>
             <div className="text-sm text-muted-foreground mt-4">
               by {answer.author.display_name} &middot; {new Date(answer.created_at).toLocaleDateString()}
             </div>
