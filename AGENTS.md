@@ -57,6 +57,9 @@ docker compose exec api alembic upgrade head
 
 # Create migration after model changes
 docker compose exec api alembic revision --autogenerate -m "description"
+
+# Type-check frontend (matches CI — catches errors vite dev silently ignores)
+docker compose exec web npx tsc -b --noEmit
 ```
 
 ## Key Patterns
