@@ -2,18 +2,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Question } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-import { StatusBadge, statusLabel, statusColor } from "@/components/StatusBadge";
+import { StatusBadge, statusLabel, statusColor, WORKFLOW_HINTS } from "@/components/StatusBadge";
+import { STATUS_COLOR_TOKEN, borderColor } from "@/components/statusColors";
 
-const STATUS_BORDER_COLORS: Record<string, string> = {
-  draft: "border-gray-300",
-  proposed: "border-yellow-300",
-  in_review: "border-blue-300",
-  published: "border-green-300",
-  closed: "border-red-300",
-  archived: "border-gray-200",
-};
-
-const ALL_STATUSES = ["draft", "proposed", "in_review", "published", "closed", "archived"];
+/** Statuses visible to all users */
+const PRIMARY_STATUSES = ["published", "closed", "archived"];
+/** Authoring pipeline statuses visible only to admin/author */
+const AUTHORING_STATUSES = ["draft", "proposed", "in_review"];
 
 type ViewMode = "list" | "kanban";
 
@@ -34,28 +29,66 @@ function KanbanCard({ q }: { q: Question }) {
   );
 }
 
-function KanbanBoard({ questions }: { questions: Question[] }) {
-  const grouped = ALL_STATUSES.reduce<Record<string, Question[]>>((acc, status) => {
+function ColumnHeader({ status, count }: { status: string; count: number }) {
+  const hint = WORKFLOW_HINTS[`q:${status}`];
+  return (
+    <div className="flex items-center gap-2 mb-3 px-1">
+      <div className="relative group">
+        <span className={`text-xs px-2 py-1 rounded-full font-medium cursor-help ${statusColor(status)}`}>
+          {statusLabel(status)}
+        </span>
+        {hint && (
+          <div className="invisible group-hover:visible absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-52 px-3 py-2 text-xs text-foreground bg-popover border border-border rounded-lg shadow-md z-10 pointer-events-none">
+            {hint}
+            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-border" />
+          </div>
+        )}
+      </div>
+      <span className="text-xs text-muted-foreground">{count}</span>
+    </div>
+  );
+}
+
+function KanbanColumn({ status, questions }: { status: string; questions: Question[] }) {
+  const border = STATUS_COLOR_TOKEN[status] ? borderColor(STATUS_COLOR_TOKEN[status]) : "border-border";
+  return (
+    <div className="flex-shrink-0 w-64">
+      <ColumnHeader status={status} count={questions.length} />
+      <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${border} min-h-[200px]`}>
+        {questions.map((q) => <KanbanCard key={q.id} q={q} />)}
+        {questions.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No items</p>}
+      </div>
+    </div>
+  );
+}
+
+function KanbanBoard({ questions, showAuthoring }: { questions: Question[]; showAuthoring: boolean }) {
+  const allStatuses = showAuthoring ? [...PRIMARY_STATUSES, ...AUTHORING_STATUSES] : PRIMARY_STATUSES;
+  const grouped = allStatuses.reduce<Record<string, Question[]>>((acc, status) => {
     acc[status] = questions.filter((q) => q.status === status);
     return acc;
   }, {});
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: "calc(100vh - 220px)" }}>
-      {ALL_STATUSES.map((status) => (
-        <div key={status} className="flex-shrink-0 w-64">
-          <div className="flex items-center gap-2 mb-3 px-1">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(status)}`}>
-              {statusLabel(status)}
-            </span>
-            <span className="text-xs text-muted-foreground">{grouped[status].length}</span>
-          </div>
-          <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${STATUS_BORDER_COLORS[status]} min-h-[200px]`}>
-            {grouped[status].map((q) => <KanbanCard key={q.id} q={q} />)}
-            {grouped[status].length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No items</p>}
+    <div style={{ minHeight: "calc(100vh - 220px)" }}>
+      {/* Primary row: published, closed, archived */}
+      <div className="flex gap-4 overflow-x-auto pb-4">
+        {PRIMARY_STATUSES.map((status) => (
+          <KanbanColumn key={status} status={status} questions={grouped[status]} />
+        ))}
+      </div>
+
+      {/* Authoring pipeline row: draft, proposed, in_review (admin/author only) */}
+      {showAuthoring && (
+        <div className="mt-6">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Authoring Pipeline</h3>
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {AUTHORING_STATUSES.map((status) => (
+              <KanbanColumn key={status} status={status} questions={grouped[status]} />
+            ))}
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -68,6 +101,8 @@ export function QuestionList() {
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     return (localStorage.getItem("questionListView") as ViewMode) || "list";
   });
+
+  const isAuthorOrAdmin = hasRole("author") || hasRole("admin");
 
   useEffect(() => {
     const params = viewMode === "list" && statusFilter ? `?status=${statusFilter}` : "";
@@ -87,7 +122,7 @@ export function QuestionList() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold">Questions ({total})</h1>
-          {(hasRole("author") || hasRole("admin")) && (
+          {isAuthorOrAdmin && (
             <Link to="/questions/new" className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium">New Question</Link>
           )}
         </div>
@@ -96,10 +131,11 @@ export function QuestionList() {
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-border rounded-md px-3 py-2 text-sm bg-background">
               <option value="">All statuses</option>
               <option value="published">Published</option>
-              <option value="draft">Draft</option>
-              <option value="proposed">Proposed</option>
-              <option value="in_review">In Review</option>
               <option value="closed">Closed</option>
+              <option value="archived">Archived</option>
+              {isAuthorOrAdmin && <option value="draft">Draft</option>}
+              {isAuthorOrAdmin && <option value="proposed">Proposed</option>}
+              {isAuthorOrAdmin && <option value="in_review">In Review</option>}
             </select>
           )}
           <div className="flex border border-border rounded-md overflow-hidden">
@@ -110,7 +146,7 @@ export function QuestionList() {
       </div>
 
       {viewMode === "kanban" ? (
-        <KanbanBoard questions={questions} />
+        <KanbanBoard questions={questions} showAuthoring={isAuthorOrAdmin} />
       ) : (
         <div className="space-y-3">
           {questions.map((q) => (
