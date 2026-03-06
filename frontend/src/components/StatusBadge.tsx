@@ -1,20 +1,19 @@
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  // Question statuses
-  draft: { label: "Draft", color: "bg-gray-200 text-gray-700" },
-  proposed: { label: "Proposed", color: "bg-yellow-100 text-yellow-800" },
-  in_review: { label: "In Review", color: "bg-blue-100 text-blue-800" },
-  published: { label: "Published", color: "bg-green-100 text-green-800" },
-  closed: { label: "Closed", color: "bg-red-100 text-red-800" },
-  archived: { label: "Archived", color: "bg-gray-100 text-gray-500" },
-  // Answer statuses
-  submitted: { label: "Submitted", color: "bg-yellow-100 text-yellow-800" },
-  under_review: { label: "Under Review", color: "bg-blue-100 text-blue-800" },
-  approved: { label: "Approved", color: "bg-green-100 text-green-800" },
-  revision_requested: { label: "Revision Requested", color: "bg-orange-100 text-orange-800" },
-  rejected: { label: "Rejected", color: "bg-red-100 text-red-800" },
-  // Review verdicts
-  pending: { label: "Pending", color: "bg-gray-200 text-gray-700" },
-  changes_requested: { label: "Changes Requested", color: "bg-yellow-100 text-yellow-800" },
+import { STATUS_COLOR_TOKEN, badgeColor } from "./statusColors";
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  proposed: "Proposed",
+  in_review: "In Review",
+  published: "Published",
+  closed: "Closed",
+  archived: "Archived",
+  submitted: "Submitted",
+  under_review: "Under Review",
+  approved: "Approved",
+  revision_requested: "Revision Requested",
+  rejected: "Rejected",
+  pending: "Pending",
+  changes_requested: "Changes Requested",
 };
 
 /** Workflow hints shown below status badges */
@@ -36,11 +35,12 @@ export const WORKFLOW_HINTS: Record<string, string> = {
 };
 
 export function statusLabel(status: string): string {
-  return STATUS_CONFIG[status]?.label ?? status.replace(/_/g, " ");
+  return STATUS_LABELS[status] ?? status.replace(/_/g, " ");
 }
 
 export function statusColor(status: string): string {
-  return STATUS_CONFIG[status]?.color ?? "bg-gray-100 text-gray-600";
+  const token = STATUS_COLOR_TOKEN[status];
+  return token ? badgeColor(token) : "bg-muted text-muted-foreground";
 }
 
 interface StatusBadgeProps {

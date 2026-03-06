@@ -25,6 +25,9 @@ class ScaffoldOptionsRequest(BaseModel):
     question_id: uuid.UUID
     num_options: int = 4
 
+    def capped_options(self) -> int:
+        return min(self.num_options, 4)
+
 
 class ReviewAssistRequest(BaseModel):
     answer_id: uuid.UUID
@@ -40,6 +43,11 @@ class RecommendationItem(BaseModel):
     display_name: str
     score: float
     reasoning: str
+
+
+class RecommendationResponse(BaseModel):
+    items: list[RecommendationItem]
+    reason: str | None = None
 
 
 class TaskAcceptedResponse(BaseModel):
@@ -77,7 +85,7 @@ async def scaffold_options(
     _require_worker()
     result = await worker_client.trigger_scaffold_options(
         question_id=request.question_id,
-        num_options=request.num_options,
+        num_options=request.capped_options(),
     )
     if not result:
         raise HTTPException(status_code=502, detail="Worker did not respond")
@@ -98,14 +106,17 @@ async def review_assist(
     return TaskAcceptedResponse(task_id=result["task_id"], status=result["status"])
 
 
-@router.post("/recommend", response_model=list[RecommendationItem])
+@router.post("/recommend", response_model=RecommendationResponse)
 async def recommend(
     request: RecommendRequest,
     admin: User = require_role(RoleName.ADMIN),
     db: AsyncSession = Depends(get_db),
 ):
-    results = await recommend_respondents(db, request.question_id, request.top_k)
-    return [RecommendationItem(**r) for r in results]
+    result = await recommend_respondents(db, request.question_id, request.top_k)
+    return RecommendationResponse(
+        items=[RecommendationItem(**r) for r in result["items"]],
+        reason=result.get("reason"),
+    )
 
 
 @router.get("/tasks/{task_id}")

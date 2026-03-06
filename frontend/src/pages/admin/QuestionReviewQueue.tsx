@@ -124,7 +124,7 @@ export function QuestionReviewQueue() {
         </button>
       </div>
 
-      {error && <p className="text-destructive text-sm mb-4 p-3 bg-red-50 rounded-md border border-red-200">{error}</p>}
+      {error && <p className="text-destructive text-sm mb-4 p-3 bg-destructive/5 rounded-md border border-destructive/20">{error}</p>}
 
       {SECTIONS.map((section) => {
         const items = data?.[section.key] ?? [];
@@ -177,10 +177,10 @@ export function QuestionReviewQueue() {
                               }
                             }}
                             className={`px-3 py-1.5 rounded text-sm font-medium disabled:opacity-50 ${
-                              a.variant === "green" ? "bg-green-600 text-white hover:bg-green-700" :
-                              a.variant === "blue" ? "bg-blue-600 text-white hover:bg-blue-700" :
-                              a.variant === "danger" ? "bg-red-600 text-white hover:bg-red-700" :
-                              "bg-gray-500 text-white hover:bg-gray-600"
+                              a.variant === "green" ? "bg-status-green text-white hover:bg-status-green/90" :
+                              a.variant === "blue" ? "bg-status-blue text-white hover:bg-status-blue/90" :
+                              a.variant === "danger" ? "bg-status-red text-white hover:bg-status-red/90" :
+                              "bg-muted text-muted-foreground hover:bg-muted/80"
                             } transition-colors`}
                           >
                             {actionLoading === q.id ? "..." : a.label}
@@ -214,7 +214,7 @@ export function QuestionReviewQueue() {
               <button onClick={() => { setRejectModal(null); setRejectComment(""); }} className="px-4 py-2 border border-border rounded-md text-sm">
                 Cancel
               </button>
-              <button onClick={handleRejectSubmit} disabled={actionLoading !== null} className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+              <button onClick={handleRejectSubmit} disabled={actionLoading !== null} className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:bg-destructive/90 disabled:opacity-50">
                 {actionLoading ? "Rejecting..." : "Reject to Draft"}
               </button>
             </div>

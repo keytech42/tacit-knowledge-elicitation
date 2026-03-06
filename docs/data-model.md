@@ -102,7 +102,7 @@ The optional field `auto_assign_count` (default: 1) controls how many reviewers 
 
 ### AnswerOption
 
-Pre-defined answer choices for a question. Each has a `body` and `display_order`. Created by the question author.
+Pre-defined answer choices for a question. Each has a `body` and `display_order`. Created by the question author or via AI scaffolding (which replaces all existing options with up to 4 maximally distinct choices).
 
 ### QuestionQualityFeedback
 

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { api, Question, Answer } from "@/api/client";
+import { api, ai, Question, Answer, Recommendation, TaskStatus } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { Admonition } from "@/components/Admonition";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
@@ -77,6 +78,14 @@ export function QuestionDetail() {
   const [feedbackRating, setFeedbackRating] = useState(0);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+
+  // AI features
+  const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
+  const [scaffoldLoading, setScaffoldLoading] = useState(false);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [recReason, setRecReason] = useState<string | null>(null);
+  const [recLoading, setRecLoading] = useState(false);
 
   const loadQuestion = () => {
     if (!id) return;
@@ -134,9 +143,30 @@ export function QuestionDetail() {
       const answer = await api.post<Answer>(`/questions/${id}/answers`, { body: newAnswer });
       await api.post<Answer>(`/answers/${answer.id}/submit`);
       setNewAnswer("");
+      setSelectedOptionId(null);
       loadQuestion();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submit failed");
+    }
+  };
+
+  const handleOptionClick = (optId: string, optBody: string) => {
+    if (selectedOptionId === optId) {
+      setSelectedOptionId(null);
+      setNewAnswer("");
+    } else {
+      setSelectedOptionId(optId);
+      setNewAnswer(optBody);
+    }
+  };
+
+  const handleAnswerChange = (value: string) => {
+    setNewAnswer(value);
+    if (selectedOptionId && question) {
+      const selectedOpt = question.answer_options.find((o) => o.id === selectedOptionId);
+      if (selectedOpt && value !== selectedOpt.body) {
+        setSelectedOptionId(null);
+      }
     }
   };
 
@@ -152,6 +182,45 @@ export function QuestionDetail() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Feedback failed");
     }
+  };
+
+  const handleScaffoldOptions = async () => {
+    if (!id || scaffoldLoading) return;
+    setScaffoldLoading(true);
+    try {
+      const result = await ai.scaffoldOptions(id);
+      setScaffoldTask({ task_id: result.task_id, status: result.status });
+      const poll = async () => {
+        try {
+          const status = await ai.getTaskStatus(result.task_id);
+          setScaffoldTask(status);
+          if (status.status === "accepted" || status.status === "running") {
+            setTimeout(poll, 2000);
+          } else if (status.status === "completed") {
+            loadQuestion(); // Reload to show new options
+          }
+        } catch { /* stop polling */ }
+      };
+      poll();
+    } catch (e: unknown) {
+      setScaffoldTask({ task_id: "", status: "failed", error: e instanceof Error ? e.message : "Failed" });
+    }
+    setScaffoldLoading(false);
+  };
+
+  const handleGetRecommendations = async () => {
+    if (!id || recLoading) return;
+    setRecLoading(true);
+    setRecReason(null);
+    try {
+      const resp = await ai.recommend(id);
+      setRecommendations(resp.items);
+      setRecReason(resp.reason);
+    } catch (e: unknown) {
+      setRecommendations([]);
+      setRecReason(e instanceof Error ? e.message : "Failed to get recommendations.");
+    }
+    setRecLoading(false);
   };
 
   if (!question) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
@@ -235,6 +304,68 @@ export function QuestionDetail() {
         )}
       </div>
 
+      {/* AI actions for admin on published questions */}
+      {isAdmin && question.status === "published" && (
+        <div className="bg-background p-4 rounded-lg border border-border mb-6">
+          <h2 className="font-semibold text-sm mb-3">AI Actions</h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleScaffoldOptions}
+              disabled={scaffoldLoading}
+              className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50"
+            >
+              {scaffoldLoading ? "Generating..." : "Generate Answer Options"}
+            </button>
+            <button
+              onClick={handleGetRecommendations}
+              disabled={recLoading}
+              className="border border-border text-foreground px-3 py-1.5 rounded text-sm hover:bg-muted disabled:opacity-50"
+            >
+              {recLoading ? "Loading..." : "Recommend Respondents"}
+            </button>
+          </div>
+          {scaffoldTask && (
+            <div className="mt-2 text-xs">
+              <span className={`inline-block px-2 py-0.5 rounded-full ${
+                scaffoldTask.status === "completed" ? "bg-muted text-foreground" :
+                scaffoldTask.status === "failed" ? "bg-destructive/10 text-destructive" :
+                "bg-muted text-muted-foreground"
+              }`}>{scaffoldTask.status}</span>
+              {scaffoldTask.error && <span className="text-destructive ml-2">{scaffoldTask.error}</span>}
+            </div>
+          )}
+          {recReason && recommendations.length === 0 && (
+            <div className="mt-3">
+              <Admonition variant="warning" title="No recommendations available" size="xs">
+                {recReason}
+              </Admonition>
+            </div>
+          )}
+          {recommendations.length > 0 && (
+            <div className="mt-3 border border-border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left px-3 py-1.5 text-xs font-medium">Respondent</th>
+                    <th className="text-left px-3 py-1.5 text-xs font-medium">Score</th>
+                    <th className="text-left px-3 py-1.5 text-xs font-medium">Reasoning</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recommendations.map((r) => (
+                    <tr key={r.user_id} className="border-t border-border">
+                      <td className="px-3 py-1.5 text-xs">{r.display_name}</td>
+                      <td className="px-3 py-1.5 text-xs">{(r.score * 100).toFixed(0)}%</td>
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.reasoning}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {error && <p className="text-destructive text-sm mb-4">{error}</p>}
 
       {/* Quality feedback */}
@@ -254,19 +385,74 @@ export function QuestionDetail() {
       {/* Answer form */}
       {question.status === "published" && (
         <div className="bg-background p-6 rounded-lg border border-border mb-6">
-          <h2 className="font-semibold mb-3">Submit Your Answer</h2>
-          {question.show_suggestions && question.answer_options.length > 0 && (
-            <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-2">Suggested starting points:</p>
-              <div className="space-y-2">
-                {question.answer_options.map((opt) => (
-                  <button key={opt.id} onClick={() => setNewAnswer(opt.body)} className="block w-full text-left p-3 border border-border rounded-md hover:bg-muted text-sm">{opt.body}</button>
-                ))}
+          <h2 className="font-semibold mb-1">Submit Your Answer</h2>
+
+          {/* Answer templates */}
+          {(question.show_suggestions || isAdmin) && question.answer_options.length > 0 && (
+            <div className="mb-5">
+              <p className="text-xs text-muted-foreground mb-3">Select a template to start with, or write from scratch</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {question.answer_options.map((opt, idx) => {
+                  const isSelected = selectedOptionId === opt.id;
+                  return (
+                    <div key={opt.id} className="group relative">
+                      <button
+                        onClick={() => handleOptionClick(opt.id, opt.body)}
+                        className={`relative w-full text-left rounded-lg border transition-all duration-200 h-[7rem] overflow-hidden ${
+                          isSelected
+                            ? "border-primary ring-1 ring-primary"
+                            : "border-border hover:border-foreground/20"
+                        }`}
+                      >
+                        <div className="p-3">
+                          <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+                      </button>
+                      {/* Expanded overlay on hover — no layout shift */}
+                      <div className="absolute left-0 right-0 top-0 z-10 hidden group-hover:block">
+                        <button
+                          onClick={() => handleOptionClick(opt.id, opt.body)}
+                          className={`w-full text-left rounded-lg border shadow-lg bg-background p-3 ${
+                            isSelected ? "border-primary ring-1 ring-primary" : "border-foreground/20"
+                          }`}
+                        >
+                          <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">{opt.body}</p>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
-          <textarea value={newAnswer} onChange={(e) => setNewAnswer(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[120px] bg-background text-sm" placeholder="Write your answer..." />
-          <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="mt-3 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50">Submit Answer</button>
+
+          <textarea
+            value={newAnswer}
+            onChange={(e) => handleAnswerChange(e.target.value)}
+            className="w-full border border-border rounded-lg p-3 min-h-[120px] bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+            placeholder="Write your answer..."
+          />
+          <div className="flex items-center justify-between mt-3">
+            <div>
+              {selectedOptionId && (
+                <span className="text-xs text-muted-foreground">Editing from template — changes are saved to your answer</span>
+              )}
+            </div>
+            <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50">
+              Submit Answer
+            </button>
+          </div>
         </div>
       )}
 

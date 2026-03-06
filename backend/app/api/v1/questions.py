@@ -271,6 +271,19 @@ async def create_answer_options(
     return options
 
 
+@router.delete("/{question_id}/options", status_code=204)
+async def delete_answer_options(
+    question_id: uuid.UUID,
+    current_user: User = require_role(RoleName.AUTHOR, RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Question).where(Question.id == question_id))
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    await db.execute(delete(AnswerOption).where(AnswerOption.question_id == question_id))
+
+
 @router.get("/{question_id}/options", response_model=list[AnswerOptionResponse])
 async def list_answer_options(question_id: uuid.UUID, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Question).where(Question.id == question_id))

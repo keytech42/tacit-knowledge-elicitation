@@ -94,7 +94,7 @@ A separate FastAPI service that handles LLM-powered capabilities via litellm (pr
 | Task | Endpoint | Trigger |
 |------|----------|---------|
 | Question generation | `POST /tasks/generate-questions` | Admin on-demand |
-| Answer option scaffolding | `POST /tasks/scaffold-options` | Auto on question publish, or on-demand |
+| Answer option scaffolding | `POST /tasks/scaffold-options` | Auto on question publish, or on-demand. Replaces existing options (max 4, maximally distinct). |
 | Review assistance | `POST /tasks/review-assist` | Auto on answer submit, or on-demand |
 
 Tasks run as background `asyncio.Task` instances with in-memory status tracking. The backend proxies trigger requests via admin-only `/api/v1/ai/*` endpoints.

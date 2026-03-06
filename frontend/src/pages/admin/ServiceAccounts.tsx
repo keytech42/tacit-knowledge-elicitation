@@ -54,10 +54,10 @@ export function ServiceAccounts() {
       </div>
 
       {newKey && (
-        <div className="bg-green-50 border border-green-200 p-4 rounded-lg mb-6">
-          <p className="text-sm font-medium text-green-800 mb-1">API Key (shown once — save it now)</p>
-          <code className="text-xs break-all bg-green-100 p-2 rounded block">{newKey}</code>
-          <button onClick={() => setNewKey("")} className="mt-2 text-xs text-green-600 hover:underline">Dismiss</button>
+        <div className="bg-muted border border-border p-4 rounded-lg mb-6">
+          <p className="text-sm font-medium text-foreground mb-1">API Key (shown once — save it now)</p>
+          <code className="text-xs break-all bg-secondary p-2 rounded block">{newKey}</code>
+          <button onClick={() => setNewKey("")} className="mt-2 text-xs text-muted-foreground hover:underline">Dismiss</button>
         </div>
       )}
 

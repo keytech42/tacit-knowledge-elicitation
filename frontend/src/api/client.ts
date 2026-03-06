@@ -169,6 +169,11 @@ export interface Recommendation {
   reasoning: string;
 }
 
+export interface RecommendationResponse {
+  items: Recommendation[];
+  reason: string | null;
+}
+
 // AI-related API functions
 
 export const ai = {
@@ -185,7 +190,7 @@ export const ai = {
     api.post<TaskAccepted>("/ai/review-assist", { answer_id: answerId }),
 
   recommend: (questionId: string, topK = 5) =>
-    api.post<Recommendation[]>("/ai/recommend", {
+    api.post<RecommendationResponse>("/ai/recommend", {
       question_id: questionId,
       top_k: topK,
     }),
