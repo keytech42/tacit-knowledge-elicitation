@@ -33,12 +33,35 @@ export const VALID_STATUS_TOKENS = [
   "status-orange",
 ] as const;
 
+/*
+ * Static class lookups — Tailwind purges dynamic `bg-${token}/10` strings,
+ * so every class must appear as a full literal for the scanner to find it.
+ */
+
+const BADGE_CLASSES: Record<string, string> = {
+  "status-gray": "bg-status-gray/10 text-status-gray border border-status-gray/20",
+  "status-amber": "bg-status-amber/10 text-status-amber border border-status-amber/20",
+  "status-blue": "bg-status-blue/10 text-status-blue border border-status-blue/20",
+  "status-green": "bg-status-green/10 text-status-green border border-status-green/20",
+  "status-red": "bg-status-red/10 text-status-red border border-status-red/20",
+  "status-orange": "bg-status-orange/10 text-status-orange border border-status-orange/20",
+};
+
+const BORDER_CLASSES: Record<string, string> = {
+  "status-gray": "border-status-gray/30",
+  "status-amber": "border-status-amber/30",
+  "status-blue": "border-status-blue/30",
+  "status-green": "border-status-green/30",
+  "status-red": "border-status-red/30",
+  "status-orange": "border-status-orange/30",
+};
+
 /** Generate badge classes from a status token. */
 export function badgeColor(token: string): string {
-  return `bg-${token}/10 text-${token} border border-${token}/20`;
+  return BADGE_CLASSES[token] ?? "bg-muted text-muted-foreground";
 }
 
 /** Generate border class from a status token. */
 export function borderColor(token: string): string {
-  return `border-${token}/30`;
+  return BORDER_CLASSES[token] ?? "border-border";
 }

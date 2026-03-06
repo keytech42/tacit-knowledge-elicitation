@@ -17,12 +17,6 @@
   --color-ring: #0a0a0a;
   --color-popover: #ffffff;
   --color-popover-foreground: #0a0a0a;
-  --color-status-gray: #737373;
-  --color-status-amber: #d97706;
-  --color-status-blue: #2563eb;
-  --color-status-green: #16a34a;
-  --color-status-red: #dc2626;
-  --color-status-orange: #ea580c;
   --radius: 0.5rem;
 
   /* Semantic status palette — shared by badges, borders, backgrounds */
