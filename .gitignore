@@ -25,3 +25,6 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 *.tsbuildinfo
+
+# Git worktrees
+worktrees/
