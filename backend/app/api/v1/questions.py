@@ -12,7 +12,7 @@ from app.models.review import Review, ReviewComment, ReviewTargetType
 from app.models.user import RoleName, User
 from app.schemas.question import (
     AdminQueueItem, AdminQueueResponse, AnswerOptionBatchCreate, AnswerOptionResponse,
-    QualityFeedbackCreate, QualityFeedbackResponse,
+    AssignRespondentRequest, QualityFeedbackCreate, QualityFeedbackResponse,
     QuestionCreate, QuestionListResponse, QuestionRejectRequest, QuestionResponse, QuestionUpdate,
 )
 from app.services.question import (
@@ -214,11 +214,15 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
     await db.refresh(question)
     # Fire-and-forget: scaffold answer options + recommendation
     await worker_client.trigger_scaffold_options(question_id)
-    await slack.notify_question_published(
+    thread_ts, slack_ch = await slack.notify_question_published(
         question_title=question.title,
         question_id=str(question.id),
+        question_body=question.body,
         publisher_name=current_user.display_name,
     )
+    if thread_ts and slack_ch:
+        question.slack_thread_ts = thread_ts
+        question.slack_channel = slack_ch
     return question
 
 
@@ -250,6 +254,13 @@ async def close_question(question_id: uuid.UUID, current_user: User = require_ro
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
     apply_close(question, current_user)
+    if question.slack_thread_ts and question.slack_channel:
+        await slack.notify_question_closed(
+            slack_channel=question.slack_channel,
+            slack_thread_ts=question.slack_thread_ts,
+            question_title=question.title,
+            question_id=str(question.id),
+        )
     return question
 
 
@@ -260,6 +271,29 @@ async def archive_question(question_id: uuid.UUID, current_user: User = require_
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
     apply_archive(question, current_user)
+    return question
+
+
+@router.post("/{question_id}/assign-respondent", response_model=QuestionResponse)
+async def assign_respondent(
+    question_id: uuid.UUID,
+    request: AssignRespondentRequest,
+    current_user: User = require_role(RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Question).where(Question.id == question_id))
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    if question.status != QuestionStatus.PUBLISHED.value:
+        raise HTTPException(status_code=409, detail="Can only assign respondents to published questions")
+    user_result = await db.execute(select(User).where(User.id == request.user_id))
+    target_user = user_result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    question.assigned_respondent_id = request.user_id
+    await db.flush()
+    await db.refresh(question)
     return question
 
 

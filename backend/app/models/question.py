@@ -56,14 +56,19 @@ class Question(UUIDMixin, TimestampMixin, Base):
 
     created_by_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     confirmed_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    assigned_respondent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    slack_thread_ts: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    slack_channel: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     embedding = mapped_column(Vector(1024), nullable=True)
 
     created_by = relationship("User", foreign_keys=[created_by_id], lazy="selectin")
     confirmed_by = relationship("User", foreign_keys=[confirmed_by_id], lazy="selectin")
+    assigned_respondent = relationship("User", foreign_keys=[assigned_respondent_id], lazy="selectin")
     answer_options = relationship("AnswerOption", back_populates="question", lazy="selectin")
     feedback = relationship("QuestionQualityFeedback", back_populates="question")
 

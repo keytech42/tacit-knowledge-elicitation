@@ -86,6 +86,7 @@ export function QuestionDetail() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recReason, setRecReason] = useState<string | null>(null);
   const [recLoading, setRecLoading] = useState(false);
+  const [assignLoading, setAssignLoading] = useState<string | null>(null);
 
   const loadQuestion = () => {
     if (!id) return;
@@ -223,6 +224,19 @@ export function QuestionDetail() {
     setRecLoading(false);
   };
 
+  const handleAssignRespondent = async (userId: string) => {
+    if (!id || assignLoading) return;
+    setAssignLoading(userId);
+    try {
+      const updated = await ai.assignRespondent(id, userId);
+      setQuestion(updated);
+      setError("");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Assignment failed");
+    }
+    setAssignLoading(null);
+  };
+
   if (!question) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
 
   const isAuthor = user?.id === question.created_by.id;
@@ -239,6 +253,9 @@ export function QuestionDetail() {
         <div className="flex items-center gap-3 mb-1">
           <StatusBadge status={question.status} />
           {question.category && <span className="text-sm text-muted-foreground">{question.category}</span>}
+          {question.assigned_respondent && (
+            <span className="text-sm text-muted-foreground">Assigned: {question.assigned_respondent.display_name}</span>
+          )}
           {question.quality_score != null && (
             <span className="text-sm text-muted-foreground ml-auto">Score: {question.quality_score.toFixed(1)}/5</span>
           )}
@@ -349,16 +366,33 @@ export function QuestionDetail() {
                     <th className="text-left px-3 py-1.5 text-xs font-medium">Respondent</th>
                     <th className="text-left px-3 py-1.5 text-xs font-medium">Score</th>
                     <th className="text-left px-3 py-1.5 text-xs font-medium">Reasoning</th>
+                    <th className="text-right px-3 py-1.5 text-xs font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recommendations.map((r) => (
+                  {recommendations.map((r) => {
+                    const isAssigned = question.assigned_respondent?.id === r.user_id;
+                    return (
                     <tr key={r.user_id} className="border-t border-border">
                       <td className="px-3 py-1.5 text-xs">{r.display_name}</td>
                       <td className="px-3 py-1.5 text-xs">{(r.score * 100).toFixed(0)}%</td>
                       <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.reasoning}</td>
+                      <td className="px-3 py-1.5 text-xs text-right">
+                        {isAssigned ? (
+                          <span className="text-xs text-primary font-medium">Assigned</span>
+                        ) : (
+                          <button
+                            onClick={() => handleAssignRespondent(r.user_id)}
+                            disabled={assignLoading === r.user_id}
+                            className="text-xs text-primary hover:underline disabled:opacity-50"
+                          >
+                            {assignLoading === r.user_id ? "Assigning..." : "Assign"}
+                          </button>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

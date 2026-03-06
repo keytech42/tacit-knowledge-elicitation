@@ -26,6 +26,10 @@ class QuestionRejectRequest(BaseModel):
     comment: str | None = None
 
 
+class AssignRespondentRequest(BaseModel):
+    user_id: uuid.UUID
+
+
 class AnswerOptionResponse(BaseModel):
     id: uuid.UUID
     body: str
@@ -47,6 +51,7 @@ class QuestionResponse(BaseModel):
     quality_score: float | None = None
     created_by: UserResponse
     confirmed_by: UserResponse | None = None
+    assigned_respondent: UserResponse | None = None
     confirmed_at: datetime | None = None
     published_at: datetime | None = None
     closed_at: datetime | None = None

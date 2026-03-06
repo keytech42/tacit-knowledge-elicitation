@@ -85,6 +85,7 @@ export interface Question {
   quality_score: number | null;
   created_by: User;
   confirmed_by: User | null;
+  assigned_respondent: User | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -197,4 +198,7 @@ export const ai = {
 
   getTaskStatus: (taskId: string) =>
     api.get<TaskStatus>(`/ai/tasks/${taskId}`),
+
+  assignRespondent: (questionId: string, userId: string) =>
+    api.post<Question>(`/questions/${questionId}/assign-respondent`, { user_id: userId }),
 };
