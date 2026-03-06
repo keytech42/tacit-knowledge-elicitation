@@ -4,6 +4,7 @@ import { api, ai, Question, Answer, Recommendation, TaskStatus } from "@/api/cli
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { Admonition } from "@/components/Admonition";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
@@ -284,7 +285,7 @@ export function QuestionDetail() {
         ) : (
           <>
             <h1 className="text-2xl font-bold mb-3">{question.title}</h1>
-            <p className="whitespace-pre-wrap text-foreground/80">{question.body}</p>
+            <MarkdownContent className="text-foreground/80">{question.body}</MarkdownContent>
             <div className="text-sm text-muted-foreground mt-4">
               by {question.created_by.display_name} &middot; {new Date(question.created_at).toLocaleDateString()}
             </div>

@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api, ai, Answer, AnswerRevision, Review, TaskStatus } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
@@ -222,7 +223,7 @@ export function AnswerDetail() {
           </>
         ) : (
           <>
-            <p className="whitespace-pre-wrap text-foreground/80">{answer.body}</p>
+            <MarkdownContent className="text-foreground/80">{answer.body}</MarkdownContent>
             <div className="text-sm text-muted-foreground mt-4">
               by {answer.author.display_name} &middot; {new Date(answer.created_at).toLocaleDateString()}
             </div>
