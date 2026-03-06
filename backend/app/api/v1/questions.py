@@ -53,8 +53,9 @@ async def list_questions(
     user_roles = {r.name for r in current_user.roles}
 
     if RoleName.ADMIN.value not in user_roles:
-        query = query.where((Question.status == QuestionStatus.PUBLISHED.value) | (Question.created_by_id == current_user.id))
-        count_query = count_query.where((Question.status == QuestionStatus.PUBLISHED.value) | (Question.created_by_id == current_user.id))
+        visible_statuses = [QuestionStatus.PUBLISHED.value, QuestionStatus.CLOSED.value, QuestionStatus.ARCHIVED.value]
+        query = query.where((Question.status.in_(visible_statuses)) | (Question.created_by_id == current_user.id))
+        count_query = count_query.where((Question.status.in_(visible_statuses)) | (Question.created_by_id == current_user.id))
 
     if status_filter:
         query = query.where(Question.status == status_filter)
@@ -118,7 +119,8 @@ async def get_question(question_id: uuid.UUID, current_user: CurrentUser, db: As
         raise HTTPException(status_code=404, detail="Question not found")
     user_roles = {r.name for r in current_user.roles}
     if RoleName.ADMIN.value not in user_roles:
-        if question.status != QuestionStatus.PUBLISHED.value and question.created_by_id != current_user.id:
+        visible_statuses = {QuestionStatus.PUBLISHED.value, QuestionStatus.CLOSED.value, QuestionStatus.ARCHIVED.value}
+        if question.status not in visible_statuses and question.created_by_id != current_user.id:
             raise HTTPException(status_code=404, detail="Question not found")
     return question
 
