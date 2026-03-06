@@ -38,6 +38,7 @@ async def generate_embedding(text: str) -> list[float]:
     response = await litellm.aembedding(
         model=settings.EMBEDDING_MODEL,
         input=[text],
+        encoding_format="float",
         **_embedding_kwargs(),
     )
     return response.data[0]["embedding"]
@@ -51,7 +52,7 @@ async def update_question_embedding(db: AsyncSession, question: Question) -> Non
         text = f"{question.title}\n{question.body}"
         question.embedding = await generate_embedding(text)
     except Exception:
-        logger.warning(f"Failed to generate embedding for question {question.id} — skipping")
+        logger.warning(f"Failed to generate embedding for question {question.id} — skipping", exc_info=True)
 
 
 async def update_answer_embedding(db: AsyncSession, answer: Answer) -> None:
@@ -61,4 +62,4 @@ async def update_answer_embedding(db: AsyncSession, answer: Answer) -> None:
     try:
         answer.embedding = await generate_embedding(answer.body)
     except Exception:
-        logger.warning(f"Failed to generate embedding for answer {answer.id} — skipping")
+        logger.warning(f"Failed to generate embedding for answer {answer.id} — skipping", exc_info=True)
