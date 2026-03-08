@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -180,7 +181,6 @@ async def submit_answer_endpoint(
         prev_reviews = prev_reviews_result.scalars().all()
         for review in prev_reviews:
             review.verdict = ReviewVerdict.PENDING.value
-            review.comment = None
         # If reviewers were reset, move directly to under_review
         if prev_reviews:
             answer.status = AnswerStatus.UNDER_REVIEW.value
@@ -200,6 +200,13 @@ async def submit_answer_endpoint(
     # Notify Slack
     question_result = await db.execute(select(Question).where(Question.id == answer.question_id))
     question = question_result.scalar_one_or_none()
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "Answer submit Slack notify: question=%s, slack_channel=%s, slack_thread_ts=%s",
+        answer.question_id,
+        question.slack_channel if question else None,
+        question.slack_thread_ts if question else None,
+    )
     await slack.notify_answer_submitted(
         question_title=question.title if question else "Unknown",
         question_id=str(answer.question_id),

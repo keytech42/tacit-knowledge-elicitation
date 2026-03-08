@@ -81,6 +81,26 @@ class PlatformClient:
                 "/api/v1/reviews",
                 json={"target_type": target_type, "target_id": str(target_id)},
             )
+            if resp.status_code == 409:
+                # Already have a pending review — fetch it
+                logger.info(
+                    f"409 creating review for {target_type}/{target_id}, "
+                    f"fetching existing review"
+                )
+                list_resp = await client.get(
+                    "/api/v1/reviews",
+                    params={
+                        "target_type": target_type,
+                        "target_id": str(target_id),
+                    },
+                )
+                list_resp.raise_for_status()
+                reviews = list_resp.json()
+                pending = [r for r in reviews if r["verdict"] == "pending"]
+                if pending:
+                    return pending[0]
+                # No pending review found (already submitted) — re-raise original
+                resp.raise_for_status()
             resp.raise_for_status()
             return resp.json()
 

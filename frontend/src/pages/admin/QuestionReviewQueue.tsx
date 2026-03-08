@@ -15,11 +15,14 @@ interface AdminQueueItem {
   updated_at: string;
   published_at: string | null;
   answer_count: number;
+  approved_count: number;
+  pending_count: number;
 }
 
 interface AdminQueueData {
   proposed: AdminQueueItem[];
   in_review: AdminQueueItem[];
+  pending: AdminQueueItem[];
   published: AdminQueueItem[];
   closed: AdminQueueItem[];
 }
@@ -43,6 +46,11 @@ const SECTIONS: SectionConfig[] = [
       { action: "publish", label: "Publish", variant: "green", needsConfirm: true },
       { action: "reject", label: "Reject to Draft", variant: "danger", needsComment: true },
     ],
+  },
+  {
+    key: "pending",
+    title: "Pending Answers",
+    actions: [{ action: "close", label: "Close", variant: "gray", needsConfirm: true }],
   },
   {
     key: "published",
@@ -108,7 +116,7 @@ export function QuestionReviewQueue() {
     setRejectComment("");
   };
 
-  const totalCount = data ? data.proposed.length + data.in_review.length + data.published.length + data.closed.length : 0;
+  const totalCount = data ? data.proposed.length + data.in_review.length + data.pending.length + data.published.length + data.closed.length : 0;
 
   if (loading) return <p className="text-center py-8 text-muted-foreground">Loading...</p>;
 
@@ -146,7 +154,12 @@ export function QuestionReviewQueue() {
                         <div className="flex items-center gap-2 mb-1">
                           <StatusBadge status={q.status} />
                           {q.category && <span className="text-xs text-muted-foreground">{q.category}</span>}
-                          <span className="text-xs text-muted-foreground">{q.answer_count} answer{q.answer_count !== 1 ? "s" : ""}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {q.answer_count} answer{q.answer_count !== 1 ? "s" : ""}
+                            {q.approved_count > 0 && ` (${q.approved_count} approved`}
+                            {q.approved_count > 0 && q.pending_count > 0 && `, ${q.pending_count} pending`}
+                            {q.approved_count > 0 && ")"}
+                          </span>
                           {q.quality_score != null && (
                             <span className="text-xs text-muted-foreground">Score: {q.quality_score.toFixed(1)}</span>
                           )}

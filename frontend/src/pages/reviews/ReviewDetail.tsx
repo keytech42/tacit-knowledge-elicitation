@@ -110,9 +110,9 @@ export function ReviewDetail() {
           </div>
         )}
 
-        {review.verdict !== "pending" && review.comment && (
+        {review.comment && (
           <div className="mt-4 pt-4 border-t border-border">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Review Comment</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">{isPending ? "Previous Feedback" : "Review Comment"}</p>
             <MarkdownContent className="text-sm">{review.comment}</MarkdownContent>
           </div>
         )}

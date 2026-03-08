@@ -1,15 +1,16 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, distinct, func, select
+from sqlalchemy import case, delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, require_role
 from app.database import get_db
-from app.models.answer import Answer, AnswerCollaborator, AnswerRevision
+from app.models.answer import Answer, AnswerCollaborator, AnswerRevision, AnswerStatus
 from app.models.question import AnswerOption, Question, QuestionQualityFeedback, QuestionStatus
 from app.models.review import Review, ReviewComment, ReviewTargetType
-from app.models.user import RoleName, User
+from app.models.user import RoleName, User, UserType
 from app.schemas.question import (
     AdminQueueItem, AdminQueueResponse, AnswerOptionBatchCreate, AnswerOptionResponse,
     AssignRespondentRequest, QualityFeedbackCreate, QualityFeedbackResponse,
@@ -21,6 +22,8 @@ from app.services.question import (
 )
 from app.services import slack, worker_client
 from app.services.embeddings import update_question_embedding
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -81,9 +84,19 @@ async def admin_queue(
         QuestionStatus.PUBLISHED.value,
         QuestionStatus.CLOSED.value,
     ]
-    # Fetch questions with answer counts in one query
+    # Fetch questions with answer counts broken down by status
+    in_progress_statuses = [
+        AnswerStatus.SUBMITTED.value,
+        AnswerStatus.UNDER_REVIEW.value,
+        AnswerStatus.REVISION_REQUESTED.value,
+    ]
     stmt = (
-        select(Question, func.count(Answer.id).label("answer_count"))
+        select(
+            Question,
+            func.count(Answer.id).label("answer_count"),
+            func.count(case((Answer.status == AnswerStatus.APPROVED.value, 1))).label("approved_count"),
+            func.count(case((Answer.status.in_(in_progress_statuses), 1))).label("pending_count"),
+        )
         .outerjoin(Answer, Answer.question_id == Question.id)
         .where(Question.status.in_(actionable))
         .group_by(Question.id)
@@ -92,14 +105,22 @@ async def admin_queue(
     rows = (await db.execute(stmt)).all()
 
     buckets: dict[str, list[AdminQueueItem]] = {s: [] for s in actionable}
-    for question, count in rows:
+    pending_items: list[AdminQueueItem] = []
+    for question, count, approved, pending in rows:
         item = AdminQueueItem.model_validate(question)
         item.answer_count = count
-        buckets.setdefault(question.status, []).append(item)
+        item.approved_count = approved
+        item.pending_count = pending
+        # Published questions with in-progress answers go to the pending bucket
+        if question.status == QuestionStatus.PUBLISHED.value and pending > 0:
+            pending_items.append(item)
+        else:
+            buckets.setdefault(question.status, []).append(item)
 
     return AdminQueueResponse(
         proposed=buckets.get(QuestionStatus.PROPOSED.value, []),
         in_review=buckets.get(QuestionStatus.IN_REVIEW.value, []),
+        pending=pending_items,
         published=buckets.get(QuestionStatus.PUBLISHED.value, []),
         closed=buckets.get(QuestionStatus.CLOSED.value, []),
     )
@@ -147,7 +168,11 @@ async def get_question(question_id: uuid.UUID, current_user: CurrentUser, db: As
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
     user_roles = {r.name for r in current_user.roles}
-    if RoleName.ADMIN.value not in user_roles:
+    is_privileged = (
+        RoleName.ADMIN.value in user_roles
+        or current_user.user_type == UserType.SERVICE.value
+    )
+    if not is_privileged:
         visible_statuses = {QuestionStatus.PUBLISHED.value, QuestionStatus.CLOSED.value, QuestionStatus.ARCHIVED.value}
         if question.status not in visible_statuses and question.created_by_id != current_user.id:
             raise HTTPException(status_code=404, detail="Question not found")
@@ -254,6 +279,9 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
         question.slack_channel = slack_ch
         await db.flush()
         await db.refresh(question)
+        logger.info("Stored Slack thread %s/%s on question %s", slack_ch, thread_ts, question.id)
+    else:
+        logger.warning("No Slack thread created for question %s (ts=%s, ch=%s)", question.id, thread_ts, slack_ch)
     return question
 
 
@@ -274,6 +302,8 @@ async def reject_question(
         author_email=question.created_by.email if question.created_by else None,
         author_name=question.created_by.display_name if question.created_by else "Unknown",
         comment=comment,
+        slack_channel=question.slack_channel,
+        slack_thread_ts=question.slack_thread_ts,
     )
     return question
 

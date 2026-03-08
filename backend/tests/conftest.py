@@ -1,5 +1,7 @@
 from collections.abc import AsyncGenerator
+from unittest.mock import patch
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, text as sa_text
@@ -133,3 +135,10 @@ def auth_header(user: User) -> dict[str, str]:
 
 def api_key_header(api_key: str) -> dict[str, str]:
     return {"X-API-Key": api_key}
+
+
+@pytest.fixture(autouse=True)
+def _disable_slack():
+    """Globally disable Slack for all tests so no real messages are posted."""
+    with patch.object(settings, "SLACK_BOT_TOKEN", ""):
+        yield

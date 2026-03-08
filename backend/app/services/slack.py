@@ -178,7 +178,9 @@ async def notify_question_published(
     )
     thread_ts = await _post_message(channel, text)
     if not thread_ts:
+        logger.warning("Failed to create Slack thread for question %s — no thread_ts returned", question_id)
         return (None, None)
+    logger.info("Created Slack thread %s in %s for question %s", thread_ts, channel, question_id)
 
     # Post the question body as the first reply in the thread
     body_preview = question_body[:2000] if len(question_body) > 2000 else question_body
@@ -204,9 +206,11 @@ async def notify_question_rejected(
     author_email: str | None,
     author_name: str,
     comment: str | None = None,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
     """Notify the question author when their question is rejected."""
-    if not _is_enabled() or not _channel():
+    if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
     link = _question_link(question_id)
@@ -217,7 +221,10 @@ async def notify_question_rejected(
     )
     if comment:
         text += f"\nReason: {comment}"
-    await _send_message(_channel(), text)
+    if slack_channel and slack_thread_ts:
+        await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+    elif _channel():
+        await _send_message(_channel(), text)
 
 
 async def notify_answer_submitted(
