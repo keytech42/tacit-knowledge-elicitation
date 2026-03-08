@@ -4,6 +4,7 @@ import { api, Question } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { StatusBadge, statusLabel, statusColor, WORKFLOW_HINTS } from "@/components/StatusBadge";
 import { STATUS_COLOR_TOKEN, borderColor } from "@/components/statusColors";
+import { Tooltip } from "@/components/Tooltip";
 
 /** Statuses visible to all users */
 const PRIMARY_STATUSES = ["published", "closed", "archived"];
@@ -33,17 +34,17 @@ function ColumnHeader({ status, count }: { status: string; count: number }) {
   const hint = WORKFLOW_HINTS[`q:${status}`];
   return (
     <div className="flex items-center gap-2 mb-3 px-1">
-      <div className="relative group">
-        <span className={`text-xs px-2 py-1 rounded-full font-medium cursor-help ${statusColor(status)}`}>
+      {hint ? (
+        <Tooltip text={hint}>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(status)}`}>
+            {statusLabel(status)}
+          </span>
+        </Tooltip>
+      ) : (
+        <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(status)}`}>
           {statusLabel(status)}
         </span>
-        {hint && (
-          <div className="invisible group-hover:visible absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-52 px-3 py-2 text-xs text-foreground bg-popover border border-border rounded-lg shadow-md z-10 pointer-events-none">
-            {hint}
-            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-border" />
-          </div>
-        )}
-      </div>
+      )}
       <span className="text-xs text-muted-foreground">{count}</span>
     </div>
   );

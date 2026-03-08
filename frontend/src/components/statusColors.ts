@@ -21,6 +21,7 @@ export const STATUS_COLOR_TOKEN: Record<string, string> = {
   // Review verdicts
   pending: "status-gray",
   changes_requested: "status-orange",
+  superseded: "status-gray",
 };
 
 /** All valid token names (must exist in globals.css @theme). */

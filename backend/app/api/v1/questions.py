@@ -36,7 +36,8 @@ async def create_question(
 ):
     question = Question(
         title=request.title, body=request.body, category=request.category,
-        review_policy=request.review_policy, show_suggestions=request.show_suggestions,
+        review_policy=request.review_policy.model_dump() if request.review_policy else None,
+        show_suggestions=request.show_suggestions,
         created_by_id=current_user.id,
     )
     db.add(question)
@@ -190,7 +191,7 @@ async def update_question(question_id: uuid.UUID, request: QuestionUpdate, curre
     if request.title is not None: question.title = request.title
     if request.body is not None: question.body = request.body
     if request.category is not None: question.category = request.category
-    if request.review_policy is not None: question.review_policy = request.review_policy
+    if request.review_policy is not None: question.review_policy = request.review_policy.model_dump()
     if request.show_suggestions is not None: question.show_suggestions = request.show_suggestions
     return question
 

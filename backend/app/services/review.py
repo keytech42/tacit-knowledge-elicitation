@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer, AnswerStatus
@@ -16,6 +16,10 @@ async def resolve_answer_reviews(answer_id, db: AsyncSession) -> None:
     Only considers reviews from the current revision cycle (matching the
     answer's current_version) so that old verdicts from previous cycles
     don't block new approvals.
+
+    When the answer is resolved (approved, rejected, or revision_requested),
+    any remaining pending reviews for the same answer+version are
+    automatically superseded so they don't linger in reviewer queues.
     """
     answer_result = await db.execute(select(Answer).where(Answer.id == answer_id))
     answer = answer_result.scalar_one_or_none()
@@ -40,26 +44,46 @@ async def resolve_answer_reviews(answer_id, db: AsyncSession) -> None:
     reviews_result = await db.execute(review_query)
     reviews = reviews_result.scalars().all()
 
+    resolved = False
+
     # Check for any changes_requested — blocks approval
     for review in reviews:
         if review.verdict == ReviewVerdict.CHANGES_REQUESTED.value:
             answer.status = AnswerStatus.REVISION_REQUESTED.value
-            return
+            resolved = True
+            break
 
     # Check for rejected
-    for review in reviews:
-        if review.verdict == ReviewVerdict.REJECTED.value:
-            answer.status = AnswerStatus.REJECTED.value
-            return
+    if not resolved:
+        for review in reviews:
+            if review.verdict == ReviewVerdict.REJECTED.value:
+                answer.status = AnswerStatus.REJECTED.value
+                resolved = True
+                break
 
     # Count approvals
-    approval_count = sum(1 for r in reviews if r.verdict == ReviewVerdict.APPROVED.value)
-    if approval_count >= min_approvals:
-        answer.status = AnswerStatus.APPROVED.value
-        answer.confirmed_at = datetime.now(timezone.utc)
-        # Set confirmed_by to the last approver
-        last_approver = [r for r in reviews if r.verdict == ReviewVerdict.APPROVED.value][-1]
-        answer.confirmed_by_id = last_approver.reviewer_id
+    if not resolved:
+        approval_count = sum(1 for r in reviews if r.verdict == ReviewVerdict.APPROVED.value)
+        if approval_count >= min_approvals:
+            answer.status = AnswerStatus.APPROVED.value
+            answer.confirmed_at = datetime.now(timezone.utc)
+            # Set confirmed_by to the last approver
+            last_approver = [r for r in reviews if r.verdict == ReviewVerdict.APPROVED.value][-1]
+            answer.confirmed_by_id = last_approver.reviewer_id
+            resolved = True
+
+    # Auto-supersede remaining pending reviews once the answer is resolved
+    if resolved:
+        await db.execute(
+            update(Review)
+            .where(
+                Review.target_type == ReviewTargetType.ANSWER.value,
+                Review.target_id == answer_id,
+                Review.answer_version == answer.current_version,
+                Review.verdict == ReviewVerdict.PENDING.value,
+            )
+            .values(verdict=ReviewVerdict.SUPERSEDED.value)
+        )
 
 
 async def auto_assign_reviewers(answer: Answer, question: Question, db: AsyncSession) -> list[Review]:

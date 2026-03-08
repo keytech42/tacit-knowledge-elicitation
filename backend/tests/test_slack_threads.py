@@ -146,6 +146,65 @@ class TestThreadCreation:
 # Link Formatting
 # ---------------------------------------------------------------------------
 
+class TestAnswerBodyThreadReply:
+    """notify_answer_submitted should post the answer body as a thread reply."""
+
+    async def test_answer_body_posted_as_thread_reply(self):
+        """When answer_body is provided in a thread, it's posted as a follow-up reply."""
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.return_value = _mock_slack_response({
+            "ts": "1234567890.123456", "ok": True,
+        })
+
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_get_client", return_value=mock_client):
+            await slack.notify_answer_submitted(
+                question_title="Q",
+                question_id="q-1",
+                answer_id="a-1",
+                author_name="Respondent",
+                answer_body="My **detailed** answer with [a link](https://example.com)",
+                slack_channel="#test",
+                slack_thread_ts="1111.2222",
+            )
+
+        # Two calls: notification message + body reply
+        assert mock_client.chat_postMessage.call_count == 2
+
+        # First call: notification message in thread
+        first_call = mock_client.chat_postMessage.call_args_list[0]
+        assert first_call.kwargs["thread_ts"] == "1111.2222"
+        assert "Answer submitted" in first_call.kwargs["text"]
+
+        # Second call: body reply in same thread with mrkdwn conversion
+        second_call = mock_client.chat_postMessage.call_args_list[1]
+        assert second_call.kwargs["thread_ts"] == "1111.2222"
+        body_text = second_call.kwargs["text"]
+        assert "*detailed*" in body_text
+        assert "**detailed**" not in body_text
+        assert "<https://example.com|a link>" in body_text
+
+    async def test_no_body_reply_without_answer_body(self):
+        """When answer_body is None, only the notification message is posted."""
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.return_value = _mock_slack_response({
+            "ts": "1234567890.123456", "ok": True,
+        })
+
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_get_client", return_value=mock_client):
+            await slack.notify_answer_submitted(
+                question_title="Q",
+                question_id="q-1",
+                answer_id="a-1",
+                author_name="Respondent",
+                slack_channel="#test",
+                slack_thread_ts="1111.2222",
+            )
+
+        assert mock_client.chat_postMessage.call_count == 1
+
+
 class TestLinkFormatting:
     """All Slack messages should use clickable links when FRONTEND_URL is set."""
 

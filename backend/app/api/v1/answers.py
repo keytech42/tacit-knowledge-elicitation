@@ -212,6 +212,7 @@ async def submit_answer_endpoint(
         question_id=str(answer.question_id),
         answer_id=str(answer.id),
         author_name=current_user.display_name,
+        answer_body=answer.body,
         slack_channel=question.slack_channel if question else None,
         slack_thread_ts=question.slack_thread_ts if question else None,
     )

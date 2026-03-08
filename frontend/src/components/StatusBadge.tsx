@@ -10,10 +10,11 @@ const STATUS_LABELS: Record<string, string> = {
   submitted: "Submitted",
   under_review: "Under Review",
   approved: "Approved",
-  revision_requested: "Revision Requested",
+  revision_requested: "Changes Requested",
   rejected: "Rejected",
   pending: "Pending",
   changes_requested: "Changes Requested",
+  superseded: "Superseded",
 };
 
 /** Workflow hints shown below status badges */
