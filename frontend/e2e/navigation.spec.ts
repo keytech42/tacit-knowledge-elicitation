@@ -50,11 +50,11 @@ test.describe("Navigation", () => {
   test("user menu shows user info and roles", async ({ page }) => {
     await page.goto("/questions");
 
-    // Open user menu
-    await page.getByText("Test User").click();
+    // Open user menu (use button role to avoid matching question cards)
+    await page.getByRole("button", { name: /Test User/ }).click();
 
     // Should show email and roles
     await expect(page.getByText("dev@localhost")).toBeVisible();
-    await expect(page.getByText("admin")).toBeVisible();
+    await expect(page.getByText("admin", { exact: true })).toBeVisible();
   });
 });

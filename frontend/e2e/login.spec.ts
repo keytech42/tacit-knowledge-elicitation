@@ -40,7 +40,7 @@ test.describe("Login", () => {
     await page.waitForURL("**/questions");
 
     // Open user menu and sign out
-    await page.getByText("Test User").click();
+    await page.getByRole("button", { name: /Test User/ }).click();
     await page.getByRole("button", { name: "Sign out" }).click();
 
     await page.waitForURL("**/login");
