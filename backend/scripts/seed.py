@@ -309,12 +309,16 @@ async def seed():
         else:
             print(f"  [skip] Q4 answer options already exist")
 
-        # Answer options for Q5
+        # Answer options for Q5 — varied lengths to visually test grid alignment
         if not q_pub_approved.answer_options:
             options_q5 = [
                 AnswerOption(
                     question_id=q_pub_approved.id,
-                    body="Dependency injection and constructor-based wiring",
+                    body=(
+                        "Dependency injection and constructor-based wiring — making all external "
+                        "dependencies explicit parameters rather than hidden globals or singletons, "
+                        "so every collaborator can be replaced with a test double"
+                    ),
                     display_order=0,
                     created_by_id=admin.id,
                 ),
@@ -330,11 +334,21 @@ async def seed():
                     display_order=2,
                     created_by_id=admin.id,
                 ),
+                AnswerOption(
+                    question_id=q_pub_approved.id,
+                    body=(
+                        "Separating pure business logic from I/O side effects — keep the core "
+                        "domain rules in pure functions that are trivial to unit test, and push "
+                        "database, HTTP, and file system access to thin adapter layers at the edges"
+                    ),
+                    display_order=3,
+                    created_by_id=admin.id,
+                ),
             ]
             for opt in options_q5:
                 session.add(opt)
             q_pub_approved.show_suggestions = True
-            print(f"  [created] 3 answer options for Q5")
+            print(f"  [created] 4 answer options for Q5")
         else:
             print(f"  [skip] Q5 answer options already exist")
 
@@ -424,6 +438,45 @@ async def seed():
 
             a2.status = AnswerStatus.REVISION_REQUESTED.value
             print(f"  [created] Answer 2 for Q4 (changes requested)")
+
+            # Answer 3: by respondent1, submitted + pending review (for reviewer queue)
+            a3_q4 = Answer(
+                question_id=q_pub_answers.id,
+                author_id=respondent1.id,
+                body=(
+                    "I've found that the best knowledge transfer combines async documentation "
+                    "with synchronous sessions:\n\n"
+                    "- **Architecture Decision Records (ADRs)**: Short docs capturing the context, "
+                    "options considered, and rationale for key decisions\n"
+                    "- **Mob programming sessions**: Whole-team sessions working on unfamiliar code "
+                    "areas to spread understanding\n"
+                    "- **Rotation schedules**: Regularly rotating who works on which subsystem\n\n"
+                    "The underrated practice is *progressive onboarding* — don't dump everything "
+                    "on day one. Instead, give new members increasingly complex tasks and let them "
+                    "pull knowledge as needed."
+                ),
+            )
+            session.add(a3_q4)
+            await session.flush()
+            await session.refresh(a3_q4, ["revisions", "author"])
+            rev3_q4 = submit_answer(a3_q4, respondent1)
+            session.add(rev3_q4)
+            await session.flush()
+
+            # Under review with a pending review — this shows up in reviewer's queue
+            a3_q4.status = AnswerStatus.UNDER_REVIEW.value
+            await session.flush()
+
+            review_a3_q4 = Review(
+                target_type=ReviewTargetType.ANSWER.value,
+                target_id=a3_q4.id,
+                reviewer_id=reviewer.id,
+                assigned_by_id=admin.id,
+                verdict=ReviewVerdict.PENDING.value,
+                answer_version=a3_q4.current_version,
+            )
+            session.add(review_a3_q4)
+            print(f"  [created] Answer 3 for Q4 (pending review)")
         else:
             print(f"  [skip] Q4 answers already exist ({len(existing_answers_q4)})")
 

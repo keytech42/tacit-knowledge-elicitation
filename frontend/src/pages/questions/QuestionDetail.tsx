@@ -416,13 +416,29 @@ export function QuestionDetail() {
                 {question.answer_options.map((opt, idx) => {
                   const isSelected = selectedOptionId === opt.id;
                   return (
-                    <div key={opt.id}>
+                    <div key={opt.id} className="group relative">
                       <button
                         onClick={() => handleOptionClick(opt.id, opt.body)}
-                        className={`w-full text-left rounded-lg border bg-background p-3 transition-all duration-200 hover:shadow-md ${
+                        className={`w-full h-full text-left rounded-lg border bg-background p-3 transition-all duration-200 ${
                           isSelected
                             ? "border-primary ring-1 ring-primary"
-                            : "border-border hover:border-foreground/20"
+                            : "border-border"
+                        }`}
+                      >
+                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {idx + 1}
+                        </span>
+                        <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
+                      </button>
+                      {/* Hover overlay — expands to show full text */}
+                      <button
+                        onClick={() => handleOptionClick(opt.id, opt.body)}
+                        className={`absolute inset-x-0 top-0 z-10 hidden group-hover:block w-full text-left rounded-lg border bg-background p-3 shadow-lg min-h-full ${
+                          isSelected
+                            ? "border-primary ring-1 ring-primary"
+                            : "border-foreground/20"
                         }`}
                       >
                         <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
