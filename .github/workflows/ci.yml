@@ -75,24 +75,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start services
-        run: docker compose up -d db api web
-        env:
-          DEV_LOGIN_ENABLED: "true"
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
       - name: Install dependencies
         working-directory: frontend
-        run: |
-          sudo rm -rf node_modules
-          npm ci
+        run: npm ci
 
       - name: Install Playwright browsers
         working-directory: frontend
         run: npx playwright install chromium --with-deps
+
+      - name: Start services
+        run: docker compose up -d db api web
+        env:
+          DEV_LOGIN_ENABLED: "true"
 
       - name: Wait for services to be ready
         run: |
