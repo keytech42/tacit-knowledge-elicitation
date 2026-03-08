@@ -1,11 +1,11 @@
 const VARIANT_CLASSES: Record<string, string> = {
-  primary: "bg-primary text-primary-foreground",
-  secondary: "bg-secondary text-secondary-foreground",
-  danger: "bg-status-red text-white",
-  green: "bg-status-green text-white",
-  blue: "bg-status-blue text-white",
-  purple: "bg-status-blue text-white",
-  gray: "bg-muted text-muted-foreground",
+  primary: "bg-primary text-primary-foreground hover:bg-primary/90",
+  secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+  danger: "bg-status-red/85 text-white hover:bg-status-red",
+  green: "bg-status-green text-white hover:bg-status-green/90",
+  blue: "bg-status-blue text-white hover:bg-status-blue/90",
+  purple: "bg-status-blue text-white hover:bg-status-blue/90",
+  gray: "bg-muted text-muted-foreground hover:bg-muted/80",
 };
 
 function Spinner() {
