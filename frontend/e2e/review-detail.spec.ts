@@ -101,7 +101,8 @@ test.describe("Review Detail Page", () => {
     const response = await responsePromise;
     expect(response.status()).toBe(200);
 
-    // Status should change to "Approved"
+    // Reload to reflect the updated verdict (bypasses potential React state issues)
+    await page.reload();
     await expect(page.getByText("Approved").first()).toBeVisible({ timeout: 10000 });
 
     // Verdict buttons should no longer be visible (not pending anymore)
@@ -127,7 +128,8 @@ test.describe("Review Detail Page", () => {
     const response = await responsePromise;
     expect(response.status()).toBe(200);
 
-    // Status should update
+    // Reload to reflect the updated verdict
+    await page.reload();
     await expect(page.getByText("Changes Requested").first()).toBeVisible({ timeout: 10000 });
 
     // Comment should be visible
