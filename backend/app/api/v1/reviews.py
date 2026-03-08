@@ -280,13 +280,15 @@ async def update_review(
     review.verdict = verdict.value
     review.comment = request.comment
 
+    # Flush verdict change to DB before any refresh
+    await db.flush()
+
     # Resolve answer status if this is an answer review
     answer_status_before = None
     if review.target_type == ReviewTargetType.ANSWER.value:
         answer_result = await db.execute(select(Answer).where(Answer.id == review.target_id))
         answer = answer_result.scalar_one_or_none()
         answer_status_before = answer.status if answer else None
-        await db.flush()
         await resolve_answer_reviews(review.target_id, db)
 
     await db.refresh(review)
