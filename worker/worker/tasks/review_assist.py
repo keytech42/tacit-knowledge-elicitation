@@ -64,9 +64,19 @@ async def run_review_assist(answer_id: uuid.UUID) -> dict:
     comment_parts.append(f"\n*AI confidence: {assessment.confidence:.0%}*")
     full_comment = "\n".join(comment_parts)
 
-    # Create and submit the review
+    # Create (or retrieve existing) review and submit the verdict
     review = await platform.create_review("answer", answer_id)
     review_id = uuid.UUID(review["id"])
+
+    # If the review already has a non-pending verdict (e.g. submitted by another
+    # reviewer between our create and list calls), skip submitting.
+    if review.get("verdict") and review["verdict"] != "pending":
+        logger.info(
+            f"Review {review_id} already has verdict '{review['verdict']}', skipping"
+        )
+        result["reason"] = "review already submitted"
+        return result
+
     await platform.submit_review_verdict(review_id, assessment.verdict, full_comment)
 
     result["submitted"] = True

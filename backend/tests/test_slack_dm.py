@@ -25,7 +25,7 @@ from app.services import slack
 from tests.conftest import auth_header
 
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.skip(reason="Plan B (Slack DMs) not yet implemented — TDD tests")]
+pytestmark = pytest.mark.asyncio
 
 
 # ---------------------------------------------------------------------------

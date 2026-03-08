@@ -78,12 +78,15 @@ class AdminQueueItem(BaseModel):
     updated_at: datetime
     published_at: datetime | None = None
     answer_count: int = 0
+    approved_count: int = 0
+    pending_count: int = 0
     model_config = {"from_attributes": True}
 
 
 class AdminQueueResponse(BaseModel):
     proposed: list[AdminQueueItem] = []
     in_review: list[AdminQueueItem] = []
+    pending: list[AdminQueueItem] = []
     published: list[AdminQueueItem] = []
     closed: list[AdminQueueItem] = []
 

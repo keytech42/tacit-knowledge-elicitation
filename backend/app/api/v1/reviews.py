@@ -235,6 +235,15 @@ async def update_review(
                     slack_channel=question.slack_channel if question else None,
                     slack_thread_ts=question.slack_thread_ts if question else None,
                 )
+                await slack.notify_changes_requested_dm(
+                    question_title=q_title,
+                    question_id=str(answer.question_id),
+                    answer_id=str(answer.id),
+                    author_email=answer.author.email if answer.author else None,
+                    author_name=answer.author.display_name if answer.author else "Unknown",
+                    reviewer_name=current_user.display_name,
+                    comment=request.comment,
+                )
 
     return review
 

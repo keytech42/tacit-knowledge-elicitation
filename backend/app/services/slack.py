@@ -98,6 +98,64 @@ def _answer_link(answer_id: str, text: str = "View answer") -> str:
 # Each runs in a fire-and-forget task so the caller never waits.
 
 
+async def _send_dm(slack_user_id: str, text: str) -> None:
+    """Open a DM conversation and post a message. Fire-and-forget."""
+    try:
+        client = _get_client()
+        resp = await client.conversations_open(users=slack_user_id)
+        dm_channel = resp["channel"]["id"]
+        await client.chat_postMessage(channel=dm_channel, text=text)
+    except Exception:
+        logger.exception("Failed to send DM to Slack user %s", slack_user_id)
+
+
+async def notify_respondent_assigned(
+    question_title: str,
+    question_id: str,
+    respondent_email: str | None,
+    respondent_name: str,
+    assigner_name: str,
+) -> None:
+    """DM the respondent when they are assigned to a question."""
+    if not _is_enabled() or not respondent_email:
+        return
+    slack_user_id = await _lookup_slack_user(respondent_email)
+    if not slack_user_id:
+        return
+    link = _question_link(question_id)
+    text = (
+        f":wave: Hi {respondent_name}! {assigner_name} has assigned you to answer a question:\n"
+        f"*{question_title}*\n"
+        f"{link}"
+    )
+    await _send_dm(slack_user_id, text)
+
+
+async def notify_changes_requested_dm(
+    question_title: str,
+    question_id: str,
+    answer_id: str,
+    author_email: str | None,
+    author_name: str,
+    reviewer_name: str,
+    comment: str | None = None,
+) -> None:
+    """DM the answer author when changes are requested."""
+    if not _is_enabled() or not author_email:
+        return
+    slack_user_id = await _lookup_slack_user(author_email)
+    if not slack_user_id:
+        return
+    link = _answer_link(answer_id)
+    text = (
+        f":memo: {reviewer_name} has requested changes on your answer to *{question_title}*\n"
+        f"{link}"
+    )
+    if comment:
+        text += f"\nComment: {comment}"
+    await _send_dm(slack_user_id, text)
+
+
 async def notify_question_published(
     question_title: str,
     question_id: str,
@@ -120,7 +178,9 @@ async def notify_question_published(
     )
     thread_ts = await _post_message(channel, text)
     if not thread_ts:
+        logger.warning("Failed to create Slack thread for question %s — no thread_ts returned", question_id)
         return (None, None)
+    logger.info("Created Slack thread %s in %s for question %s", thread_ts, channel, question_id)
 
     # Post the question body as the first reply in the thread
     body_preview = question_body[:2000] if len(question_body) > 2000 else question_body
@@ -146,9 +206,11 @@ async def notify_question_rejected(
     author_email: str | None,
     author_name: str,
     comment: str | None = None,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
     """Notify the question author when their question is rejected."""
-    if not _is_enabled() or not _channel():
+    if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
     link = _question_link(question_id)
@@ -159,7 +221,10 @@ async def notify_question_rejected(
     )
     if comment:
         text += f"\nReason: {comment}"
-    await _send_message(_channel(), text)
+    if slack_channel and slack_thread_ts:
+        await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+    elif _channel():
+        await _send_message(_channel(), text)
 
 
 async def notify_answer_submitted(

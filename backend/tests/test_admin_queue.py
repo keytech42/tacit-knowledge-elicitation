@@ -69,8 +69,47 @@ class TestAdminQueueEndpoint:
         data = r.json()
         assert data["proposed"] == []
         assert data["in_review"] == []
+        assert data["pending"] == []
         assert data["published"] == []
         assert data["closed"] == []
+
+    async def test_pending_bucket_for_mixed_answers(self, client: AsyncClient, admin_user: User, author_user: User, respondent_user: User, db: AsyncSession):
+        """Published questions with in-progress answers go to the pending bucket."""
+        q = Question(title="Mixed Q", body="B", created_by_id=author_user.id, status=QuestionStatus.PUBLISHED.value)
+        db.add(q)
+        await db.flush()
+
+        a1 = Answer(question_id=q.id, author_id=respondent_user.id, body="Approved", status=AnswerStatus.APPROVED.value, current_version=1)
+        a2 = Answer(question_id=q.id, author_id=respondent_user.id, body="In progress", status=AnswerStatus.SUBMITTED.value, current_version=1)
+        db.add_all([a1, a2])
+        await db.flush()
+
+        r = await client.get("/api/v1/questions/admin-queue", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["pending"]) == 1
+        assert data["pending"][0]["title"] == "Mixed Q"
+        assert data["pending"][0]["approved_count"] == 1
+        assert data["pending"][0]["pending_count"] == 1
+        # Should NOT be in published since it has pending answers
+        assert not any(item["title"] == "Mixed Q" for item in data["published"])
+
+    async def test_published_without_pending_stays_in_published(self, client: AsyncClient, admin_user: User, author_user: User, respondent_user: User, db: AsyncSession):
+        """Published questions with only approved/rejected answers stay in published."""
+        q = Question(title="All Done Q", body="B", created_by_id=author_user.id, status=QuestionStatus.PUBLISHED.value)
+        db.add(q)
+        await db.flush()
+
+        a1 = Answer(question_id=q.id, author_id=respondent_user.id, body="Done", status=AnswerStatus.APPROVED.value, current_version=1)
+        db.add(a1)
+        await db.flush()
+
+        r = await client.get("/api/v1/questions/admin-queue", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["published"]) == 1
+        assert data["published"][0]["title"] == "All Done Q"
+        assert len(data["pending"]) == 0
 
     async def test_includes_created_by(self, client: AsyncClient, admin_user: User, author_user: User, db: AsyncSession):
         """Queue items include author info."""
@@ -148,7 +187,7 @@ class TestAdminQueueWorkflowActions:
         # Should disappear from the queue entirely (draft is not actionable)
         queue = await client.get("/api/v1/questions/admin-queue", headers=auth_header(admin_user))
         all_ids = []
-        for bucket in ["proposed", "in_review", "published", "closed"]:
+        for bucket in ["proposed", "in_review", "pending", "published", "closed"]:
             all_ids.extend(item["id"] for item in queue.json()[bucket])
         assert str(q.id) not in all_ids
 
@@ -182,7 +221,7 @@ class TestAdminQueueWorkflowActions:
         # Archived should not appear in queue
         queue = await client.get("/api/v1/questions/admin-queue", headers=auth_header(admin_user))
         all_ids = []
-        for bucket in ["proposed", "in_review", "published", "closed"]:
+        for bucket in ["proposed", "in_review", "pending", "published", "closed"]:
             all_ids.extend(item["id"] for item in queue.json()[bucket])
         assert str(q.id) not in all_ids
 

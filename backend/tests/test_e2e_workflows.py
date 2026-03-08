@@ -252,7 +252,7 @@ class TestQuestionAnswerReviewLifecycle:
         assert len(pending_reviews) == 1
         assert pending_reviews[0]["id"] == review_id  # same review, not a new one
         assert pending_reviews[0]["answer_version"] == 1  # stays on same version
-        assert pending_reviews[0]["comment"] is None  # comment cleared
+        assert pending_reviews[0]["comment"] == "Please add more detail"  # comment preserved for context
 
         # Approve the reset review
         r = await client.patch(f"/api/v1/reviews/{review_id}", json={
