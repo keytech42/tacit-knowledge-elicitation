@@ -419,7 +419,7 @@ export function QuestionDetail() {
                     <div key={opt.id} className="group relative">
                       <button
                         onClick={() => handleOptionClick(opt.id, opt.body)}
-                        className={`relative w-full h-full flex flex-col justify-start text-left rounded-lg border bg-background p-3 overflow-hidden transition-all duration-200 ${
+                        className={`relative w-full h-full flex flex-col items-start justify-start text-left rounded-lg border bg-background p-3 overflow-hidden transition-all duration-200 ${
                           isSelected
                             ? "border-primary ring-1 ring-primary"
                             : "border-border"
@@ -436,7 +436,7 @@ export function QuestionDetail() {
                       {/* Hover overlay — identical layout, no truncation */}
                       <button
                         onClick={() => handleOptionClick(opt.id, opt.body)}
-                        className={`absolute inset-x-0 top-0 z-10 hidden group-hover:flex flex-col justify-start w-full text-left rounded-lg border bg-background p-3 shadow-lg min-h-full ${
+                        className={`absolute inset-x-0 top-0 z-10 hidden group-hover:flex flex-col items-start justify-start w-full text-left rounded-lg border bg-background p-3 shadow-lg min-h-full ${
                           isSelected
                             ? "border-primary ring-1 ring-primary"
                             : "border-foreground/20"
