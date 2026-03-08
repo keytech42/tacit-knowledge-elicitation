@@ -31,7 +31,7 @@ test.describe("Respondent Picker (QuestionDetail)", () => {
     await createPublishedQuestion(page, `${Date.now()}-ai-section`);
 
     // The AI Actions section should be visible for admin users
-    await expect(page.getByText("AI Actions")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "AI Actions" })).toBeVisible();
 
     // Should show the "Assign Respondent" label (UserPicker)
     await expect(page.getByText("Assign Respondent")).toBeVisible();
@@ -48,8 +48,7 @@ test.describe("Respondent Picker (QuestionDetail)", () => {
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
 
-    // Should show at least one user (the search returns respondent-role users)
-    // Dev user has all roles, so should appear
+    // Should show at least one user (the dev user has all roles including respondent)
     await expect(listbox.locator("[role=option]").first()).toBeVisible({ timeout: 5000 });
   });
 
@@ -80,12 +79,12 @@ test.describe("Respondent Picker (QuestionDetail)", () => {
     await page.getByPlaceholder("What do you want to know?").fill(title);
     await page
       .getByPlaceholder("Provide context, constraints, and what a good answer looks like...")
-      .fill("Draft question — AI actions should not appear.");
+      .fill("This is a draft question body for testing.");
     await page.getByRole("button", { name: "Save as Draft" }).click();
     await page.waitForURL("**/questions/**");
 
-    // AI Actions section should NOT be visible on draft questions
-    await expect(page.getByText("AI Actions")).not.toBeVisible();
+    // AI Actions heading should NOT be visible on draft questions
+    await expect(page.getByRole("heading", { name: "AI Actions" })).not.toBeVisible();
     await expect(page.getByText("Assign Respondent")).not.toBeVisible();
   });
 
@@ -98,9 +97,6 @@ test.describe("Respondent Picker (QuestionDetail)", () => {
 
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
-
-    // Wait for debounced search
-    await page.waitForTimeout(300);
 
     // Should find the dev user named "Test User"
     await expect(listbox.getByText("Test User")).toBeVisible({ timeout: 5000 });
