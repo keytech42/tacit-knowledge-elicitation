@@ -1,9 +1,13 @@
+import pytest
 from httpx import AsyncClient
 
 from app.models.answer import Answer, AnswerStatus
 from app.models.question import Question, QuestionStatus
+from app.models.review import Review, ReviewTargetType, ReviewVerdict
 from app.models.user import User
 from tests.conftest import auth_header
+
+pytestmark = pytest.mark.asyncio
 
 
 class TestReviewCRUD:
@@ -104,3 +108,135 @@ class TestMyReviewQueue:
         r = await client.get("/api/v1/reviews/my-queue", headers=auth_header(reviewer_user))
         assert r.status_code == 200
         assert len(r.json()) >= 1
+
+
+class TestAssignReviewer:
+    """Tests for POST /reviews/assign/{answer_id} — assign a reviewer to an answer."""
+
+    async def _make_answer(self, db, admin_user, respondent_user, status=AnswerStatus.SUBMITTED.value):
+        q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
+        db.add(q)
+        await db.flush()
+        a = Answer(question_id=q.id, author_id=respondent_user.id, body="A", status=status, current_version=1)
+        db.add(a)
+        await db.flush()
+        return a
+
+    async def test_assign_reviewer_happy_path(self, client, admin_user, reviewer_user, respondent_user, db):
+        """Admin assigns a reviewer to a submitted answer."""
+        a = await self._make_answer(db, admin_user, respondent_user)
+        r = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["reviewer"]["id"] == str(reviewer_user.id)
+        assert data["assigned_by"]["id"] == str(admin_user.id)
+        assert data["verdict"] == "pending"
+        assert data["answer_version"] == 1
+
+    async def test_assign_transitions_submitted_to_under_review(self, client, admin_user, reviewer_user, respondent_user, db):
+        """Assigning a reviewer to a submitted answer moves it to under_review."""
+        a = await self._make_answer(db, admin_user, respondent_user, AnswerStatus.SUBMITTED.value)
+        await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        ar = await client.get(f"/api/v1/answers/{a.id}", headers=auth_header(respondent_user))
+        assert ar.json()["status"] == "under_review"
+
+    async def test_assign_reviewer_by_reviewer(self, client, admin_user, reviewer_user, respondent_user, db, roles):
+        """A reviewer can assign another reviewer (not just admins)."""
+        from app.models.user import User, UserType, RoleName
+        second_reviewer = User(user_type=UserType.HUMAN, external_id="google_rev2", display_name="Reviewer 2", email="rev2@test.com")
+        db.add(second_reviewer)
+        await db.flush()
+        await db.refresh(second_reviewer, ["roles"])
+        second_reviewer.roles.append(roles[RoleName.REVIEWER.value])
+        await db.flush()
+
+        a = await self._make_answer(db, admin_user, respondent_user)
+        r = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(second_reviewer.id)},
+            headers=auth_header(reviewer_user),
+        )
+        assert r.status_code == 201
+
+    async def test_reject_non_reviewable_answer(self, client, admin_user, reviewer_user, respondent_user, db):
+        """Cannot assign reviewer to a draft answer."""
+        a = await self._make_answer(db, admin_user, respondent_user, AnswerStatus.DRAFT.value)
+        r = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        assert r.status_code == 409
+
+    async def test_reject_self_review(self, client, admin_user, reviewer_user, db):
+        """Cannot assign the answer author as reviewer."""
+        # Make the reviewer_user the answer author so they have the reviewer role
+        q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
+        db.add(q)
+        await db.flush()
+        a = Answer(question_id=q.id, author_id=reviewer_user.id, body="A", status=AnswerStatus.SUBMITTED.value, current_version=1)
+        db.add(a)
+        await db.flush()
+        r = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        assert r.status_code == 409
+        assert "author" in r.json()["detail"].lower()
+
+    async def test_reject_non_reviewer_role(self, client, admin_user, respondent_user, author_user, db):
+        """Cannot assign a user who doesn't have the reviewer role."""
+        a = await self._make_answer(db, admin_user, respondent_user)
+        r = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(author_user.id)},
+            headers=auth_header(admin_user),
+        )
+        assert r.status_code == 400
+        assert "reviewer role" in r.json()["detail"].lower()
+
+    async def test_reject_duplicate_pending_review(self, client, admin_user, reviewer_user, respondent_user, db):
+        """Cannot assign the same reviewer twice for the same version."""
+        a = await self._make_answer(db, admin_user, respondent_user)
+        r1 = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        assert r1.status_code == 201
+        r2 = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        assert r2.status_code == 409
+        assert "already" in r2.json()["detail"].lower()
+
+    async def test_answer_not_found(self, client, admin_user, reviewer_user):
+        """404 for non-existent answer."""
+        import uuid
+        r = await client.post(
+            f"/api/v1/reviews/assign/{uuid.uuid4()}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        assert r.status_code == 404
+
+    async def test_respondent_cannot_assign(self, client, admin_user, reviewer_user, respondent_user, db):
+        """Respondent role cannot assign reviewers."""
+        a = await self._make_answer(db, admin_user, respondent_user)
+        r = await client.post(
+            f"/api/v1/reviews/assign/{a.id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(respondent_user),
+        )
+        assert r.status_code == 403
