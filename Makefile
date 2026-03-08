@@ -1,4 +1,4 @@
-.PHONY: up down test migrate logs shell
+.PHONY: up down test migrate logs shell seed
 
 up:
 	docker compose up --build
@@ -17,3 +17,6 @@ logs:
 
 shell:
 	docker compose exec api bash
+
+seed:
+	docker compose exec api python scripts/seed.py
