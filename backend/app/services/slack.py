@@ -7,16 +7,84 @@ Thread lifecycle: When a question is published, a Slack thread is created.
 All subsequent events for that question post as replies in that thread.
 """
 import logging
+import re
 
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 
 from app.config import settings
+from app.templates.slack import (
+    fmt_answer_approved,
+    fmt_answer_submitted,
+    fmt_changes_requested_dm,
+    fmt_question_closed,
+    fmt_question_published,
+    fmt_question_rejected,
+    fmt_respondent_assigned,
+    fmt_review_verdict,
+    fmt_revision_requested,
+)
 
 logger = logging.getLogger(__name__)
 
 # In-memory cache for email → Slack user ID lookups
 _slack_user_cache: dict[str, str | None] = {}
+
+_MRKDWN_MAX_LEN = 2000
+
+
+def _md_to_mrkdwn(text: str) -> str:
+    """Convert markdown to Slack mrkdwn format.
+
+    Handles: bold, headings, links, bullets, and HTML tag stripping.
+    Code spans and fenced code blocks are left as-is (Slack supports backticks).
+    Truncates to 2000 chars.
+    """
+    # Protect fenced code blocks from other transforms
+    code_blocks: list[str] = []
+
+    def _stash_code_block(m: re.Match) -> str:
+        code_blocks.append(m.group(0))
+        return f"\x00CODEBLOCK{len(code_blocks) - 1}\x00"
+
+    text = re.sub(r"```[\s\S]*?```", _stash_code_block, text)
+
+    # Protect inline code spans
+    code_spans: list[str] = []
+
+    def _stash_code_span(m: re.Match) -> str:
+        code_spans.append(m.group(0))
+        return f"\x00CODESPAN{len(code_spans) - 1}\x00"
+
+    text = re.sub(r"`[^`]+`", _stash_code_span, text)
+
+    # Links: [text](url) → <url|text>
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"<\2|\1>", text)
+
+    # Headings: # heading → *heading* (must be at line start)
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
+
+    # Bold: **text** → *text*
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+
+    # Bullets: - item → • item
+    text = re.sub(r"^- ", "• ", text, flags=re.MULTILINE)
+
+    # Strip HTML tags but preserve Slack special syntax:
+    # <@U123>, <#C123>, <!here>, <url|text>
+    text = re.sub(r"<(?![@#!])(?![^>]*\|)[^>]*>", "", text)
+
+    # Restore code blocks and spans
+    for i, block in enumerate(code_blocks):
+        text = text.replace(f"\x00CODEBLOCK{i}\x00", block)
+    for i, span in enumerate(code_spans):
+        text = text.replace(f"\x00CODESPAN{i}\x00", span)
+
+    # Truncate
+    if len(text) > _MRKDWN_MAX_LEN:
+        text = text[: _MRKDWN_MAX_LEN - 3] + "..."
+
+    return text
 
 
 def _is_enabled() -> bool:
@@ -122,11 +190,11 @@ async def notify_respondent_assigned(
     slack_user_id = await _lookup_slack_user(respondent_email)
     if not slack_user_id:
         return
-    link = _question_link(question_id)
-    text = (
-        f":wave: Hi {respondent_name}! {assigner_name} has assigned you to answer a question:\n"
-        f"*{question_title}*\n"
-        f"{link}"
+    text = fmt_respondent_assigned(
+        respondent_name=respondent_name,
+        assigner_name=assigner_name,
+        question_title=question_title,
+        question_link=_question_link(question_id),
     )
     await _send_dm(slack_user_id, text)
 
@@ -146,13 +214,12 @@ async def notify_changes_requested_dm(
     slack_user_id = await _lookup_slack_user(author_email)
     if not slack_user_id:
         return
-    link = _answer_link(answer_id)
-    text = (
-        f":memo: {reviewer_name} has requested changes on your answer to *{question_title}*\n"
-        f"{link}"
+    text = fmt_changes_requested_dm(
+        reviewer_name=reviewer_name,
+        question_title=question_title,
+        answer_link=_answer_link(answer_id),
+        comment=_md_to_mrkdwn(comment) if comment else None,
     )
-    if comment:
-        text += f"\nComment: {comment}"
     await _send_dm(slack_user_id, text)
 
 
@@ -170,11 +237,10 @@ async def notify_question_published(
         return (None, None)
 
     channel = _channel()
-    link = _question_link(question_id)
-    text = (
-        f":clipboard: *New question published* by {publisher_name}\n"
-        f"*{question_title}*\n"
-        f"{link}"
+    text = fmt_question_published(
+        publisher_name=publisher_name,
+        question_title=question_title,
+        question_link=_question_link(question_id),
     )
     thread_ts = await _post_message(channel, text)
     if not thread_ts:
@@ -183,7 +249,7 @@ async def notify_question_published(
     logger.info("Created Slack thread %s in %s for question %s", thread_ts, channel, question_id)
 
     # Post the question body as the first reply in the thread
-    body_preview = question_body[:2000] if len(question_body) > 2000 else question_body
+    body_preview = _md_to_mrkdwn(question_body)
     await _post_message(channel, body_preview, thread_ts=thread_ts)
 
     return (thread_ts, channel)
@@ -213,14 +279,12 @@ async def notify_question_rejected(
     if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
-    link = _question_link(question_id)
-    text = (
-        f":x: *Question rejected* — {mention}\n"
-        f"*{question_title}*\n"
-        f"{link}"
+    text = fmt_question_rejected(
+        mention=mention,
+        question_title=question_title,
+        question_link=_question_link(question_id),
+        comment=comment,
     )
-    if comment:
-        text += f"\nReason: {comment}"
     if slack_channel and slack_thread_ts:
         await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
     elif _channel():
@@ -232,23 +296,28 @@ async def notify_answer_submitted(
     question_id: str,
     answer_id: str,
     author_name: str,
+    answer_body: str | None = None,
     slack_channel: str | None = None,
     slack_thread_ts: str | None = None,
 ) -> None:
     """Notify channel when an answer is submitted for review.
 
     If the question has a thread, posts as a reply. Otherwise posts to the default channel.
+    When answer_body is provided and we're in a thread, posts the body as a follow-up reply.
     """
     if not _is_enabled():
         return
-    link = _answer_link(answer_id)
-    text = (
-        f":pencil: *Answer submitted* by {author_name}\n"
-        f"For question: *{question_title}*\n"
-        f"{link}"
+    text = fmt_answer_submitted(
+        author_name=author_name,
+        question_title=question_title,
+        answer_link=_answer_link(answer_id),
     )
     if slack_channel and slack_thread_ts:
-        await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+        msg_ts = await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
+        # Post the answer body as a follow-up reply in the thread
+        if answer_body and msg_ts:
+            body_preview = _md_to_mrkdwn(answer_body)
+            await _post_message(slack_channel, body_preview, thread_ts=slack_thread_ts)
     elif _channel():
         await _send_message(_channel(), text)
 
@@ -268,19 +337,14 @@ async def notify_review_verdict(
     if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
-    emoji_map = {
-        "approved": ":white_check_mark:",
-        "changes_requested": ":memo:",
-        "rejected": ":no_entry:",
-    }
-    emoji = emoji_map.get(verdict, ":speech_balloon:")
-    link = _answer_link(answer_id)
-    text = (
-        f"{emoji} *Review: {verdict.replace('_', ' ')}* by {reviewer_name}\n"
-        f"For {link} on *{question_title}* — {mention}\n"
+    text = fmt_review_verdict(
+        verdict=verdict,
+        reviewer_name=reviewer_name,
+        mention=mention,
+        question_title=question_title,
+        answer_link=_answer_link(answer_id),
+        comment=_md_to_mrkdwn(comment) if comment else None,
     )
-    if comment:
-        text += f"Comment: {comment}"
     if slack_channel and slack_thread_ts:
         await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
     elif _channel():
@@ -299,11 +363,10 @@ async def notify_answer_approved(
     if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
-    link = _answer_link(answer_id)
-    text = (
-        f":tada: *Answer approved!* — {mention}\n"
-        f"For question: *{question_title}*\n"
-        f"{link}"
+    text = fmt_answer_approved(
+        mention=mention,
+        question_title=question_title,
+        answer_link=_answer_link(answer_id),
     )
     if slack_channel and slack_thread_ts:
         await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
@@ -323,11 +386,10 @@ async def notify_revision_requested(
     if not _is_enabled():
         return
     mention = await _mention_or_name(author_email, author_name)
-    link = _answer_link(answer_id)
-    text = (
-        f":arrows_counterclockwise: *Revision requested* — {mention}\n"
-        f"For question: *{question_title}*\n"
-        f"{link} — please revise and resubmit."
+    text = fmt_revision_requested(
+        mention=mention,
+        question_title=question_title,
+        answer_link=_answer_link(answer_id),
     )
     if slack_channel and slack_thread_ts:
         await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
@@ -344,10 +406,8 @@ async def notify_question_closed(
     """Post a closure message to a question's thread."""
     if not _is_enabled():
         return
-    link = _question_link(question_id)
-    text = (
-        f":lock: *Question closed* — *{question_title}*\n"
-        f"{link}\n"
-        f"This question is no longer accepting new answers."
+    text = fmt_question_closed(
+        question_title=question_title,
+        question_link=_question_link(question_id),
     )
     await _post_message(slack_channel, text, thread_ts=slack_thread_ts)
