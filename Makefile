@@ -1,4 +1,4 @@
-.PHONY: up down test migrate logs shell
+.PHONY: up down test test-e2e migrate logs shell
 
 up:
 	docker compose up --build
@@ -14,6 +14,10 @@ migrate:
 
 logs:
 	docker compose logs -f
+
+test-e2e:
+	docker compose up -d db api web
+	cd frontend && npx playwright test
 
 shell:
 	docker compose exec api bash
