@@ -59,7 +59,7 @@ async def dev_login(db: AsyncSession = Depends(get_db)):
         user = User(
             user_type=UserType.HUMAN,
             external_id="dev-local-admin",
-            display_name="Dev Admin",
+            display_name="Test User",
             email=dev_email,
         )
         db.add(user)

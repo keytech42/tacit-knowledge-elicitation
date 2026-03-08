@@ -73,8 +73,10 @@ test.describe("Answers", () => {
     await page.getByPlaceholder("Write your answer...").fill(answerText);
     await page.getByRole("button", { name: "Submit Answer" }).click();
 
-    // Click on the answer to go to detail page
-    await page.getByText(answerText).click();
+    // Wait for the answer to appear in the refreshed list, then click its link
+    const answerLink = page.locator("a", { hasText: answerText });
+    await answerLink.waitFor({ state: "visible" });
+    await answerLink.click();
 
     // Should be on answer detail page
     await page.waitForURL("**/answers/**");

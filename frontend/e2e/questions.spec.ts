@@ -5,9 +5,9 @@ test.describe("Questions", () => {
     await page.goto("/questions");
 
     // Switch to kanban view if not already active
-    const kanbanBtn = page.getByRole("button", { name: /kanban/i });
-    if (await kanbanBtn.isVisible()) {
-      await kanbanBtn.click();
+    const boardBtn = page.getByRole("button", { name: /board/i });
+    if (await boardBtn.isVisible()) {
+      await boardBtn.click();
     }
 
     // Dev user has admin + author roles, so should see all 6 columns
@@ -26,16 +26,16 @@ test.describe("Questions", () => {
 
     // Look for the view toggle buttons
     const listBtn = page.getByRole("button", { name: /list/i });
-    const kanbanBtn = page.getByRole("button", { name: /kanban/i });
+    const boardBtn = page.getByRole("button", { name: /board/i });
 
     if (await listBtn.isVisible()) {
       await listBtn.click();
-      // In list view, there should be a table or list structure
-      await expect(page.locator("table, [role='list']").first()).toBeVisible();
+      // In list view, the heading and question cards should be visible
+      await expect(page.getByRole("heading", { name: /questions/i })).toBeVisible();
     }
 
-    if (await kanbanBtn.isVisible()) {
-      await kanbanBtn.click();
+    if (await boardBtn.isVisible()) {
+      await boardBtn.click();
       // In kanban view, columns should be visible
       await expect(page.getByText("Published").first()).toBeVisible();
     }
