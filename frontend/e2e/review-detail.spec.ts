@@ -42,25 +42,29 @@ async function createPublishedQuestionWithAnswer(page: Page, suffix: string) {
 }
 
 /**
- * Helper: create a question-level review via API.
+ * Helper: create a question-level review via API (runs inside browser context).
  * Question reviews don't have author-exclusion, so they work in single-user CI.
  * Returns the review ID.
  */
 async function createQuestionReview(page: Page, questionId: string): Promise<string> {
-  // Extract JWT token from localStorage (the frontend stores it as "token")
-  const token = await page.evaluate(() => localStorage.getItem("token"));
-  const resp = await page.request.post(`/api/v1/reviews`, {
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-    },
-    data: { target_type: "question", target_id: questionId },
-  });
-  if (!resp.ok()) {
-    throw new Error(`Failed to create review: ${resp.status()} ${await resp.text()}`);
-  }
-  const body = await resp.json();
-  return body.id;
+  const reviewId = await page.evaluate(async (qId) => {
+    const token = localStorage.getItem("token");
+    const resp = await fetch("/api/v1/reviews", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ target_type: "question", target_id: qId }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Failed to create review: ${resp.status} ${text}`);
+    }
+    const data = await resp.json();
+    return data.id as string;
+  }, questionId);
+  return reviewId;
 }
 
 test.describe("Review Detail Page", () => {
