@@ -419,18 +419,21 @@ export function QuestionDetail() {
                     <div key={opt.id} className="group relative">
                       <button
                         onClick={() => handleOptionClick(opt.id, opt.body)}
-                        className={`w-full h-full text-left rounded-lg border bg-background p-3 transition-all duration-200 ${
+                        className={`relative w-full h-full text-left rounded-lg border bg-background p-3 overflow-hidden transition-all duration-200 ${
                           isSelected
                             ? "border-primary ring-1 ring-primary"
                             : "border-border"
                         }`}
                       >
-                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
-                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                        }`}>
-                          {idx + 1}
-                        </span>
-                        <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
+                        <div className="flex flex-col items-start">
+                          <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent pointer-events-none" />
                       </button>
                       {/* Hover overlay — expands to show full text */}
                       <button
