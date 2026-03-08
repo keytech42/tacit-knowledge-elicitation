@@ -17,15 +17,15 @@ from app.services.review import auto_assign_reviewers, resolve_answer_reviews
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 
-async def _enrich_question_titles(reviews: list[Review], db: AsyncSession) -> None:
-    """Set question_title on each review object for API serialization."""
+async def _enrich_review_context(reviews: list[Review], db: AsyncSession) -> None:
+    """Set question_title, question_status, and answer_status on review objects for API serialization."""
     if not reviews:
         return
 
     answer_reviews = [r for r in reviews if r.target_type == ReviewTargetType.ANSWER.value]
     question_reviews = [r for r in reviews if r.target_type == ReviewTargetType.QUESTION.value]
 
-    # Resolve question titles for answer reviews (answer → question)
+    # Resolve context for answer reviews (answer → question)
     answer_ids = {r.target_id for r in answer_reviews}
     if answer_ids:
         result = await db.execute(select(Answer).where(Answer.id.in_(answer_ids)))
@@ -36,11 +36,13 @@ async def _enrich_question_titles(reviews: list[Review], db: AsyncSession) -> No
         for r in answer_reviews:
             answer = answers.get(r.target_id)
             if answer:
+                r.answer_status = answer.status  # type: ignore[attr-defined]
                 q = questions.get(answer.question_id)
                 if q:
                     r.question_title = q.title  # type: ignore[attr-defined]
+                    r.question_status = q.status  # type: ignore[attr-defined]
 
-    # Resolve question titles for question reviews (direct)
+    # Resolve context for question reviews (direct)
     q_ids = {r.target_id for r in question_reviews}
     if q_ids:
         result = await db.execute(select(Question).where(Question.id.in_(q_ids)))
@@ -49,6 +51,7 @@ async def _enrich_question_titles(reviews: list[Review], db: AsyncSession) -> No
             q = questions.get(r.target_id)
             if q:
                 r.question_title = q.title  # type: ignore[attr-defined]
+                r.question_status = q.status  # type: ignore[attr-defined]
 
 
 @router.post("", response_model=ReviewResponse, status_code=201)
@@ -102,7 +105,7 @@ async def create_review(
     db.add(review)
     await db.flush()
     await db.refresh(review)
-    await _enrich_question_titles([review], db)
+    await _enrich_review_context([review], db)
     return review
 
 
@@ -125,7 +128,7 @@ async def list_reviews(
 
     result = await db.execute(query.order_by(Review.created_at.desc()))
     reviews = list(result.scalars().all())
-    await _enrich_question_titles(reviews, db)
+    await _enrich_review_context(reviews, db)
     return reviews
 
 
@@ -142,7 +145,7 @@ async def my_review_queue(
         ).order_by(Review.created_at.asc())
     )
     reviews = list(result.scalars().all())
-    await _enrich_question_titles(reviews, db)
+    await _enrich_review_context(reviews, db)
     return reviews
 
 
@@ -152,7 +155,7 @@ async def get_review(review_id: uuid.UUID, current_user: CurrentUser, db: AsyncS
     review = result.scalar_one_or_none()
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
-    await _enrich_question_titles([review], db)
+    await _enrich_review_context([review], db)
     return review
 
 
@@ -193,7 +196,7 @@ async def update_review(
         await resolve_answer_reviews(review.target_id, db)
 
     await db.refresh(review)
-    await _enrich_question_titles([review], db)
+    await _enrich_review_context([review], db)
 
     # Slack notifications for review verdicts on answers
     if review.target_type == ReviewTargetType.ANSWER.value and answer:

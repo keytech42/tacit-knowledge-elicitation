@@ -16,6 +16,19 @@ const ALL_VERDICTS = ["pending", "approved", "changes_requested", "rejected"];
 type ViewMode = "list" | "kanban";
 type ReviewTab = "answer" | "question";
 
+function ReviewStatusChips({ rev }: { rev: Review }) {
+  return (
+    <div className="flex items-center gap-1.5 mt-1">
+      {rev.answer_status && <StatusBadge status={rev.answer_status} size="xs" />}
+      {rev.question_status && (
+        <span className="text-[10px] text-muted-foreground">
+          Q: {statusLabel(rev.question_status)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function KanbanCard({ rev }: { rev: Review }) {
   return (
     <Link
@@ -25,9 +38,15 @@ function KanbanCard({ rev }: { rev: Review }) {
       {rev.question_title && (
         <p className="text-xs font-medium text-foreground/80 line-clamp-1">{rev.question_title}</p>
       )}
-      {rev.answer_version && (
-        <span className="text-[10px] text-muted-foreground">v{rev.answer_version}</span>
-      )}
+      <div className="flex items-center gap-2 mt-1">
+        {rev.answer_version != null && (
+          <span className="text-[10px] text-muted-foreground">v{rev.answer_version}</span>
+        )}
+        {rev.reviewer && (
+          <span className="text-[10px] text-muted-foreground">{rev.reviewer.display_name}</span>
+        )}
+      </div>
+      <ReviewStatusChips rev={rev} />
       {rev.comment && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{rev.comment}</p>}
       <div className="text-[10px] text-muted-foreground mt-1.5">{new Date(rev.created_at).toLocaleDateString()}</div>
     </Link>
@@ -64,16 +83,22 @@ function ReviewList({ reviews }: { reviews: Review[] }) {
   return (
     <div className="space-y-3">
       {reviews.map((rev) => (
-        <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30">
+        <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30 transition-colors">
           <div className="flex items-center gap-3">
             <StatusBadge status={rev.verdict} />
             {rev.question_title && (
               <span className="text-sm text-foreground/70 truncate max-w-[300px]">{rev.question_title}</span>
             )}
-            {rev.answer_version && (
-              <span className="text-xs text-muted-foreground">v{rev.answer_version}</span>
+            {rev.answer_version != null && (
+              <span className="text-xs text-muted-foreground font-mono">v{rev.answer_version}</span>
             )}
-            <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleDateString()}</span>
+            <span className="text-xs text-muted-foreground ml-auto">{rev.reviewer.display_name} &middot; {new Date(rev.created_at).toLocaleDateString()}</span>
+          </div>
+          <div className="flex items-center gap-2 mt-1.5">
+            {rev.answer_status && <StatusBadge status={rev.answer_status} size="xs" />}
+            {rev.question_status && (
+              <span className="text-[10px] text-muted-foreground">Q: {statusLabel(rev.question_status)}</span>
+            )}
           </div>
         </Link>
       ))}
@@ -83,8 +108,9 @@ function ReviewList({ reviews }: { reviews: Review[] }) {
 }
 
 export function ReviewQueue() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const [reviews, setReviews] = useState<Review[]>([]);
+  const isAdmin = hasRole("admin");
   const [activeTab, setActiveTab] = useState<ReviewTab>(() => {
     return (localStorage.getItem("reviewQueueTab") as ReviewTab) || "answer";
   });
@@ -95,14 +121,24 @@ export function ReviewQueue() {
   useEffect(() => {
     if (!user) return;
     if (viewMode === "kanban") {
-      api.get<Review[]>(`/reviews?reviewer_id=${user.id}&target_type=${activeTab}`).then(setReviews);
+      // Admins see all reviews; reviewers see only their own
+      const params = isAdmin
+        ? `target_type=${activeTab}`
+        : `reviewer_id=${user.id}&target_type=${activeTab}`;
+      api.get<Review[]>(`/reviews?${params}`).then(setReviews).catch(() => setReviews([]));
     } else {
-      // my-queue returns only pending; filter by target_type client-side
-      api.get<Review[]>("/reviews/my-queue").then((all) =>
-        setReviews(all.filter((r) => r.target_type === activeTab))
-      );
+      if (isAdmin) {
+        // Admins see all pending reviews
+        api.get<Review[]>(`/reviews?target_type=${activeTab}`).then((all) =>
+          setReviews(all.filter((r) => r.verdict === "pending"))
+        ).catch(() => setReviews([]));
+      } else {
+        api.get<Review[]>("/reviews/my-queue").then((all) =>
+          setReviews(all.filter((r) => r.target_type === activeTab))
+        ).catch(() => setReviews([]));
+      }
     }
-  }, [viewMode, user, activeTab]);
+  }, [viewMode, user, activeTab, isAdmin]);
 
   const handleViewChange = (mode: ViewMode) => {
     setViewMode(mode);
@@ -117,10 +153,10 @@ export function ReviewQueue() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">My Reviews</h1>
+        <h1 className="text-2xl font-bold">{isAdmin ? "All Reviews" : "My Reviews"}</h1>
         <div className="flex border border-border rounded-md overflow-hidden">
-          <button onClick={() => handleViewChange("list")} className={`px-3 py-2 text-sm ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>List</button>
-          <button onClick={() => handleViewChange("kanban")} className={`px-3 py-2 text-sm ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>Board</button>
+          <button onClick={() => handleViewChange("list")} className={`px-3 py-2 text-sm transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>List</button>
+          <button onClick={() => handleViewChange("kanban")} className={`px-3 py-2 text-sm transition-colors ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>Board</button>
         </div>
       </div>
 

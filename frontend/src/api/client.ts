@@ -124,6 +124,8 @@ export interface Review {
   comment: string | null;
   answer_version: number | null;
   question_title: string | null;
+  question_status: string | null;
+  answer_status: string | null;
   comments: ReviewComment[];
   created_at: string;
   updated_at: string;
