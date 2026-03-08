@@ -1,8 +1,12 @@
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.answer import Answer, AnswerStatus
 from app.models.question import Confirmation, Question, QuestionStatus
+from app.models.review import Review, ReviewTargetType, ReviewVerdict
 from app.models.user import RoleName, User
 
 QUESTION_TRANSITIONS = {
@@ -37,6 +41,8 @@ def validate_transition(question: Question, target_status: QuestionStatus, user:
 
 
 def can_edit_question(question: Question, user: User) -> bool:
+    if question.status == QuestionStatus.ARCHIVED.value:
+        return False
     user_roles = {r.name for r in user.roles}
     if RoleName.ADMIN.value in user_roles:
         return True
@@ -75,12 +81,64 @@ def apply_reject(question: Question, user: User, comment: str | None = None) -> 
     question.confirmation = Confirmation.REJECTED.value
 
 
-def apply_close(question: Question, user: User) -> None:
+async def apply_close(question: Question, user: User, db: AsyncSession) -> None:
     validate_transition(question, QuestionStatus.CLOSED, user)
     question.status = QuestionStatus.CLOSED.value
     question.closed_at = datetime.now(timezone.utc)
+    question.assigned_respondent_id = None
+
+    # Cascade: reject all in-flight and draft answers
+    in_flight = [
+        AnswerStatus.DRAFT.value,
+        AnswerStatus.SUBMITTED.value,
+        AnswerStatus.UNDER_REVIEW.value,
+        AnswerStatus.REVISION_REQUESTED.value,
+    ]
+    # Get IDs of answers to reject (needed for review superseding)
+    result = await db.execute(
+        select(Answer.id).where(
+            Answer.question_id == question.id,
+            Answer.status.in_(in_flight),
+        )
+    )
+    answer_ids = [row[0] for row in result.all()]
+
+    if answer_ids:
+        # Reject the answers
+        await db.execute(
+            update(Answer)
+            .where(Answer.id.in_(answer_ids))
+            .values(status=AnswerStatus.REJECTED.value)
+        )
+        # Supersede pending reviews on those answers
+        await db.execute(
+            update(Review)
+            .where(
+                Review.target_type == ReviewTargetType.ANSWER.value,
+                Review.target_id.in_(answer_ids),
+                Review.verdict == ReviewVerdict.PENDING.value,
+            )
+            .values(verdict=ReviewVerdict.SUPERSEDED.value)
+        )
 
 
-def apply_archive(question: Question, user: User) -> None:
+async def apply_archive(question: Question, user: User, db: AsyncSession) -> None:
     validate_transition(question, QuestionStatus.ARCHIVED, user)
     question.status = QuestionStatus.ARCHIVED.value
+
+    # Cascade: reject any remaining active answers (e.g. approved) to prevent further revisions
+    active_statuses = [
+        AnswerStatus.APPROVED.value,
+        AnswerStatus.DRAFT.value,
+        AnswerStatus.SUBMITTED.value,
+        AnswerStatus.UNDER_REVIEW.value,
+        AnswerStatus.REVISION_REQUESTED.value,
+    ]
+    await db.execute(
+        update(Answer)
+        .where(
+            Answer.question_id == question.id,
+            Answer.status.in_(active_statuses),
+        )
+        .values(status=AnswerStatus.REJECTED.value)
+    )

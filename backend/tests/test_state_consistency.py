@@ -98,10 +98,6 @@ async def _submitted_answer(
 class TestOrphanedReferences:
     """Objects left pointing to states that no longer make sense."""
 
-    @pytest.mark.xfail(
-        reason="BUG: closing a question does not cancel/reject in-flight answers — "
-               "submitted answers remain in submitted state for a closed question",
-    )
     async def test_closing_question_cancels_submitted_answers(
         self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
     ):
@@ -122,9 +118,6 @@ class TestOrphanedReferences:
             AnswerStatus.DRAFT.value,
         ), f"Answer should not be in {answer_status} after question is closed"
 
-    @pytest.mark.xfail(
-        reason="BUG: closing a question does not close pending reviews on in-flight answers",
-    )
     async def test_closing_question_closes_pending_reviews(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, db: AsyncSession,
@@ -148,10 +141,6 @@ class TestOrphanedReferences:
         assert r.json()["verdict"] != ReviewVerdict.PENDING.value, \
             "Review should not remain pending after question is closed"
 
-    @pytest.mark.xfail(
-        reason="BUG: closing a question does not handle draft answers — "
-               "they remain in draft state for a closed question",
-    )
     async def test_closing_question_handles_draft_answers(
         self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
     ):
@@ -184,10 +173,6 @@ class TestOrphanedReferences:
 class TestMissingGuardRails:
     """Invalid actions the API does not currently reject."""
 
-    @pytest.mark.xfail(
-        reason="BUG: answer author can review their own answer — no self-review guard "
-               "on manual review creation (only checked in auto_assign_reviewers)",
-    )
     async def test_author_cannot_review_own_answer(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, roles: dict[str, Role], db: AsyncSession,
@@ -208,10 +193,6 @@ class TestMissingGuardRails:
         assert r.status_code == 409, \
             "Author should not be able to review their own answer"
 
-    @pytest.mark.xfail(
-        reason="BUG: verdict can be changed on an already-resolved review — "
-               "no check that review.verdict == pending before update",
-    )
     async def test_cannot_change_verdict_on_resolved_review(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, db: AsyncSession,
@@ -237,10 +218,6 @@ class TestMissingGuardRails:
         assert r.status_code == 409, \
             "Should not be able to change verdict on an already-resolved review"
 
-    @pytest.mark.xfail(
-        reason="BUG: question review has no status validation — reviews can be "
-               "created for draft/proposed questions",
-    )
     async def test_cannot_create_review_for_draft_question(
         self, client: AsyncClient, admin_user: User, reviewer_user: User, db: AsyncSession,
     ):
@@ -307,10 +284,6 @@ class TestMissingGuardRails:
         }, headers=auth_header(reviewer_user))
         assert r.status_code == 409
 
-    @pytest.mark.xfail(
-        reason="BUG: submit endpoint does not verify the parent question is still published — "
-               "a draft answer for a closed question can be submitted",
-    )
     async def test_cannot_submit_answer_for_closed_question(
         self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
     ):
@@ -333,10 +306,6 @@ class TestMissingGuardRails:
         assert r.status_code == 409, \
             "Should not be able to submit an answer for a closed question"
 
-    @pytest.mark.xfail(
-        reason="BUG: auto-assigned reviews don't set answer_version — "
-               "they won't be found by the version-filtered resolve query",
-    )
     async def test_auto_assigned_reviews_have_answer_version(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, db: AsyncSession,
@@ -517,9 +486,6 @@ class TestAnswerTransitionBoundaries:
 class TestCascadeGaps:
     """When a parent entity changes state, child entities should be updated."""
 
-    @pytest.mark.xfail(
-        reason="BUG: archiving a question does not affect its answers or reviews",
-    )
     async def test_archiving_question_handles_approved_answers(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, db: AsyncSession,
@@ -571,9 +537,6 @@ class TestCascadeGaps:
         r = await client.get(f"/api/v1/reviews/{review_id}", headers=auth_header(reviewer_user))
         assert r.status_code == 404
 
-    @pytest.mark.xfail(
-        reason="BUG: closing a question does not clear the assigned_respondent_id",
-    )
     async def test_closing_question_clears_respondent_assignment(
         self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
     ):
@@ -1032,10 +995,6 @@ class TestPermissionLeaks:
         r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(reviewer_user))
         assert r.status_code == 403
 
-    @pytest.mark.xfail(
-        reason="BUG: admin can edit archived questions — can_edit_question "
-               "returns True for admin regardless of status",
-    )
     async def test_admin_cannot_edit_archived_question(
         self, client: AsyncClient, admin_user: User, db: AsyncSession,
     ):
@@ -1217,12 +1176,6 @@ class TestConcurrentReviewResolution:
         r = await client.get(f"/api/v1/answers/{a_id}", headers=auth_header(respondent_user))
         assert r.json()["status"] == "rejected"
 
-    @pytest.mark.xfail(
-        reason="BUG: resolve_answer_reviews exits early once the answer leaves under_review — "
-               "if a rejection resolves first, a later changes_requested verdict is ignored "
-               "because the answer is already rejected. The priority logic only works if all "
-               "verdicts are submitted before any resolution runs.",
-    )
     async def test_changes_requested_priority_over_rejection(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, reviewer_user_2: User, db: AsyncSession,

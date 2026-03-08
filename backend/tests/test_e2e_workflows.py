@@ -1094,11 +1094,13 @@ class TestReviewQueueFiltering:
         assert r.status_code == 201
         answer_review_id = r.json()["id"]
 
-        # Create question review on a different question
+        # Create question review on a different question (must be in reviewable state)
         r = await client.post("/api/v1/questions", json={
             "title": "Review target Q", "body": "Body for review",
         }, headers=auth_header(author_user))
         q2_id = r.json()["id"]
+        await client.post(f"/api/v1/questions/{q2_id}/submit", headers=auth_header(author_user))
+        await client.post(f"/api/v1/questions/{q2_id}/start-review", headers=auth_header(admin_user))
         r = await client.post("/api/v1/reviews", json={
             "target_type": "question", "target_id": q2_id,
         }, headers=auth_header(reviewer_user))
@@ -1149,6 +1151,8 @@ class TestReviewQueueFiltering:
             "title": "Queue Q2", "body": "Body2",
         }, headers=auth_header(author_user))
         q2_id = r2.json()["id"]
+        await client.post(f"/api/v1/questions/{q2_id}/submit", headers=auth_header(author_user))
+        await client.post(f"/api/v1/questions/{q2_id}/start-review", headers=auth_header(admin_user))
         await client.post("/api/v1/reviews", json={
             "target_type": "question", "target_id": q2_id,
         }, headers=auth_header(reviewer_user))
@@ -1161,13 +1165,15 @@ class TestReviewQueueFiltering:
         assert "question" in types
 
     async def test_question_review_has_question_title(
-        self, client: AsyncClient, author_user: User, reviewer_user: User,
+        self, client: AsyncClient, admin_user: User, author_user: User, reviewer_user: User,
     ):
         """Question reviews include the question title in the response."""
         r = await client.post("/api/v1/questions", json={
             "title": "Titled Question", "body": "Body",
         }, headers=auth_header(author_user))
         q_id = r.json()["id"]
+        await client.post(f"/api/v1/questions/{q_id}/submit", headers=auth_header(author_user))
+        await client.post(f"/api/v1/questions/{q_id}/start-review", headers=auth_header(admin_user))
 
         r = await client.post("/api/v1/reviews", json={
             "target_type": "question", "target_id": q_id,

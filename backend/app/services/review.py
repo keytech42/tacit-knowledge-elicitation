@@ -23,7 +23,14 @@ async def resolve_answer_reviews(answer_id, db: AsyncSession) -> None:
     """
     answer_result = await db.execute(select(Answer).where(Answer.id == answer_id))
     answer = answer_result.scalar_one_or_none()
-    if not answer or answer.status != AnswerStatus.UNDER_REVIEW.value:
+    # Allow re-resolution from non-terminal answer states where new verdicts
+    # may change priority (e.g. changes_requested arriving after rejection)
+    re_evaluable = {
+        AnswerStatus.UNDER_REVIEW.value,
+        AnswerStatus.REJECTED.value,
+        AnswerStatus.REVISION_REQUESTED.value,
+    }
+    if not answer or answer.status not in re_evaluable:
         return
 
     question_result = await db.execute(select(Question).where(Question.id == answer.question_id))
@@ -72,8 +79,11 @@ async def resolve_answer_reviews(answer_id, db: AsyncSession) -> None:
             answer.confirmed_by_id = last_approver.reviewer_id
             resolved = True
 
-    # Auto-supersede remaining pending reviews once the answer is resolved
-    if resolved:
+    # Auto-supersede remaining pending reviews only when the answer reaches
+    # a terminal positive state (approved). For rejected/revision_requested,
+    # keep pending reviews open so other reviewers can still submit verdicts
+    # that may change the priority outcome (changes_requested > rejected).
+    if resolved and answer.status == AnswerStatus.APPROVED.value:
         await db.execute(
             update(Review)
             .where(
@@ -128,6 +138,7 @@ async def auto_assign_reviewers(answer: Answer, question: Question, db: AsyncSes
             target_type=ReviewTargetType.ANSWER.value,
             target_id=answer.id,
             reviewer_id=reviewer.id,
+            answer_version=answer.current_version,
         )
         db.add(review)
         created_reviews.append(review)

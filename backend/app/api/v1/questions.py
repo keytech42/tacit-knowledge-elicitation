@@ -315,7 +315,9 @@ async def close_question(question_id: uuid.UUID, current_user: User = require_ro
     question = result.scalar_one_or_none()
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
-    apply_close(question, current_user)
+    await apply_close(question, current_user, db)
+    await db.flush()
+    await db.refresh(question)
     if question.slack_thread_ts and question.slack_channel:
         await slack.notify_question_closed(
             slack_channel=question.slack_channel,
@@ -332,7 +334,9 @@ async def archive_question(question_id: uuid.UUID, current_user: User = require_
     question = result.scalar_one_or_none()
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
-    apply_archive(question, current_user)
+    await apply_archive(question, current_user, db)
+    await db.flush()
+    await db.refresh(question)
     return question
 
 

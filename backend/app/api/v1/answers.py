@@ -165,6 +165,15 @@ async def submit_answer_endpoint(
     if not answer:
         raise HTTPException(status_code=404, detail="Answer not found")
 
+    # Verify the parent question is still published
+    q_result = await db.execute(select(Question).where(Question.id == answer.question_id))
+    parent_question = q_result.scalar_one_or_none()
+    if not parent_question or parent_question.status != QuestionStatus.PUBLISHED.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot submit answer — question is no longer published",
+        )
+
     if answer.status == AnswerStatus.REVISION_REQUESTED.value:
         resubmit_answer(answer, current_user)
         await db.flush()
