@@ -205,4 +205,15 @@ export const ai = {
 
   assignRespondent: (questionId: string, userId: string) =>
     api.post<Question>(`/questions/${questionId}/assign-respondent`, { user_id: userId }),
+
+  assignReviewer: (answerId: string, reviewerId: string) =>
+    api.post<Review>(`/reviews/assign/${answerId}`, { reviewer_id: reviewerId }),
+
+  searchUsers: (q = "", role?: string, limit = 20) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (role) params.set("role", role);
+    if (limit !== 20) params.set("limit", String(limit));
+    return api.get<{ users: User[]; total: number }>(`/users/search?${params}`);
+  },
 };

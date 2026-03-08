@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, Review, Answer, Question } from "@/api/client";
+import { api, ai, Review, Answer, Question, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, statusLabel } from "@/components/StatusBadge";
+import { UserPicker } from "@/components/UserPicker";
 
 export function ReviewDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const [review, setReview] = useState<Review | null>(null);
   const [target, setTarget] = useState<Answer | Question | null>(null);
   const [comment, setComment] = useState("");
   const [newComment, setNewComment] = useState("");
+  const [assignUser, setAssignUser] = useState<User | null>(null);
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -42,6 +46,28 @@ export function ReviewDetail() {
     setReview(updated);
   };
 
+  const reloadReview = async () => {
+    if (!id) return;
+    const r = await api.get<Review>(`/reviews/${id}`);
+    setReview(r);
+    setComment(r.comment || "");
+  };
+
+  const handleAssignReviewer = async (selectedUser: User) => {
+    if (!review || review.target_type !== "answer") return;
+    setAssigning(true);
+    setAssignError(null);
+    try {
+      await ai.assignReviewer(review.target_id, selectedUser.id);
+      setAssignUser(null);
+      await reloadReview();
+    } catch (err: unknown) {
+      setAssignError(err instanceof Error ? err.message : "Failed to assign reviewer");
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   if (!review) return <p className="text-center py-8 text-muted-foreground">Loading...</p>;
 
   const isReviewer = user?.id === review.reviewer.id;
@@ -62,6 +88,8 @@ export function ReviewDetail() {
   // Show the version this review targets (from review record), not the answer's current version
   const answerVersion = review.target_type === "answer" ? review.answer_version : null;
   const answerStatus = target && "status" in target && "current_version" in target ? (target as Answer).status : null;
+  const canAssign = review.target_type === "answer" && (hasRole("admin") || hasRole("reviewer"));
+  const answerAuthorId = target && "author" in target ? (target as Answer).author?.id : null;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -78,7 +106,12 @@ export function ReviewDetail() {
               {review.approval_count}/{review.min_approvals} approvals
             </span>
           )}
-          <span className="text-sm text-muted-foreground ml-auto">by {review.reviewer.display_name}</span>
+          <span className="text-sm text-muted-foreground ml-auto">
+            by {review.reviewer.display_name}
+            {review.assigned_by && (
+              <span className="text-xs text-muted-foreground ml-1">(assigned by {review.assigned_by.display_name})</span>
+            )}
+          </span>
         </div>
 
         {/* Target content — clickable link */}
@@ -91,6 +124,31 @@ export function ReviewDetail() {
             <p className="text-sm font-medium mb-1">{"title" in target ? (target as Question).title : "Answer"}</p>
             <p className="text-sm whitespace-pre-wrap line-clamp-4">{"body" in target ? (target as Answer).body : ""}</p>
           </Link>
+        )}
+
+        {/* Assign reviewer — visible to admins and reviewers for answer reviews */}
+        {canAssign && (
+          <div className="border-t border-border pt-4 mb-4">
+            <UserPicker
+              role="reviewer"
+              selected={assignUser}
+              onSelect={(u) => {
+                setAssignError(null);
+                if (u) {
+                  handleAssignReviewer(u);
+                } else {
+                  setAssignUser(null);
+                }
+              }}
+              label="Assign additional reviewer"
+              placeholder="Search for a reviewer..."
+              disabled={assigning}
+              excludeIds={answerAuthorId ? [answerAuthorId] : []}
+              prioritizeUser={user as User | null}
+            />
+            {assigning && <p className="text-xs text-muted-foreground mt-1">Assigning...</p>}
+            {assignError && <p className="text-xs text-red-600 mt-1">{assignError}</p>}
+          </div>
         )}
 
         {/* Verdict actions — always visible for reviewer/assigned user */}

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { api, ai, Question, Answer, Recommendation, TaskStatus } from "@/api/client";
+import { api, ai, Question, Answer, Recommendation, TaskStatus, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { Admonition } from "@/components/Admonition";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
+import { UserPicker } from "@/components/UserPicker";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
   if (status === "archived") return { enabled: false, reason: "Archived questions are read-only" };
@@ -89,6 +90,7 @@ export function QuestionDetail() {
   const [recReason, setRecReason] = useState<string | null>(null);
   const [recLoading, setRecLoading] = useState(false);
   const [assignLoading, setAssignLoading] = useState<string | null>(null);
+  const [pickerSelected, setPickerSelected] = useState<User | null>(null);
 
   const loadQuestion = () => {
     if (!id) return;
@@ -103,6 +105,11 @@ export function QuestionDetail() {
   };
 
   useEffect(loadQuestion, [id]);
+
+  // Keep picker in sync with assigned respondent
+  useEffect(() => {
+    setPickerSelected(question?.assigned_respondent ?? null);
+  }, [question?.assigned_respondent]);
 
   const handleAction = async (action: string) => {
     if (!id) return;
@@ -361,6 +368,21 @@ export function QuestionDetail() {
             >
               {recLoading ? "Loading..." : "Recommend Respondents"}
             </button>
+          </div>
+          <div className="mt-4">
+            <UserPicker
+              role="respondent"
+              selected={pickerSelected}
+              onSelect={(user) => {
+                if (user) {
+                  handleAssignRespondent(user.id);
+                } else {
+                  setPickerSelected(null);
+                }
+              }}
+              label="Assign Respondent"
+              placeholder="Search respondents by name or email..."
+            />
           </div>
           {scaffoldTask && (
             <div className="mt-2 text-xs">

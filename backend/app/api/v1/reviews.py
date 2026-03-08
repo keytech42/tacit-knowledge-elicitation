@@ -10,7 +10,7 @@ from app.models.answer import Answer, AnswerStatus
 from app.models.question import Question, QuestionStatus
 from app.models.review import Review, ReviewComment, ReviewTargetType, ReviewVerdict
 from app.models.user import RoleName, User
-from app.schemas.review import ReviewCommentCreate, ReviewCommentResponse, ReviewCreate, ReviewResponse, ReviewUpdate
+from app.schemas.review import AssignReviewerRequest, ReviewCommentCreate, ReviewCommentResponse, ReviewCreate, ReviewResponse, ReviewUpdate
 from app.services import slack
 from app.services.review import auto_assign_reviewers, resolve_answer_reviews
 
@@ -128,6 +128,72 @@ async def create_review(
         answer_version=target.current_version if request.target_type == "answer" else None,
     )
     db.add(review)
+    await db.flush()
+    await db.refresh(review)
+    await _enrich_review_context([review], db)
+    return review
+
+
+@router.post("/assign/{answer_id}", response_model=ReviewResponse, status_code=201)
+async def assign_reviewer(
+    answer_id: uuid.UUID,
+    request: AssignReviewerRequest,
+    current_user: User = require_role(RoleName.REVIEWER, RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    """Assign a reviewer to an answer."""
+    # Look up the answer
+    result = await db.execute(select(Answer).where(Answer.id == answer_id))
+    answer = result.scalar_one_or_none()
+    if not answer:
+        raise HTTPException(status_code=404, detail="Answer not found")
+
+    # Validate answer is in a reviewable state
+    if answer.status not in (AnswerStatus.SUBMITTED.value, AnswerStatus.UNDER_REVIEW.value):
+        raise HTTPException(status_code=409, detail="Answer is not in a reviewable state")
+
+    # Look up the target reviewer
+    reviewer_result = await db.execute(select(User).where(User.id == request.reviewer_id))
+    reviewer_user = reviewer_result.scalar_one_or_none()
+    if not reviewer_user:
+        raise HTTPException(status_code=404, detail="Reviewer not found")
+
+    # Validate reviewer has the REVIEWER role
+    reviewer_roles = {r.name for r in reviewer_user.roles}
+    if RoleName.REVIEWER.value not in reviewer_roles:
+        raise HTTPException(status_code=400, detail="Target user does not have the reviewer role")
+
+    # Prevent self-review
+    if reviewer_user.id == answer.author_id:
+        raise HTTPException(status_code=409, detail="Cannot assign the answer author as reviewer")
+
+    # Prevent duplicate pending review for same reviewer+version
+    existing_result = await db.execute(
+        select(Review).where(
+            Review.target_type == ReviewTargetType.ANSWER.value,
+            Review.target_id == answer_id,
+            Review.reviewer_id == request.reviewer_id,
+            Review.verdict == ReviewVerdict.PENDING.value,
+            Review.answer_version == answer.current_version,
+        )
+    )
+    if existing_result.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="This reviewer already has a pending review for this answer version")
+
+    # Create the review
+    review = Review(
+        target_type=ReviewTargetType.ANSWER.value,
+        target_id=answer_id,
+        reviewer_id=request.reviewer_id,
+        assigned_by_id=current_user.id,
+        answer_version=answer.current_version,
+    )
+    db.add(review)
+
+    # Move to under_review if submitted
+    if answer.status == AnswerStatus.SUBMITTED.value:
+        answer.status = AnswerStatus.UNDER_REVIEW.value
+
     await db.flush()
     await db.refresh(review)
     await _enrich_review_context([review], db)

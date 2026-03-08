@@ -366,6 +366,8 @@ async def assign_respondent(
         respondent_email=target_user.email,
         respondent_name=target_user.display_name,
         assigner_name=current_user.display_name,
+        slack_channel=question.slack_channel,
+        slack_thread_ts=question.slack_thread_ts,
     )
     return question
 
