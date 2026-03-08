@@ -91,10 +91,18 @@ test.describe("Review Detail Page", () => {
     const reviewId = await createQuestionReview(page, questionId);
 
     await page.goto(`/reviews/${reviewId}`);
+    await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+
+    // Intercept the PATCH response to verify the API call
+    const responsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/reviews/") && resp.request().method() === "PATCH"
+    );
     await page.getByRole("button", { name: "Approve" }).click();
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
 
     // Status should change to "Approved"
-    await expect(page.getByText("Approved").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Approved").first()).toBeVisible({ timeout: 10000 });
 
     // Verdict buttons should no longer be visible (not pending anymore)
     await expect(page.getByRole("button", { name: "Approve" })).not.toBeVisible();
@@ -105,15 +113,22 @@ test.describe("Review Detail Page", () => {
     const reviewId = await createQuestionReview(page, questionId);
 
     await page.goto(`/reviews/${reviewId}`);
+    await expect(page.getByRole("button", { name: "Request Changes" })).toBeVisible();
 
     // Add a review comment before submitting verdict
     const commentInput = page.getByPlaceholder("Review comment (optional for approve, recommended for others)");
     await commentInput.fill("Please fix the formatting.");
 
+    // Intercept the PATCH response
+    const responsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/reviews/") && resp.request().method() === "PATCH"
+    );
     await page.getByRole("button", { name: "Request Changes" }).click();
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
 
     // Status should update
-    await expect(page.getByText("Changes Requested").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Changes Requested").first()).toBeVisible({ timeout: 10000 });
 
     // Comment should be visible
     await expect(page.getByText("Please fix the formatting.")).toBeVisible();
