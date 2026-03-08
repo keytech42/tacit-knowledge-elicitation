@@ -47,11 +47,18 @@ async function createPublishedQuestionWithAnswer(page: Page, suffix: string) {
  * Returns the review ID.
  */
 async function createQuestionReview(page: Page, questionId: string): Promise<string> {
-  // First move question to in_review state (required for question reviews)
-  // Already published — question reviews work on published questions too
+  // Extract JWT token from localStorage (the frontend stores it as "token")
+  const token = await page.evaluate(() => localStorage.getItem("token"));
   const resp = await page.request.post(`/api/v1/reviews`, {
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
     data: { target_type: "question", target_id: questionId },
   });
+  if (!resp.ok()) {
+    throw new Error(`Failed to create review: ${resp.status()} ${await resp.text()}`);
+  }
   const body = await resp.json();
   return body.id;
 }
