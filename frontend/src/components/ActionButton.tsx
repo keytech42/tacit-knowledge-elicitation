@@ -8,6 +8,15 @@ const VARIANT_CLASSES: Record<string, string> = {
   gray: "bg-muted text-muted-foreground",
 };
 
+function Spinner() {
+  return (
+    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
 interface ActionButtonProps {
   label: string;
   onClick: () => void;
@@ -18,6 +27,7 @@ interface ActionButtonProps {
   disabledHint?: string;
   variant?: keyof typeof VARIANT_CLASSES;
   className?: string;
+  loading?: boolean;
 }
 
 export function ActionButton({
@@ -28,14 +38,23 @@ export function ActionButton({
   disabledHint,
   variant = "secondary",
   className = "",
+  loading = false,
 }: ActionButtonProps) {
   if (enabled) {
     return (
       <button
         onClick={onClick}
-        className={`px-3 py-1.5 rounded text-sm font-medium ${VARIANT_CLASSES[variant]} ${className}`}
+        disabled={loading}
+        className={`px-3 py-1.5 rounded text-sm font-medium active:scale-[0.97] transition-all duration-150 ${VARIANT_CLASSES[variant]} ${loading ? "opacity-75 cursor-wait" : ""} ${className}`}
       >
-        {label}
+        {loading ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            {label}
+          </span>
+        ) : (
+          label
+        )}
       </button>
     );
   }

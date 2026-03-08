@@ -141,7 +141,7 @@ export function ReviewDetail() {
           className="flex-1 border border-border rounded-md px-3 py-2 text-sm bg-background"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }}
         />
-        <button onClick={handleAddComment} disabled={!newComment.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50">Comment</button>
+        <button onClick={handleAddComment} disabled={!newComment.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">Comment</button>
       </div>
     </div>
   );

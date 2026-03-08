@@ -127,7 +127,7 @@ export function QuestionReviewQueue() {
           <h1 className="text-2xl font-bold">Admin Queue</h1>
           <p className="text-sm text-muted-foreground mt-1">{totalCount} questions need attention</p>
         </div>
-        <button onClick={loadQueue} className="text-sm px-3 py-1.5 border border-border rounded-md hover:bg-muted transition-colors">
+        <button onClick={loadQueue} className="text-sm px-3 py-1.5 border border-border rounded-md hover:bg-muted active:scale-[0.97] transition-all duration-150">
           Refresh
         </button>
       </div>
@@ -189,14 +189,22 @@ export function QuestionReviewQueue() {
                                 handleAction(q.id, a.action);
                               }
                             }}
-                            className={`px-3 py-1.5 rounded text-sm font-medium disabled:opacity-50 ${
+                            className={`px-3 py-1.5 rounded text-sm font-medium disabled:opacity-50 active:scale-[0.97] ${
                               a.variant === "green" ? "bg-status-green text-white hover:bg-status-green/90" :
                               a.variant === "blue" ? "bg-status-blue text-white hover:bg-status-blue/90" :
                               a.variant === "danger" ? "bg-status-red text-white hover:bg-status-red/90" :
                               "bg-muted text-muted-foreground hover:bg-muted/80"
-                            } transition-colors`}
+                            } transition-all duration-150 ${actionLoading === q.id ? "opacity-75 cursor-wait" : ""}`}
                           >
-                            {actionLoading === q.id ? "..." : a.label}
+                            {actionLoading === q.id ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                {a.label}
+                              </span>
+                            ) : a.label}
                           </button>
                         ))}
                       </div>
@@ -224,11 +232,19 @@ export function QuestionReviewQueue() {
               autoFocus
             />
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setRejectModal(null); setRejectComment(""); }} className="px-4 py-2 border border-border rounded-md text-sm">
+              <button onClick={() => { setRejectModal(null); setRejectComment(""); }} className="px-4 py-2 border border-border rounded-md text-sm active:scale-[0.97] transition-all duration-150">
                 Cancel
               </button>
-              <button onClick={handleRejectSubmit} disabled={actionLoading !== null} className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:bg-destructive/90 disabled:opacity-50">
-                {actionLoading ? "Rejecting..." : "Reject to Draft"}
+              <button onClick={handleRejectSubmit} disabled={actionLoading !== null} className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:bg-destructive/90 disabled:opacity-50 active:scale-[0.97] transition-all duration-150">
+                {actionLoading ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Rejecting...
+                  </span>
+                ) : "Reject to Draft"}
               </button>
             </div>
           </div>
