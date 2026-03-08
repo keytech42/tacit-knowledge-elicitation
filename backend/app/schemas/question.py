@@ -6,11 +6,18 @@ from pydantic import BaseModel, Field
 from app.schemas.user import UserResponse
 
 
+class ReviewPolicyInput(BaseModel):
+    min_approvals: int = Field(default=1, ge=1, le=10)
+    auto_assign: bool = False
+    auto_assign_count: int = Field(default=1, ge=1, le=10)
+    allow_self_review: bool = False
+
+
 class QuestionCreate(BaseModel):
     title: str = Field(max_length=500)
     body: str
     category: str | None = None
-    review_policy: dict | None = None
+    review_policy: ReviewPolicyInput | None = None
     show_suggestions: bool = False
 
 
@@ -18,7 +25,7 @@ class QuestionUpdate(BaseModel):
     title: str | None = None
     body: str | None = None
     category: str | None = None
-    review_policy: dict | None = None
+    review_policy: ReviewPolicyInput | None = None
     show_suggestions: bool | None = None
 
 

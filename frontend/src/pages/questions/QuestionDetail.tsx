@@ -76,6 +76,7 @@ export function QuestionDetail() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editMinApprovals, setEditMinApprovals] = useState(1);
   const [feedbackRating, setFeedbackRating] = useState(0);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
@@ -96,6 +97,7 @@ export function QuestionDetail() {
       setEditTitle(q.title);
       setEditBody(q.body);
       setEditCategory(q.category || "");
+      setEditMinApprovals((q.review_policy as Record<string, number> | null)?.min_approvals ?? 1);
     }).catch((err) => setError(err instanceof Error ? err.message : "Question not found"));
     api.get<{ answers: Answer[]; total: number }>(`/questions/${id}/answers`).then((d) => setAnswers(d.answers)).catch(() => {});
   };
@@ -120,6 +122,7 @@ export function QuestionDetail() {
         title: editTitle.trim(),
         body: editBody.trim(),
         category: editCategory.trim() || null,
+        review_policy: editMinApprovals > 1 ? { min_approvals: editMinApprovals } : { min_approvals: 1 },
       });
       setQuestion(updated);
       setEditing(false);
@@ -277,9 +280,23 @@ export function QuestionDetail() {
               <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
               <input value={editCategory} onChange={(e) => setEditCategory(e.target.value)} placeholder="Category (optional)" className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm" />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Required approvals</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={editMinApprovals}
+                  onChange={(e) => setEditMinApprovals(Number(e.target.value))}
+                  className="w-20 border border-border rounded-md px-3 py-2 text-sm bg-background"
+                />
+                <span className="text-xs text-muted-foreground">reviewer approvals needed per answer</span>
+              </div>
+            </div>
             <div className="flex gap-2">
-              <button onClick={handleSaveEdit} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm">Save</button>
-              <button onClick={() => setEditing(false)} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
+              <button onClick={handleSaveEdit} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm active:scale-[0.97] transition-all duration-150">Save</button>
+              <button onClick={() => setEditing(false)} className="border border-border px-4 py-2 rounded-md text-sm active:scale-[0.97] transition-all duration-150">Cancel</button>
             </div>
           </div>
         ) : (
@@ -288,6 +305,9 @@ export function QuestionDetail() {
             <MarkdownContent className="text-foreground/80">{question.body}</MarkdownContent>
             <div className="text-sm text-muted-foreground mt-4">
               by {question.created_by.display_name} &middot; {new Date(question.created_at).toLocaleDateString()}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Required approvals: {(question.review_policy as Record<string, number> | null)?.min_approvals ?? 1}
             </div>
           </>
         )}
@@ -330,14 +350,14 @@ export function QuestionDetail() {
             <button
               onClick={handleScaffoldOptions}
               disabled={scaffoldLoading}
-              className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50"
+              className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
             >
               {scaffoldLoading ? "Generating..." : "Generate Answer Options"}
             </button>
             <button
               onClick={handleGetRecommendations}
               disabled={recLoading}
-              className="border border-border text-foreground px-3 py-1.5 rounded text-sm hover:bg-muted disabled:opacity-50"
+              className="border border-border text-foreground px-3 py-1.5 rounded text-sm hover:bg-muted disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
             >
               {recLoading ? "Loading..." : "Recommend Respondents"}
             </button>
@@ -385,7 +405,7 @@ export function QuestionDetail() {
                           <button
                             onClick={() => handleAssignRespondent(r.user_id)}
                             disabled={assignLoading === r.user_id}
-                            className="text-xs text-primary hover:underline disabled:opacity-50"
+                            className="text-xs text-primary hover:underline disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
                           >
                             {assignLoading === r.user_id ? "Assigning..." : "Assign"}
                           </button>
@@ -403,20 +423,6 @@ export function QuestionDetail() {
 
       {error && <p className="text-destructive text-sm mb-4">{error}</p>}
 
-      {/* Quality feedback */}
-      {(question.status === "published" || question.status === "closed") && !feedbackSubmitted && (
-        <div className="bg-background p-4 rounded-lg border border-border mb-6">
-          <h2 className="font-semibold mb-2 text-sm">Rate this question</h2>
-          <div className="flex items-center gap-1 mb-2">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} onClick={() => setFeedbackRating(n)} className={`w-8 h-8 rounded text-sm font-medium ${n <= feedbackRating ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>{n}</button>
-            ))}
-          </div>
-          <input value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} placeholder="Optional comment" className="w-full border border-border rounded-md px-3 py-1.5 bg-background text-sm mb-2" />
-          <button onClick={handleSubmitFeedback} disabled={feedbackRating < 1} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50">Submit Feedback</button>
-        </div>
-      )}
-
       {/* Answer form */}
       {question.status === "published" && (
         <div className="bg-background p-6 rounded-lg border border-border mb-6">
@@ -433,38 +439,36 @@ export function QuestionDetail() {
                     <div key={opt.id} className="group relative">
                       <button
                         onClick={() => handleOptionClick(opt.id, opt.body)}
-                        className={`relative w-full text-left rounded-lg border transition-all duration-200 h-[7rem] overflow-hidden ${
+                        className={`relative w-full h-full flex flex-col items-start justify-start text-left rounded-lg border bg-background p-3 overflow-hidden transition-all duration-200 ${
                           isSelected
                             ? "border-primary ring-1 ring-primary"
-                            : "border-border hover:border-foreground/20"
+                            : "border-border"
                         }`}
                       >
-                        <div className="p-3">
-                          <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
-                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                          }`}>
-                            {idx + 1}
-                          </span>
-                          <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {idx + 1}
+                        </span>
+                        <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
+                        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background to-transparent pointer-events-none" />
                       </button>
-                      {/* Expanded overlay on hover — no layout shift */}
-                      <div className="absolute left-0 right-0 top-0 z-10 hidden group-hover:block">
-                        <button
-                          onClick={() => handleOptionClick(opt.id, opt.body)}
-                          className={`w-full text-left rounded-lg border shadow-lg bg-background p-3 ${
-                            isSelected ? "border-primary ring-1 ring-primary" : "border-foreground/20"
-                          }`}
-                        >
-                          <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
-                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                          }`}>
-                            {idx + 1}
-                          </span>
-                          <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">{opt.body}</p>
-                        </button>
-                      </div>
+                      {/* Hover overlay — identical layout, no truncation */}
+                      <button
+                        onClick={() => handleOptionClick(opt.id, opt.body)}
+                        className={`absolute inset-x-0 top-0 z-10 hidden group-hover:flex flex-col items-start justify-start w-full text-left rounded-lg border bg-background p-3 shadow-lg min-h-full ${
+                          isSelected
+                            ? "border-primary ring-1 ring-primary"
+                            : "border-foreground/20"
+                        }`}
+                      >
+                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {idx + 1}
+                        </span>
+                        <p className="text-sm text-foreground/80 leading-relaxed">{opt.body}</p>
+                      </button>
                     </div>
                   );
                 })}
@@ -484,7 +488,7 @@ export function QuestionDetail() {
                 <span className="text-xs text-muted-foreground">Editing from template — changes are saved to your answer</span>
               )}
             </div>
-            <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50">
+            <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50 active:scale-[0.97] transition-all duration-150">
               Submit Answer
             </button>
           </div>
@@ -506,6 +510,20 @@ export function QuestionDetail() {
         ))}
         {answers.length === 0 && <p className="text-center text-muted-foreground py-4">No answers yet.</p>}
       </div>
+
+      {/* Quality feedback */}
+      {(question.status === "published" || question.status === "closed") && !feedbackSubmitted && (
+        <div className="bg-background p-4 rounded-lg border border-border mt-6">
+          <h2 className="font-semibold mb-2 text-sm">Rate this question</h2>
+          <div className="flex items-center gap-1 mb-2">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} onClick={() => setFeedbackRating(n)} className={`w-8 h-8 rounded text-sm font-medium ${n <= feedbackRating ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>{n}</button>
+            ))}
+          </div>
+          <input value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} placeholder="Optional comment" className="w-full border border-border rounded-md px-3 py-1.5 bg-background text-sm mb-2" />
+          <button onClick={handleSubmitFeedback} disabled={feedbackRating < 1} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">Submit Feedback</button>
+        </div>
+      )}
     </div>
   );
 }

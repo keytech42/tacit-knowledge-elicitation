@@ -42,6 +42,75 @@ def _clear_slack_cache():
 
 
 # ---------------------------------------------------------------------------
+# Unit tests: _md_to_mrkdwn
+# ---------------------------------------------------------------------------
+
+class TestMdToMrkdwn:
+    def test_bold_conversion(self):
+        assert slack._md_to_mrkdwn("**bold text**") == "*bold text*"
+
+    def test_heading_conversion(self):
+        assert slack._md_to_mrkdwn("# Heading") == "*Heading*"
+        assert slack._md_to_mrkdwn("## Sub heading") == "*Sub heading*"
+        assert slack._md_to_mrkdwn("### Third level") == "*Third level*"
+
+    def test_link_conversion(self):
+        result = slack._md_to_mrkdwn("[click here](https://example.com)")
+        assert result == "<https://example.com|click here>"
+
+    def test_bullet_conversion(self):
+        result = slack._md_to_mrkdwn("- item one\n- item two")
+        assert result == "• item one\n• item two"
+
+    def test_inline_code_preserved(self):
+        assert slack._md_to_mrkdwn("`some code`") == "`some code`"
+
+    def test_fenced_code_block_preserved(self):
+        text = "```\nprint('hello')\n```"
+        assert slack._md_to_mrkdwn(text) == text
+
+    def test_html_tags_stripped(self):
+        assert slack._md_to_mrkdwn("hello <b>world</b> end") == "hello world end"
+
+    def test_slack_mentions_preserved(self):
+        """Slack @mentions like <@U12345> should not be stripped."""
+        assert slack._md_to_mrkdwn("<@U12345> hello") == "<@U12345> hello"
+
+    def test_slack_links_preserved(self):
+        """Slack links like <url|text> should not be stripped."""
+        text = "<https://example.com|click>"
+        assert slack._md_to_mrkdwn(text) == text
+
+    def test_truncation(self):
+        long_text = "a" * 3000
+        result = slack._md_to_mrkdwn(long_text)
+        assert len(result) == 2000
+        assert result.endswith("...")
+
+    def test_no_truncation_within_limit(self):
+        text = "short text"
+        assert slack._md_to_mrkdwn(text) == "short text"
+
+    def test_combined_markdown(self):
+        text = "# Title\n\n**bold** and [link](https://x.com)\n\n- item\n- `code`"
+        result = slack._md_to_mrkdwn(text)
+        assert "*Title*" in result
+        assert "*bold*" in result
+        assert "<https://x.com|link>" in result
+        assert "• item" in result
+        assert "`code`" in result
+
+    def test_bold_inside_heading_not_doubled(self):
+        """Bold markers inside headings shouldn't produce ***text***."""
+        result = slack._md_to_mrkdwn("# **Important**")
+        # Should end up as *Important* (heading converts, bold is inside)
+        assert "***" not in result
+
+    def test_empty_string(self):
+        assert slack._md_to_mrkdwn("") == ""
+
+
+# ---------------------------------------------------------------------------
 # Unit tests: _is_enabled
 # ---------------------------------------------------------------------------
 
@@ -316,7 +385,7 @@ class TestNotifyAnswerSubmitted:
     async def test_posts_to_thread_when_available(self):
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack.settings, "FRONTEND_URL", "http://localhost:5173"), \
-             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+             patch.object(slack, "_post_message", new_callable=AsyncMock, return_value="msg.ts") as mock_post:
             await slack.notify_answer_submitted(
                 question_title="What is TDD?",
                 question_id="q-1",
@@ -325,12 +394,53 @@ class TestNotifyAnswerSubmitted:
                 slack_channel="#test",
                 slack_thread_ts="1234.5678",
             )
+        # Without answer_body, only one message posted
         mock_post.assert_called_once()
         msg = mock_post.call_args[0][1]
         assert "Respondent" in msg
         assert "What is TDD?" in msg
         assert "http://localhost:5173/answers/a-123" in msg
         assert mock_post.call_args[1]["thread_ts"] == "1234.5678"
+
+    async def test_posts_answer_body_as_thread_reply(self):
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack.settings, "FRONTEND_URL", "http://localhost:5173"), \
+             patch.object(slack, "_post_message", new_callable=AsyncMock, return_value="msg.ts") as mock_post:
+            await slack.notify_answer_submitted(
+                question_title="Q",
+                question_id="q-1",
+                answer_id="a-123",
+                author_name="Respondent",
+                answer_body="My **detailed** answer body",
+                slack_channel="#test",
+                slack_thread_ts="1234.5678",
+            )
+        # Two calls: notification + body reply
+        assert mock_post.call_count == 2
+        # Second call is the body reply in the same thread
+        body_call = mock_post.call_args_list[1]
+        assert body_call[1]["thread_ts"] == "1234.5678"
+        # Body should have mrkdwn conversion applied (** → *)
+        body_text = body_call[0][1]
+        assert "*detailed*" in body_text
+        assert "**detailed**" not in body_text
+
+    async def test_no_body_reply_when_no_thread(self):
+        """When falling back to default channel, body reply is not posted."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_channel", return_value="#default"), \
+             patch.object(slack.settings, "FRONTEND_URL", "http://localhost:5173"), \
+             patch.object(slack, "_send_message", new_callable=AsyncMock) as mock_send, \
+             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+            await slack.notify_answer_submitted(
+                question_title="Q",
+                question_id="q-1",
+                answer_id="a-123",
+                author_name="Respondent",
+                answer_body="Some body text",
+            )
+        mock_send.assert_called_once()
+        mock_post.assert_not_called()
 
     async def test_falls_back_to_default_channel(self):
         with patch.object(slack, "_is_enabled", return_value=True), \
@@ -402,6 +512,27 @@ class TestNotifyReviewVerdict:
         msg = mock_send.call_args[0][1]
         assert ":memo:" in msg
         assert "Fix section 3" in msg
+
+    async def test_comment_has_mrkdwn_conversion(self):
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_channel", return_value="#test"), \
+             patch.object(slack, "_send_message", new_callable=AsyncMock) as mock_send, \
+             patch.object(slack, "_mention_or_name", new_callable=AsyncMock, return_value="Author"):
+            await slack.notify_review_verdict(
+                question_title="Q",
+                answer_id="a-2",
+                verdict="changes_requested",
+                reviewer_name="Reviewer",
+                author_email=None,
+                author_name="Author",
+                comment="Please fix **section 3** and [see docs](https://example.com)",
+            )
+        msg = mock_send.call_args[0][1]
+        # Bold converted
+        assert "*section 3*" in msg
+        assert "**section 3**" not in msg
+        # Link converted
+        assert "<https://example.com|see docs>" in msg
 
     async def test_rejected_verdict(self):
         with patch.object(slack, "_is_enabled", return_value=True), \
@@ -619,6 +750,7 @@ class TestSlackIntegrationWithRoutes:
             call_kwargs = mock_notify.call_args[1]
             assert call_kwargs["question_title"] == "Q for Answer"
             assert call_kwargs["author_name"] == respondent_user.display_name
+            assert call_kwargs["answer_body"] == "My answer"
             assert call_kwargs["slack_channel"] == "#test"
             assert call_kwargs["slack_thread_ts"] == "1234.5678"
 

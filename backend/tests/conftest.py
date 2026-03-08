@@ -13,6 +13,7 @@ from app.main import app
 from app.models import Base
 from app.models.user import Role, RoleName, User, UserType
 from app.services.auth import create_jwt_token, generate_api_key, hash_api_key
+from sqlalchemy import select
 
 TEST_DATABASE_URL = settings.DATABASE_URL.replace("/knowledge_elicitation", "/knowledge_elicitation_test")
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
@@ -64,8 +65,11 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 async def roles(db: AsyncSession) -> dict[str, Role]:
     result = {}
     for role_name in RoleName:
-        role = Role(name=role_name.value)
-        db.add(role)
+        existing = await db.execute(select(Role).where(Role.name == role_name.value))
+        role = existing.scalar_one_or_none()
+        if not role:
+            role = Role(name=role_name.value)
+            db.add(role)
         result[role_name.value] = role
     await db.flush()
     return result

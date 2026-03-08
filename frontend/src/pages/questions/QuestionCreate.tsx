@@ -7,6 +7,7 @@ export function QuestionCreate() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [category, setCategory] = useState("");
+  const [minApprovals, setMinApprovals] = useState(1);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -19,6 +20,7 @@ export function QuestionCreate() {
         title: title.trim(),
         body: body.trim(),
         category: category.trim() || undefined,
+        review_policy: minApprovals > 1 ? { min_approvals: minApprovals } : null,
       });
       if (andSubmit) {
         await api.post(`/questions/${q.id}/submit`);
@@ -61,6 +63,23 @@ export function QuestionCreate() {
             className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm"
             placeholder="e.g. engineering, process, domain-knowledge"
           />
+        </div>
+
+        {/* Review Settings */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">Review Settings</h3>
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-muted-foreground">Required approvals</label>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={minApprovals}
+              onChange={(e) => setMinApprovals(Number(e.target.value))}
+              className="w-20 border border-border rounded-md px-3 py-2 text-sm bg-background"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">Number of reviewer approvals required before an answer is accepted (default: 1)</p>
         </div>
 
         {error && <p className="text-destructive text-sm">{error}</p>}

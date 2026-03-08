@@ -214,13 +214,13 @@ export function AnswerDetail() {
             <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[200px] bg-background text-sm" />
             <div className="flex gap-2 mt-3">
               {revising ? (
-                <button onClick={handleRevise} disabled={isLoading || editBody === answer.body} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50">
+                <button onClick={handleRevise} disabled={isLoading || editBody === answer.body} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">
                   Submit Revision
                 </button>
               ) : (
-                <button onClick={handleSave} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm">Save</button>
+                <button onClick={handleSave} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm active:scale-[0.97] transition-all duration-150">Save</button>
               )}
-              <button onClick={() => { setEditing(false); setRevising(false); setEditBody(answer.body); }} className="border border-border px-4 py-2 rounded-md text-sm">Cancel</button>
+              <button onClick={() => { setEditing(false); setRevising(false); setEditBody(answer.body); }} className="border border-border px-4 py-2 rounded-md text-sm active:scale-[0.97] transition-all duration-150">Cancel</button>
             </div>
           </>
         ) : (
@@ -249,17 +249,25 @@ export function AnswerDetail() {
               <ActionButton label="Assign Review" onClick={() => setShowAssignReview(true)} enabled={assignPerm.enabled} disabledReason={assignPerm.reason} disabledHint={assignPerm.hint} variant="purple" />
             ) : (
               <>
-                <button onClick={handleCreateReview} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm">Confirm — Assign to Me</button>
-                <button onClick={() => setShowAssignReview(false)} className="border border-border px-3 py-1.5 rounded text-sm">Cancel</button>
+                <button onClick={handleCreateReview} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm active:scale-[0.97] transition-all duration-150">Confirm — Assign to Me</button>
+                <button onClick={() => setShowAssignReview(false)} className="border border-border px-3 py-1.5 rounded text-sm active:scale-[0.97] transition-all duration-150">Cancel</button>
               </>
             )}
             {isAdmin && (answer.status === "submitted" || answer.status === "under_review") && (
               <button
                 onClick={handleAiReview}
                 disabled={aiReviewLoading}
-                className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 ml-auto"
+                className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 ml-auto active:scale-[0.97] transition-all duration-150"
               >
-                {aiReviewLoading ? "Running..." : "AI Review"}
+                {aiReviewLoading ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Running...
+                  </span>
+                ) : "AI Review"}
               </button>
             )}
           </div>
@@ -323,7 +331,7 @@ export function AnswerDetail() {
               <option value={0}>To...</option>
               {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
             </select>
-            <button onClick={handleViewDiff} disabled={!diffFrom || !diffTo || diffFrom === diffTo} className="bg-secondary text-secondary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">View Diff</button>
+            <button onClick={handleViewDiff} disabled={!diffFrom || !diffTo || diffFrom === diffTo} className="bg-secondary text-secondary-foreground px-3 py-1 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">View Diff</button>
           </div>
           {diffText !== null && (
             <div className="bg-muted rounded text-xs overflow-x-auto font-mono border border-border">

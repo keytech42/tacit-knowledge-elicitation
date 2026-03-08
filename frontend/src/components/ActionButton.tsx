@@ -1,12 +1,21 @@
 const VARIANT_CLASSES: Record<string, string> = {
-  primary: "bg-primary text-primary-foreground",
-  secondary: "bg-secondary text-secondary-foreground",
-  danger: "bg-status-red text-white",
-  green: "bg-status-green text-white",
-  blue: "bg-status-blue text-white",
-  purple: "bg-status-blue text-white",
-  gray: "bg-muted text-muted-foreground",
+  primary: "bg-primary text-primary-foreground hover:bg-primary/90",
+  secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+  danger: "bg-status-red/85 text-white hover:bg-status-red",
+  green: "bg-status-green text-white hover:bg-status-green/90",
+  blue: "bg-status-blue text-white hover:bg-status-blue/90",
+  purple: "bg-status-blue text-white hover:bg-status-blue/90",
+  gray: "bg-muted text-muted-foreground hover:bg-muted/80",
 };
+
+function Spinner() {
+  return (
+    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
 
 interface ActionButtonProps {
   label: string;
@@ -18,6 +27,7 @@ interface ActionButtonProps {
   disabledHint?: string;
   variant?: keyof typeof VARIANT_CLASSES;
   className?: string;
+  loading?: boolean;
 }
 
 export function ActionButton({
@@ -28,14 +38,23 @@ export function ActionButton({
   disabledHint,
   variant = "secondary",
   className = "",
+  loading = false,
 }: ActionButtonProps) {
   if (enabled) {
     return (
       <button
         onClick={onClick}
-        className={`px-3 py-1.5 rounded text-sm font-medium ${VARIANT_CLASSES[variant]} ${className}`}
+        disabled={loading}
+        className={`px-3 py-1.5 rounded text-sm font-medium active:scale-[0.97] transition-all duration-150 ${VARIANT_CLASSES[variant]} ${loading ? "opacity-75 cursor-wait" : ""} ${className}`}
       >
-        {label}
+        {loading ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            {label}
+          </span>
+        ) : (
+          label
+        )}
       </button>
     );
   }

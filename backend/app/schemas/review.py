@@ -41,6 +41,10 @@ class ReviewResponse(BaseModel):
     comment: str | None = None
     answer_version: int | None = None
     question_title: str | None = None
+    question_status: str | None = None
+    answer_status: str | None = None
+    approval_count: int | None = None
+    min_approvals: int | None = None
     comments: list[ReviewCommentResponse] = []
     created_at: datetime
     updated_at: datetime

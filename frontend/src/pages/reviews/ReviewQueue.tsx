@@ -3,18 +3,53 @@ import { Link } from "react-router-dom";
 import { api, Review } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { StatusBadge, statusColor, statusLabel } from "@/components/StatusBadge";
+import { borderColor, STATUS_COLOR_TOKEN } from "@/components/statusColors";
+import { Tooltip } from "@/components/Tooltip";
 
 const VERDICT_BORDER_COLORS: Record<string, string> = {
-  pending: "border-gray-300",
-  approved: "border-green-300",
-  changes_requested: "border-yellow-300",
-  rejected: "border-red-300",
+  pending: borderColor(STATUS_COLOR_TOKEN["pending"]),
+  approved: borderColor(STATUS_COLOR_TOKEN["approved"]),
+  changes_requested: borderColor(STATUS_COLOR_TOKEN["changes_requested"]),
+  rejected: borderColor(STATUS_COLOR_TOKEN["rejected"]),
+  superseded: borderColor(STATUS_COLOR_TOKEN["superseded"]),
 };
 
 const ALL_VERDICTS = ["pending", "approved", "changes_requested", "rejected"];
 
+const VERDICT_TOOLTIPS: Record<string, string> = {
+  pending: "Reviewer has not yet submitted a verdict",
+  approved: "Reviewer approved the submission",
+  changes_requested: "Reviewer requested changes to the submission",
+  rejected: "Reviewer rejected the submission",
+  superseded: "Review was auto-closed because the answer was already resolved",
+};
+
+const ANSWER_STATUS_TOOLTIPS: Record<string, string> = {
+  draft: "Answer is being drafted",
+  submitted: "Answer submitted, awaiting reviewer assignment",
+  under_review: "Answer is being evaluated by reviewers",
+  approved: "Answer approved after all reviewers agreed",
+  revision_requested: "Answer needs revision — at least one reviewer requested changes",
+  rejected: "Answer was rejected by a reviewer",
+};
+
 type ViewMode = "list" | "kanban";
 type ReviewTab = "answer" | "question";
+
+function ReviewStatusChips({ rev }: { rev: Review }) {
+  return (
+    <div className="flex items-center gap-1.5 mt-1">
+      {rev.answer_status && (
+        <Tooltip text={ANSWER_STATUS_TOOLTIPS[rev.answer_status]}>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground">Answer:</span>
+            <StatusBadge status={rev.answer_status} size="xs" />
+          </span>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
 
 function KanbanCard({ rev }: { rev: Review }) {
   return (
@@ -25,10 +60,20 @@ function KanbanCard({ rev }: { rev: Review }) {
       {rev.question_title && (
         <p className="text-xs font-medium text-foreground/80 line-clamp-1">{rev.question_title}</p>
       )}
-      {rev.answer_version && (
-        <span className="text-[10px] text-muted-foreground">v{rev.answer_version}</span>
-      )}
-      {rev.comment && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{rev.comment}</p>}
+      <div className="flex items-center gap-2 mt-1">
+        {rev.answer_version != null && (
+          <span className="text-[10px] text-muted-foreground">v{rev.answer_version}</span>
+        )}
+        {rev.reviewer && (
+          <span className="text-[10px] text-muted-foreground">{rev.reviewer.display_name}</span>
+        )}
+        {rev.approval_count != null && rev.min_approvals != null && (
+          <Tooltip text={`${rev.approval_count} of ${rev.min_approvals} required approvals`}>
+            <span className="text-[10px] text-muted-foreground">{rev.approval_count}/{rev.min_approvals}</span>
+          </Tooltip>
+        )}
+      </div>
+      <ReviewStatusChips rev={rev} />
       <div className="text-[10px] text-muted-foreground mt-1.5">{new Date(rev.created_at).toLocaleDateString()}</div>
     </Link>
   );
@@ -45,9 +90,11 @@ function KanbanBoard({ reviews }: { reviews: Review[] }) {
       {ALL_VERDICTS.map((verdict) => (
         <div key={verdict} className="flex-shrink-0 w-64">
           <div className="flex items-center gap-2 mb-3 px-1">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(verdict)}`}>
-              {statusLabel(verdict)}
-            </span>
+            <Tooltip text={VERDICT_TOOLTIPS[verdict]}>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(verdict)}`}>
+                {statusLabel(verdict)}
+              </span>
+            </Tooltip>
             <span className="text-xs text-muted-foreground">{grouped[verdict].length}</span>
           </div>
           <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${VERDICT_BORDER_COLORS[verdict]} min-h-[200px]`}>
@@ -64,16 +111,33 @@ function ReviewList({ reviews }: { reviews: Review[] }) {
   return (
     <div className="space-y-3">
       {reviews.map((rev) => (
-        <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30">
+        <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30 transition-colors">
           <div className="flex items-center gap-3">
-            <StatusBadge status={rev.verdict} />
+            <Tooltip text={VERDICT_TOOLTIPS[rev.verdict]}>
+              <StatusBadge status={rev.verdict} />
+            </Tooltip>
             {rev.question_title && (
               <span className="text-sm text-foreground/70 truncate max-w-[300px]">{rev.question_title}</span>
             )}
-            {rev.answer_version && (
-              <span className="text-xs text-muted-foreground">v{rev.answer_version}</span>
+            {rev.answer_version != null && (
+              <span className="text-xs text-muted-foreground font-mono">v{rev.answer_version}</span>
             )}
-            <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleDateString()}</span>
+            <span className="text-xs text-muted-foreground ml-auto">{rev.reviewer.display_name} &middot; {new Date(rev.created_at).toLocaleDateString()}</span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            {rev.answer_status && (
+              <Tooltip text={ANSWER_STATUS_TOOLTIPS[rev.answer_status]}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-[10px] text-muted-foreground">Answer:</span>
+                  <StatusBadge status={rev.answer_status} size="xs" />
+                </span>
+              </Tooltip>
+            )}
+            {rev.approval_count != null && rev.min_approvals != null && (
+              <Tooltip text={`${rev.approval_count} of ${rev.min_approvals} required approvals`}>
+                <span className="text-[10px] text-muted-foreground">{rev.approval_count}/{rev.min_approvals} approvals</span>
+              </Tooltip>
+            )}
           </div>
         </Link>
       ))}
@@ -83,8 +147,9 @@ function ReviewList({ reviews }: { reviews: Review[] }) {
 }
 
 export function ReviewQueue() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const [reviews, setReviews] = useState<Review[]>([]);
+  const isAdmin = hasRole("admin");
   const [activeTab, setActiveTab] = useState<ReviewTab>(() => {
     return (localStorage.getItem("reviewQueueTab") as ReviewTab) || "answer";
   });
@@ -95,14 +160,24 @@ export function ReviewQueue() {
   useEffect(() => {
     if (!user) return;
     if (viewMode === "kanban") {
-      api.get<Review[]>(`/reviews?reviewer_id=${user.id}&target_type=${activeTab}`).then(setReviews);
+      // Admins see all reviews; reviewers see only their own
+      const params = isAdmin
+        ? `target_type=${activeTab}`
+        : `reviewer_id=${user.id}&target_type=${activeTab}`;
+      api.get<Review[]>(`/reviews?${params}`).then(setReviews).catch(() => setReviews([]));
     } else {
-      // my-queue returns only pending; filter by target_type client-side
-      api.get<Review[]>("/reviews/my-queue").then((all) =>
-        setReviews(all.filter((r) => r.target_type === activeTab))
-      );
+      if (isAdmin) {
+        // Admins see all pending reviews
+        api.get<Review[]>(`/reviews?target_type=${activeTab}`).then((all) =>
+          setReviews(all.filter((r) => r.verdict === "pending"))
+        ).catch(() => setReviews([]));
+      } else {
+        api.get<Review[]>("/reviews/my-queue").then((all) =>
+          setReviews(all.filter((r) => r.target_type === activeTab))
+        ).catch(() => setReviews([]));
+      }
     }
-  }, [viewMode, user, activeTab]);
+  }, [viewMode, user, activeTab, isAdmin]);
 
   const handleViewChange = (mode: ViewMode) => {
     setViewMode(mode);
@@ -117,10 +192,10 @@ export function ReviewQueue() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">My Reviews</h1>
+        <h1 className="text-2xl font-bold">{isAdmin ? "All Reviews" : "My Reviews"}</h1>
         <div className="flex border border-border rounded-md overflow-hidden">
-          <button onClick={() => handleViewChange("list")} className={`px-3 py-2 text-sm ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>List</button>
-          <button onClick={() => handleViewChange("kanban")} className={`px-3 py-2 text-sm ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>Board</button>
+          <button onClick={() => handleViewChange("list")} className={`px-3 py-2 text-sm transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>List</button>
+          <button onClick={() => handleViewChange("kanban")} className={`px-3 py-2 text-sm transition-colors ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}>Board</button>
         </div>
       </div>
 
