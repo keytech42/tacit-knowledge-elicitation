@@ -18,6 +18,7 @@ class ReviewVerdict(str, enum.Enum):
     APPROVED = "approved"
     CHANGES_REQUESTED = "changes_requested"
     REJECTED = "rejected"
+    SUPERSEDED = "superseded"
 
 
 class Review(UUIDMixin, TimestampMixin, Base):

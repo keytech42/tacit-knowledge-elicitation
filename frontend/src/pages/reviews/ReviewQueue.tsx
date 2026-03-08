@@ -3,15 +3,35 @@ import { Link } from "react-router-dom";
 import { api, Review } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { StatusBadge, statusColor, statusLabel } from "@/components/StatusBadge";
+import { borderColor, STATUS_COLOR_TOKEN } from "@/components/statusColors";
+import { Tooltip } from "@/components/Tooltip";
 
 const VERDICT_BORDER_COLORS: Record<string, string> = {
-  pending: "border-gray-300",
-  approved: "border-green-300",
-  changes_requested: "border-yellow-300",
-  rejected: "border-red-300",
+  pending: borderColor(STATUS_COLOR_TOKEN["pending"]),
+  approved: borderColor(STATUS_COLOR_TOKEN["approved"]),
+  changes_requested: borderColor(STATUS_COLOR_TOKEN["changes_requested"]),
+  rejected: borderColor(STATUS_COLOR_TOKEN["rejected"]),
+  superseded: borderColor(STATUS_COLOR_TOKEN["superseded"]),
 };
 
 const ALL_VERDICTS = ["pending", "approved", "changes_requested", "rejected"];
+
+const VERDICT_TOOLTIPS: Record<string, string> = {
+  pending: "Reviewer has not yet submitted a verdict",
+  approved: "Reviewer approved the submission",
+  changes_requested: "Reviewer requested changes to the submission",
+  rejected: "Reviewer rejected the submission",
+  superseded: "Review was auto-closed because the answer was already resolved",
+};
+
+const ANSWER_STATUS_TOOLTIPS: Record<string, string> = {
+  draft: "Answer is being drafted",
+  submitted: "Answer submitted, awaiting reviewer assignment",
+  under_review: "Answer is being evaluated by reviewers",
+  approved: "Answer approved after all reviewers agreed",
+  revision_requested: "Answer needs revision — at least one reviewer requested changes",
+  rejected: "Answer was rejected by a reviewer",
+};
 
 type ViewMode = "list" | "kanban";
 type ReviewTab = "answer" | "question";
@@ -19,11 +39,13 @@ type ReviewTab = "answer" | "question";
 function ReviewStatusChips({ rev }: { rev: Review }) {
   return (
     <div className="flex items-center gap-1.5 mt-1">
-      {rev.answer_status && <StatusBadge status={rev.answer_status} size="xs" />}
-      {rev.question_status && (
-        <span className="text-[10px] text-muted-foreground">
-          Q: {statusLabel(rev.question_status)}
-        </span>
+      {rev.answer_status && (
+        <Tooltip text={ANSWER_STATUS_TOOLTIPS[rev.answer_status]}>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground">Answer:</span>
+            <StatusBadge status={rev.answer_status} size="xs" />
+          </span>
+        </Tooltip>
       )}
     </div>
   );
@@ -45,9 +67,13 @@ function KanbanCard({ rev }: { rev: Review }) {
         {rev.reviewer && (
           <span className="text-[10px] text-muted-foreground">{rev.reviewer.display_name}</span>
         )}
+        {rev.approval_count != null && rev.min_approvals != null && (
+          <Tooltip text={`${rev.approval_count} of ${rev.min_approvals} required approvals`}>
+            <span className="text-[10px] text-muted-foreground">{rev.approval_count}/{rev.min_approvals}</span>
+          </Tooltip>
+        )}
       </div>
       <ReviewStatusChips rev={rev} />
-      {rev.comment && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{rev.comment}</p>}
       <div className="text-[10px] text-muted-foreground mt-1.5">{new Date(rev.created_at).toLocaleDateString()}</div>
     </Link>
   );
@@ -64,9 +90,11 @@ function KanbanBoard({ reviews }: { reviews: Review[] }) {
       {ALL_VERDICTS.map((verdict) => (
         <div key={verdict} className="flex-shrink-0 w-64">
           <div className="flex items-center gap-2 mb-3 px-1">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(verdict)}`}>
-              {statusLabel(verdict)}
-            </span>
+            <Tooltip text={VERDICT_TOOLTIPS[verdict]}>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(verdict)}`}>
+                {statusLabel(verdict)}
+              </span>
+            </Tooltip>
             <span className="text-xs text-muted-foreground">{grouped[verdict].length}</span>
           </div>
           <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${VERDICT_BORDER_COLORS[verdict]} min-h-[200px]`}>
@@ -85,7 +113,9 @@ function ReviewList({ reviews }: { reviews: Review[] }) {
       {reviews.map((rev) => (
         <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30 transition-colors">
           <div className="flex items-center gap-3">
-            <StatusBadge status={rev.verdict} />
+            <Tooltip text={VERDICT_TOOLTIPS[rev.verdict]}>
+              <StatusBadge status={rev.verdict} />
+            </Tooltip>
             {rev.question_title && (
               <span className="text-sm text-foreground/70 truncate max-w-[300px]">{rev.question_title}</span>
             )}
@@ -94,10 +124,19 @@ function ReviewList({ reviews }: { reviews: Review[] }) {
             )}
             <span className="text-xs text-muted-foreground ml-auto">{rev.reviewer.display_name} &middot; {new Date(rev.created_at).toLocaleDateString()}</span>
           </div>
-          <div className="flex items-center gap-2 mt-1.5">
-            {rev.answer_status && <StatusBadge status={rev.answer_status} size="xs" />}
-            {rev.question_status && (
-              <span className="text-[10px] text-muted-foreground">Q: {statusLabel(rev.question_status)}</span>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            {rev.answer_status && (
+              <Tooltip text={ANSWER_STATUS_TOOLTIPS[rev.answer_status]}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-[10px] text-muted-foreground">Answer:</span>
+                  <StatusBadge status={rev.answer_status} size="xs" />
+                </span>
+              </Tooltip>
+            )}
+            {rev.approval_count != null && rev.min_approvals != null && (
+              <Tooltip text={`${rev.approval_count} of ${rev.min_approvals} required approvals`}>
+                <span className="text-[10px] text-muted-foreground">{rev.approval_count}/{rev.min_approvals} approvals</span>
+              </Tooltip>
             )}
           </div>
         </Link>

@@ -76,6 +76,7 @@ export function QuestionDetail() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editMinApprovals, setEditMinApprovals] = useState(1);
   const [feedbackRating, setFeedbackRating] = useState(0);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
@@ -96,6 +97,7 @@ export function QuestionDetail() {
       setEditTitle(q.title);
       setEditBody(q.body);
       setEditCategory(q.category || "");
+      setEditMinApprovals((q.review_policy as Record<string, number> | null)?.min_approvals ?? 1);
     }).catch((err) => setError(err instanceof Error ? err.message : "Question not found"));
     api.get<{ answers: Answer[]; total: number }>(`/questions/${id}/answers`).then((d) => setAnswers(d.answers)).catch(() => {});
   };
@@ -120,6 +122,7 @@ export function QuestionDetail() {
         title: editTitle.trim(),
         body: editBody.trim(),
         category: editCategory.trim() || null,
+        review_policy: editMinApprovals > 1 ? { min_approvals: editMinApprovals } : { min_approvals: 1 },
       });
       setQuestion(updated);
       setEditing(false);
@@ -277,6 +280,20 @@ export function QuestionDetail() {
               <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
               <input value={editCategory} onChange={(e) => setEditCategory(e.target.value)} placeholder="Category (optional)" className="w-full border border-border rounded-md px-3 py-2 bg-background text-sm" />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Required approvals</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={editMinApprovals}
+                  onChange={(e) => setEditMinApprovals(Number(e.target.value))}
+                  className="w-20 border border-border rounded-md px-3 py-2 text-sm bg-background"
+                />
+                <span className="text-xs text-muted-foreground">reviewer approvals needed per answer</span>
+              </div>
+            </div>
             <div className="flex gap-2">
               <button onClick={handleSaveEdit} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm active:scale-[0.97] transition-all duration-150">Save</button>
               <button onClick={() => setEditing(false)} className="border border-border px-4 py-2 rounded-md text-sm active:scale-[0.97] transition-all duration-150">Cancel</button>
@@ -288,6 +305,9 @@ export function QuestionDetail() {
             <MarkdownContent className="text-foreground/80">{question.body}</MarkdownContent>
             <div className="text-sm text-muted-foreground mt-4">
               by {question.created_by.display_name} &middot; {new Date(question.created_at).toLocaleDateString()}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Required approvals: {(question.review_policy as Record<string, number> | null)?.min_approvals ?? 1}
             </div>
           </>
         )}

@@ -33,6 +33,16 @@ async def _enrich_review_context(reviews: list[Review], db: AsyncSession) -> Non
         question_ids = {a.question_id for a in answers.values()}
         result = await db.execute(select(Question).where(Question.id.in_(question_ids)))
         questions = {q.id: q for q in result.scalars().all()}
+
+        # Get all reviews for these answers to count approvals per answer+version
+        all_answer_review_result = await db.execute(
+            select(Review).where(
+                Review.target_type == ReviewTargetType.ANSWER.value,
+                Review.target_id.in_(answer_ids),
+            )
+        )
+        all_answer_reviews = all_answer_review_result.scalars().all()
+
         for r in answer_reviews:
             answer = answers.get(r.target_id)
             if answer:
@@ -41,6 +51,17 @@ async def _enrich_review_context(reviews: list[Review], db: AsyncSession) -> Non
                 if q:
                     r.question_title = q.title  # type: ignore[attr-defined]
                     r.question_status = q.status  # type: ignore[attr-defined]
+
+                # Count approvals at this answer's current version
+                version_reviews = [
+                    ar for ar in all_answer_reviews
+                    if ar.target_id == answer.id and ar.answer_version == answer.current_version
+                ]
+                approval_count = sum(1 for ar in version_reviews if ar.verdict == ReviewVerdict.APPROVED.value)
+                policy = q.review_policy if q else None
+                min_approvals = (policy or {}).get("min_approvals", 1)
+                r.approval_count = approval_count  # type: ignore[attr-defined]
+                r.min_approvals = min_approvals  # type: ignore[attr-defined]
 
     # Resolve context for question reviews (direct)
     q_ids = {r.target_id for r in question_reviews}

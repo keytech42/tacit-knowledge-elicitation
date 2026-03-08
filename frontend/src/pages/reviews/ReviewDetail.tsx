@@ -73,6 +73,11 @@ export function ReviewDetail() {
             {answerVersion != null && <span className="font-mono ml-1">v{answerVersion}</span>}
             {answerStatus && <span className="ml-1">({statusLabel(answerStatus)})</span>}
           </span>
+          {review.approval_count != null && review.min_approvals != null && (
+            <span className="text-xs text-muted-foreground">
+              {review.approval_count}/{review.min_approvals} approvals
+            </span>
+          )}
           <span className="text-sm text-muted-foreground ml-auto">by {review.reviewer.display_name}</span>
         </div>
 
