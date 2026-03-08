@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, require_role
 from app.database import get_db
 from app.models.answer import Answer, AnswerStatus
-from app.models.question import Question
+from app.models.question import Question, QuestionStatus
 from app.models.review import Review, ReviewComment, ReviewTargetType, ReviewVerdict
 from app.models.user import RoleName, User
 from app.schemas.review import ReviewCommentCreate, ReviewCommentResponse, ReviewCreate, ReviewResponse, ReviewUpdate
@@ -90,6 +90,8 @@ async def create_review(
             raise HTTPException(status_code=404, detail="Answer not found")
         if target.status not in (AnswerStatus.SUBMITTED.value, AnswerStatus.UNDER_REVIEW.value):
             raise HTTPException(status_code=409, detail="Answer is not in a reviewable state")
+        if target.author_id == current_user.id:
+            raise HTTPException(status_code=409, detail="Cannot review your own answer")
         # Move to under_review if submitted
         if target.status == AnswerStatus.SUBMITTED.value:
             target.status = AnswerStatus.UNDER_REVIEW.value
@@ -98,6 +100,8 @@ async def create_review(
         target = result.scalar_one_or_none()
         if not target:
             raise HTTPException(status_code=404, detail="Question not found")
+        if target.status not in (QuestionStatus.IN_REVIEW.value, QuestionStatus.PUBLISHED.value):
+            raise HTTPException(status_code=409, detail="Question is not in a reviewable state")
     else:
         raise HTTPException(status_code=400, detail="target_type must be 'question' or 'answer'")
 
@@ -192,6 +196,9 @@ async def update_review(
     review = result.scalar_one_or_none()
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+
+    if review.verdict != ReviewVerdict.PENDING.value:
+        raise HTTPException(status_code=409, detail="Cannot change verdict on a resolved review")
 
     if review.reviewer_id != current_user.id:
         user_roles = {r.name for r in current_user.roles}
