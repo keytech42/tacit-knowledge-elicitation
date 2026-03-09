@@ -408,7 +408,7 @@ sequenceDiagram
 
     Worker->>Worker: Mark task completed
 
-    Note over Backend: Respondents now see suggested<br/>answer options when writing answers
+    Note over Backend: Respondents now see suggested<br>answer options when writing answers
 ```
 
 ---
@@ -439,7 +439,7 @@ sequenceDiagram
         Worker->>Backend: PATCH /reviews/{review_id} {verdict, comment}
         Backend->>DB: UPDATE review verdict
         Backend->>DB: resolve_answer_reviews() (may change answer status)
-        Note over Worker: AI review submitted with<br/>structured feedback + confidence score
+        Note over Worker: AI review submitted with<br>structured feedback + confidence score
     else Confidence < 0.6
         Note over Worker: Skipped — confidence too low to submit
     end
@@ -469,7 +469,7 @@ sequenceDiagram
 
     loop For each candidate respondent
         RecService->>RecService: Compute score
-        Note right of RecService: 0.4 * cosine_similarity<br/>+ 0.3 * approval_rate<br/>+ 0.2 * category_match<br/>+ 0.1 * recency
+        Note right of RecService: 0.4 * cosine_similarity<br>+ 0.3 * approval_rate<br>+ 0.2 * category_match<br>+ 0.1 * recency
     end
 
     RecService-->>Backend: Top-K recommendations with scores
@@ -643,11 +643,11 @@ stateDiagram-v2
     PUBLISHED --> CLOSED: close (admin)
     CLOSED --> ARCHIVED: archive (admin)
 
-    note right of DRAFT: Author can edit freely\nAdmin can also edit
-    note right of PUBLISHED: Accepting answers\nAuto-triggers scaffold-options\nEmbedding generated
-    note right of CLOSED: In-flight answers rejected\nAPPROVED answers preserved\nassigned_respondent cleared
-    note right of ARCHIVED: ALL answers rejected\n(including APPROVED)\nRead-only state
-    note left of IN_REVIEW: reject returns to DRAFT\nwithout rejecting answers
+    note right of DRAFT: Author can edit freely<br>Admin can also edit
+    note right of PUBLISHED: **Accepting answers**<br>Auto-triggers *scaffold-options*<br>Embedding generated on publish
+    note right of CLOSED: **Cascade**: rejects DRAFT, SUBMITTED,<br>UNDER_REVIEW, REVISION_REQUESTED answers<br>and supersedes their PENDING reviews.<br>*APPROVED answers are preserved.*<br>assigned_respondent cleared
+    note right of ARCHIVED: **Cascade**: rejects *all* remaining answers<br>including APPROVED ones.<br>No further modifications allowed.
+    note left of IN_REVIEW: Reject returns to DRAFT<br>*without* rejecting any answers
 ```
 
 ### Answer States
@@ -664,11 +664,11 @@ stateDiagram-v2
     APPROVED --> SUBMITTED: revise (post-approval)
 
     note right of DRAFT: Author/admin can edit body
-    note right of SUBMITTED: Revision v1 created on first submit\nEmbedding generated\nAuto-triggers review-assist
-    note left of UNDER_REVIEW: Entered when reviewer creates/is assigned review\nResolution checks current_version reviews only
-    note right of APPROVED: confirmed_by and confirmed_at set\nRemaining PENDING reviews superseded
-    note left of REVISION_REQUESTED: Resubmit updates revision in-place\n(no version bump)\nCHANGES_REQUESTED reviews reset to PENDING
-    note right of REJECTED: Terminal state (unless question archived)
+    note right of SUBMITTED: Revision v1 created on first submit<br>Embedding generated<br>Auto-triggers *review-assist*
+    note left of UNDER_REVIEW: Entered when reviewer creates or is assigned<br>Resolution only checks *current_version* reviews
+    note right of APPROVED: *confirmed_by* and *confirmed_at* set<br>Remaining PENDING reviews **superseded**
+    note left of REVISION_REQUESTED: Resubmit updates revision in-place<br>(no version bump)<br>CHANGES_REQUESTED reviews **reset to PENDING**
+    note right of REJECTED: Terminal state
 ```
 
 ### Review Verdicts
@@ -681,8 +681,8 @@ stateDiagram-v2
     PENDING --> REJECTED: reviewer verdict
     PENDING --> SUPERSEDED: answer approved (auto)
 
-    note right of PENDING: Tracks answer_version at creation\nOnly current-version reviews affect resolution
-    note right of CHANGES_REQUESTED: Highest priority in resolution\nBlocks approval even if threshold met
-    note right of REJECTED: Second priority\nOther reviewers can still submit\nCHANGES_REQUESTED overrides REJECTED
-    note left of SUPERSEDED: Auto-set when answer reaches APPROVED\nOnly on APPROVED (not REJECTED/REVISION_REQUESTED)
+    note right of PENDING: Tracks *answer_version* at creation<br>Only current-version reviews affect resolution
+    note right of CHANGES_REQUESTED: **Highest priority** in resolution<br>Blocks approval even if threshold met
+    note right of REJECTED: Second priority<br>Other reviewers can still submit<br>CHANGES_REQUESTED overrides REJECTED
+    note left of SUPERSEDED: Auto-set when answer reaches APPROVED<br>*Not* set on REJECTED or REVISION_REQUESTED
 ```
