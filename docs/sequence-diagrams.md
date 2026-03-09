@@ -39,18 +39,20 @@ sequenceDiagram
     Google-->>Frontend: Authorization code
     Frontend->>Backend: POST /auth/google {code}
     Backend->>Google: Exchange code for user info
-    Google-->>Backend: {email, name, sub (Google ID)}
-    Backend->>DB: SELECT user WHERE external_id = sub
+    Google-->>Backend: {email, name, id (Google ID)}
+    Backend->>DB: SELECT user WHERE external_id = google_id
     alt User exists
         DB-->>Backend: User record
+        Backend->>DB: UPDATE display_name, avatar_url
     else New user
         Backend->>DB: INSERT user (type=HUMAN)
-        Backend->>DB: INSERT user_role (RESPONDENT)
         alt Email matches BOOTSTRAP_ADMIN_EMAIL
-            Backend->>DB: INSERT user_role (ADMIN)
+            Backend->>DB: INSERT user_roles (ALL roles)
+        else Normal user
+            Backend->>DB: INSERT user_role (RESPONDENT only)
         end
     end
-    Backend-->>Frontend: {access_token (JWT), user}
+    Backend-->>Frontend: {access_token (JWT), user_id, email, display_name, roles}
     Frontend->>Frontend: Store JWT in AuthContext
     Frontend-->>User: Redirect to /questions
 ```
@@ -68,7 +70,7 @@ sequenceDiagram
     Frontend->>Backend: POST /auth/dev-login
     Backend->>DB: Find or create dev@localhost user
     Backend->>DB: Assign all roles (ADMIN, AUTHOR, RESPONDENT, REVIEWER)
-    Backend-->>Frontend: {access_token (JWT), user}
+    Backend-->>Frontend: {access_token (JWT), user_id, email, display_name, roles}
     Frontend->>Frontend: Store JWT in AuthContext
     Frontend-->>Dev: Redirect to /questions
 ```
@@ -91,7 +93,7 @@ sequenceDiagram
     Author->>Frontend: Fill title, body, category, review policy
     Frontend->>Backend: POST /questions {title, body, category, ...}
     Backend->>QService: create_question()
-    QService->>DB: INSERT question (status=DRAFT)
+    QService->>DB: INSERT question (status=DRAFT, source=MANUAL)
     DB-->>QService: Question record
     QService-->>Backend: Question
     Backend-->>Frontend: 200 {question}
@@ -101,7 +103,7 @@ sequenceDiagram
 
     Author->>Frontend: Click "Submit for Review"
     Frontend->>Backend: POST /questions/{id}/submit
-    Backend->>QService: submit_question()
+    Backend->>QService: apply_submit()
     QService->>DB: UPDATE status = PROPOSED
     Backend-->>Frontend: 200 {question}
     Frontend-->>Author: Status badge updates to "PROPOSED"
@@ -128,16 +130,18 @@ sequenceDiagram
     Admin->>Frontend: Select a PROPOSED question
     Admin->>Frontend: Click "Start Review"
     Frontend->>Backend: POST /questions/{id}/start-review
-    Backend->>QService: start_review()
+    Backend->>QService: apply_start_review()
     QService->>DB: UPDATE status = IN_REVIEW
     Backend-->>Frontend: 200
 
     alt Admin approves
         Admin->>Frontend: Click "Publish"
         Frontend->>Backend: POST /questions/{id}/publish
-        Backend->>QService: publish_question()
-        QService->>DB: UPDATE status = PUBLISHED
-        QService->>DB: Generate embedding (if EMBEDDING_MODEL set)
+        Backend->>QService: apply_publish()
+        QService->>DB: UPDATE status = PUBLISHED, confirmation = CONFIRMED
+        QService->>DB: SET confirmed_by_id, confirmed_at, published_at
+        QService->>DB: SET review_policy = defaults (if not already set)
+        Backend->>DB: Generate embedding (if EMBEDDING_MODEL set)
         Backend->>Slack: Create thread for question
         Backend->>Worker: POST /tasks/scaffold-options (fire-and-forget)
         Backend-->>Frontend: 200 {question}
@@ -145,9 +149,8 @@ sequenceDiagram
     else Admin rejects
         Admin->>Frontend: Click "Reject" + enter comment
         Frontend->>Backend: POST /questions/{id}/reject {comment}
-        Backend->>QService: reject_question()
-        QService->>DB: UPDATE status = DRAFT
-        QService->>DB: Reject all in-flight answers
+        Backend->>QService: apply_reject()
+        QService->>DB: UPDATE status = DRAFT, confirmation = REJECTED
         Backend->>Slack: Notify author of rejection
         Backend-->>Frontend: 200 {question}
         Frontend-->>Admin: Status = DRAFT (returned to author)
@@ -179,17 +182,17 @@ sequenceDiagram
     Respondent->>Frontend: Click "Write Answer"
     Frontend->>Backend: POST /questions/{id}/answers {body}
     Backend->>AService: create_answer()
-    AService->>DB: INSERT answer (status=DRAFT)
-    Backend-->>Frontend: 200 {answer}
+    AService->>DB: INSERT answer (status=DRAFT, current_version=0)
+    Backend-->>Frontend: 201 {answer}
 
-    Note over Respondent: Respondent can edit draft freely
+    Note over Respondent: Respondent can edit draft freely via PATCH
 
     Respondent->>Frontend: Click "Submit"
     Frontend->>Backend: POST /answers/{id}/submit
     Backend->>AService: submit_answer()
-    AService->>DB: UPDATE status = SUBMITTED
     AService->>DB: INSERT answer_revision (v1, trigger=INITIAL_SUBMIT)
-    AService->>DB: Generate embedding (if EMBEDDING_MODEL set)
+    AService->>DB: UPDATE status = SUBMITTED, submitted_at = now
+    Backend->>DB: Generate embedding (if EMBEDDING_MODEL set)
     Backend->>Worker: POST /tasks/review-assist (fire-and-forget)
     Backend->>Slack: Notify in question thread
     Backend-->>Frontend: 200 {answer}
@@ -215,16 +218,16 @@ sequenceDiagram
         Reviewer->>Frontend: Open answer detail
         Frontend->>Backend: POST /reviews {target_type=answer, target_id=...}
         Backend->>RService: create_review()
-        RService->>DB: INSERT review (verdict=PENDING)
-        RService->>AService: Transition answer SUBMITTED → UNDER_REVIEW
-        Backend-->>Frontend: 200 {review}
+        RService->>DB: INSERT review (verdict=PENDING, answer_version=current)
+        RService->>AService: Transition answer SUBMITTED -> UNDER_REVIEW
+        Backend-->>Frontend: 201 {review}
     else Admin assigns reviewer
         Admin->>Frontend: Click "Assign Reviewer" on answer
         Frontend->>Backend: POST /reviews/assign/{answer_id} {reviewer_id}
         Backend->>RService: assign_review()
         RService->>DB: INSERT review (verdict=PENDING, assigned_by=admin)
-        RService->>AService: Transition answer → UNDER_REVIEW
-        Backend-->>Frontend: 200 {review}
+        RService->>AService: Transition answer -> UNDER_REVIEW
+        Backend-->>Frontend: 201 {review}
     end
 
     Reviewer->>Frontend: Open review from /reviews (My Queue)
@@ -241,16 +244,20 @@ sequenceDiagram
     RService->>DB: UPDATE review verdict
     RService->>AService: resolve_answer_reviews()
 
-    alt Approved count >= min_approvals
-        AService->>DB: UPDATE answer status = APPROVED
-        AService->>DB: Supersede remaining PENDING reviews
-        Backend->>Slack: Notify author — answer approved
-    else Any CHANGES_REQUESTED
+    Note over AService: Only reviews matching answer.current_version are considered
+
+    alt Any CHANGES_REQUESTED (highest priority)
         AService->>DB: UPDATE answer status = REVISION_REQUESTED
         Backend->>Slack: Notify author — revision needed
+        Backend->>Slack: DM author with reviewer feedback
     else Any REJECTED
         AService->>DB: UPDATE answer status = REJECTED
         Backend->>Slack: Notify author — answer rejected
+    else Approved count >= min_approvals
+        AService->>DB: UPDATE answer status = APPROVED
+        AService->>DB: SET confirmed_by_id, confirmed_at
+        AService->>DB: Supersede remaining PENDING reviews
+        Backend->>Slack: Notify author — answer approved
     end
 
     Backend-->>Frontend: 200 {review}
@@ -268,6 +275,7 @@ sequenceDiagram
     participant Backend as Backend API
     participant AService as AnswerService
     participant Worker
+    participant Slack
     participant DB
 
     Note over Respondent: Answer is in REVISION_REQUESTED status
@@ -292,22 +300,28 @@ sequenceDiagram
 
     Respondent->>Frontend: Click "Resubmit"
     Frontend->>Backend: POST /answers/{id}/submit
-    Backend->>AService: submit_answer()
-    AService->>DB: UPDATE status = SUBMITTED
+    Backend->>AService: resubmit_answer()
     AService->>DB: Update latest revision in-place (no version bump)
+    AService->>DB: UPDATE status = SUBMITTED
+    Backend->>DB: Reset CHANGES_REQUESTED reviews to PENDING
+    alt Previous reviewers exist
+        Backend->>DB: UPDATE status = UNDER_REVIEW
+    end
+    Backend->>DB: Generate embedding (if EMBEDDING_MODEL set)
     Backend->>Worker: POST /tasks/review-assist (fire-and-forget)
+    Backend->>Slack: Notify in question thread
     Backend-->>Frontend: 200
-    Frontend-->>Respondent: Status = SUBMITTED (awaiting new review)
+    Frontend-->>Respondent: Status = SUBMITTED or UNDER_REVIEW
 
     Note over Respondent: --- Post-Approval Revision ---
 
     alt Answer is APPROVED but respondent wants to revise
         Respondent->>Frontend: Click "Revise"
         Frontend->>Backend: POST /answers/{id}/revise
-        Backend->>AService: revise_answer()
-        AService->>DB: UPDATE status = SUBMITTED
+        Backend->>AService: revise_approved_answer()
         AService->>DB: INSERT new revision (version++, trigger=POST_APPROVAL_UPDATE)
-        AService->>DB: Clear confirmed_by / confirmed_at
+        AService->>DB: UPDATE status = SUBMITTED
+        AService->>DB: Clear confirmed_by_id / confirmed_at
         Backend-->>Frontend: 200
         Frontend-->>Respondent: Answer reopened for new review cycle
     end
@@ -388,6 +402,8 @@ sequenceDiagram
 
     Worker->>Backend: POST /questions/{id}/options [{label, body}, ...]
     Backend->>DB: INSERT new answer options
+
+    Worker->>Backend: PATCH /questions/{id} {show_suggestions: true}
     Backend->>DB: UPDATE question show_suggestions = true
 
     Worker->>Worker: Mark task completed
@@ -418,9 +434,11 @@ sequenceDiagram
     LLM-->>Worker: {verdict, confidence, strengths, weaknesses, suggestions}
 
     alt Confidence >= 0.6
-        Worker->>Backend: POST /reviews {target=answer, verdict, comment}
-        Backend->>DB: INSERT review (by service account)
-        Backend->>DB: Resolve answer reviews (may change status)
+        Worker->>Backend: POST /reviews {target_type=answer, target_id}
+        Backend-->>Worker: {review_id, verdict=PENDING}
+        Worker->>Backend: PATCH /reviews/{review_id} {verdict, comment}
+        Backend->>DB: UPDATE review verdict
+        Backend->>DB: resolve_answer_reviews() (may change answer status)
         Note over Worker: AI review submitted with<br/>structured feedback + confidence score
     else Confidence < 0.6
         Note over Worker: Skipped — confidence too low to submit
@@ -445,9 +463,9 @@ sequenceDiagram
     Admin->>Frontend: Click "Recommend Respondent"
     Frontend->>Backend: POST /ai/recommend {question_id}
 
-    Backend->>RecService: get_recommendations()
+    Backend->>RecService: recommend_respondents()
     RecService->>DB: SELECT question.embedding
-    RecService->>DB: SELECT all answers with embeddings
+    RecService->>DB: SELECT answers with embeddings (grouped by author)
 
     loop For each candidate respondent
         RecService->>RecService: Compute score
@@ -455,7 +473,7 @@ sequenceDiagram
     end
 
     RecService-->>Backend: Top-K recommendations with scores
-    Backend-->>Frontend: [{user, score, reasoning}, ...]
+    Backend-->>Frontend: [{user_id, display_name, score, reasoning}, ...]
     Frontend-->>Admin: Show ranked respondent list
 
     Admin->>Frontend: Select respondent + click "Assign"
@@ -483,7 +501,7 @@ sequenceDiagram
         Admin->>Frontend: Select file to upload
         Frontend->>Backend: POST /ai/extract-from-file (multipart form)
         Backend->>Backend: Parse file content (PDF/DOCX/TXT)
-        Backend->>DB: INSERT source_document {title, content, file_type}
+        Backend->>DB: INSERT source_document {title, content}
         Backend->>Worker: POST /tasks/extract-questions {source_doc_id, domain, max_questions}
     else Paste raw text
         Admin->>Frontend: Paste source text + enter metadata
@@ -495,16 +513,23 @@ sequenceDiagram
     Worker-->>Backend: {task_id}
     Backend-->>Frontend: 202 {task_id}
 
+    Note over Worker: Pass 1: Extract from each chunk (4000 char max)
+
     Worker->>LLM: Extract questions from source text
-    LLM-->>Worker: [{title, body, category, rationale}, ...]
+    LLM-->>Worker: [{title, body, category, source_passage}, ...]
+
+    Note over Worker: Pass 2: Consolidation (if multiple chunks or >max candidates)
 
     loop For each extracted question
         Worker->>Backend: POST /questions {title, body, source_document_id, source=EXTRACTED}
         Backend->>DB: INSERT question (status=DRAFT)
-        Worker->>Backend: POST /questions/{id}/submit
-        Backend->>DB: UPDATE status = PROPOSED
+        alt EXTRACTION_AUTO_SUBMIT enabled
+            Worker->>Backend: POST /questions/{id}/submit
+            Backend->>DB: UPDATE status = PROPOSED
+        end
     end
 
+    Worker->>Backend: PATCH /source-documents/{id} {summary, question_count}
     Worker->>Worker: Mark task completed
     Frontend-->>Admin: Extracted questions appear in admin queue
 ```
@@ -519,7 +544,6 @@ sequenceDiagram
     participant Frontend
     participant Backend as Backend API
     participant QService as QuestionService
-    participant AService as AnswerService
     participant Slack
     participant DB
 
@@ -527,15 +551,18 @@ sequenceDiagram
 
     Admin->>Frontend: Click "Close Question"
     Frontend->>Backend: POST /questions/{id}/close
-    Backend->>QService: close_question()
-    QService->>DB: UPDATE question status = CLOSED
+    Backend->>QService: apply_close()
+    QService->>DB: UPDATE question status = CLOSED, closed_at = now
     QService->>DB: Clear assigned_respondent_id
 
-    loop For each in-flight answer (DRAFT, SUBMITTED, UNDER_REVIEW)
-        QService->>AService: reject_answer()
-        AService->>DB: UPDATE answer status = REJECTED
+    loop For each in-flight answer (DRAFT, SUBMITTED, UNDER_REVIEW, REVISION_REQUESTED)
+        QService->>DB: UPDATE answer status = REJECTED
+        QService->>DB: Supersede PENDING reviews on rejected answers
     end
 
+    Note right of QService: APPROVED answers are NOT rejected on close
+
+    Backend->>Slack: Notify in question thread
     Backend-->>Frontend: 200
     Frontend-->>Admin: Status = CLOSED
 
@@ -543,13 +570,14 @@ sequenceDiagram
 
     Admin->>Frontend: Click "Archive"
     Frontend->>Backend: POST /questions/{id}/archive
-    Backend->>QService: archive_question()
+    Backend->>QService: apply_archive()
     QService->>DB: UPDATE question status = ARCHIVED
 
-    loop For each remaining active answer (including APPROVED)
-        QService->>AService: reject_answer()
-        AService->>DB: UPDATE answer status = REJECTED
+    loop For each remaining active answer (APPROVED, DRAFT, SUBMITTED, UNDER_REVIEW, REVISION_REQUESTED)
+        QService->>DB: UPDATE answer status = REJECTED
     end
+
+    Note right of QService: Archive is the only operation that rejects APPROVED answers
 
     Backend-->>Frontend: 200
     Frontend-->>Admin: Status = ARCHIVED (read-only)
@@ -571,7 +599,7 @@ sequenceDiagram
 
     Admin->>Frontend: Navigate to Service Accounts
     Admin->>Frontend: Create new service account
-    Frontend->>Backend: POST /service-accounts {display_name, roles: [author]}
+    Frontend->>Backend: POST /service-accounts {display_name}
     Backend->>DB: INSERT user (type=SERVICE)
     Backend->>DB: Generate API key, store SHA-256 hash
     Backend-->>Frontend: {account, api_key (plaintext, shown once)}
@@ -580,7 +608,7 @@ sequenceDiagram
     Note over Worker: Worker uses API key for all platform calls
 
     Worker->>Backend: POST /questions (X-API-Key: <key>)
-    Backend->>DB: SELECT user WHERE api_key_hash = SHA256(key)
+    Backend->>DB: SELECT user WHERE api_key_hash = SHA256(key) AND is_active AND type=SERVICE
     alt Valid key
         DB-->>Backend: Service account user
         Backend->>Backend: Check roles, process request
@@ -608,12 +636,18 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> DRAFT: create
-    DRAFT --> PROPOSED: submit
+    DRAFT --> PROPOSED: submit (author/admin)
     PROPOSED --> IN_REVIEW: start_review (admin)
     IN_REVIEW --> PUBLISHED: publish (admin)
     IN_REVIEW --> DRAFT: reject (admin)
     PUBLISHED --> CLOSED: close (admin)
     CLOSED --> ARCHIVED: archive (admin)
+
+    note right of DRAFT: Author can edit freely\nAdmin can also edit
+    note right of PUBLISHED: Accepting answers\nAuto-triggers scaffold-options\nEmbedding generated
+    note right of CLOSED: In-flight answers rejected\nAPPROVED answers preserved\nassigned_respondent cleared
+    note right of ARCHIVED: ALL answers rejected\n(including APPROVED)\nRead-only state
+    note left of IN_REVIEW: reject returns to DRAFT\nwithout rejecting answers
 ```
 
 ### Answer States
@@ -623,11 +657,18 @@ stateDiagram-v2
     [*] --> DRAFT: create
     DRAFT --> SUBMITTED: submit
     SUBMITTED --> UNDER_REVIEW: reviewer assigned
-    UNDER_REVIEW --> APPROVED: approvals >= threshold
+    UNDER_REVIEW --> APPROVED: approvals >= min_approvals
     UNDER_REVIEW --> REVISION_REQUESTED: changes_requested verdict
     UNDER_REVIEW --> REJECTED: rejected verdict
     REVISION_REQUESTED --> SUBMITTED: resubmit
     APPROVED --> SUBMITTED: revise (post-approval)
+
+    note right of DRAFT: Author/admin can edit body
+    note right of SUBMITTED: Revision v1 created on first submit\nEmbedding generated\nAuto-triggers review-assist
+    note left of UNDER_REVIEW: Entered when reviewer creates/is assigned review\nResolution checks current_version reviews only
+    note right of APPROVED: confirmed_by and confirmed_at set\nRemaining PENDING reviews superseded
+    note left of REVISION_REQUESTED: Resubmit updates revision in-place\n(no version bump)\nCHANGES_REQUESTED reviews reset to PENDING
+    note right of REJECTED: Terminal state (unless question archived)
 ```
 
 ### Review Verdicts
@@ -639,4 +680,9 @@ stateDiagram-v2
     PENDING --> CHANGES_REQUESTED: reviewer verdict
     PENDING --> REJECTED: reviewer verdict
     PENDING --> SUPERSEDED: answer approved (auto)
+
+    note right of PENDING: Tracks answer_version at creation\nOnly current-version reviews affect resolution
+    note right of CHANGES_REQUESTED: Highest priority in resolution\nBlocks approval even if threshold met
+    note right of REJECTED: Second priority\nOther reviewers can still submit\nCHANGES_REQUESTED overrides REJECTED
+    note left of SUPERSEDED: Auto-set when answer reaches APPROVED\nOnly on APPROVED (not REJECTED/REVISION_REQUESTED)
 ```
