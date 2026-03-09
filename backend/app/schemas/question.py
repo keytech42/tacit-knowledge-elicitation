@@ -19,6 +19,9 @@ class QuestionCreate(BaseModel):
     category: str | None = None
     review_policy: ReviewPolicyInput | None = None
     show_suggestions: bool = False
+    source_type: str | None = None
+    source_document_id: uuid.UUID | None = None
+    source_passage: str | None = None
 
 
 class QuestionUpdate(BaseModel):
@@ -64,6 +67,9 @@ class QuestionResponse(BaseModel):
     closed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    source_type: str | None = None
+    source_document_id: uuid.UUID | None = None
+    source_passage: str | None = None
     answer_options: list[AnswerOptionResponse] = []
     model_config = {"from_attributes": True}
 

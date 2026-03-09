@@ -53,6 +53,28 @@ class ReviewAssistRequest(BaseModel):
     answer_id: uuid.UUID
 
 
+class ExtractedQuestion(BaseModel):
+    title: str
+    body: str
+    category: str
+    source_passage: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    suggested_options: list[str] = []
+
+
+class ExtractedQuestionSet(BaseModel):
+    questions: list[ExtractedQuestion]
+    document_summary: str
+
+
+class ExtractQuestionsRequest(BaseModel):
+    source_text: str
+    document_title: str = ""
+    domain: str = ""
+    max_questions: int = 10
+    source_document_id: str | None = None
+
+
 class TaskResponse(BaseModel):
     task_id: str
     status: str

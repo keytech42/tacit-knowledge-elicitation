@@ -44,6 +44,7 @@ async def run_question_generation(
                 title=gq.title,
                 body=gq.body,
                 category=gq.category,
+                source_type="generated",
             )
             question_id = question["id"]
             created_ids.append(question_id)

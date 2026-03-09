@@ -153,6 +153,19 @@ export interface AnswerRevision {
   created_at: string;
 }
 
+// Source document types
+
+export interface SourceDocument {
+  id: string;
+  title: string;
+  domain: string | null;
+  document_summary: string | null;
+  question_count: number;
+  uploaded_by: User;
+  created_at: string;
+  updated_at: string;
+}
+
 // AI-related types
 
 export interface TaskAccepted {
@@ -203,6 +216,14 @@ export const ai = {
   getTaskStatus: (taskId: string) =>
     api.get<TaskStatus>(`/ai/tasks/${taskId}`),
 
+  extractQuestions: (sourceText: string, documentTitle = "", domain = "", maxQuestions = 10) =>
+    api.post<TaskAccepted>("/ai/extract-questions", {
+      source_text: sourceText,
+      document_title: documentTitle,
+      domain: domain,
+      max_questions: maxQuestions,
+    }),
+
   assignRespondent: (questionId: string, userId: string) =>
     api.post<Question>(`/questions/${questionId}/assign-respondent`, { user_id: userId }),
 
@@ -216,4 +237,11 @@ export const ai = {
     if (limit !== 20) params.set("limit", String(limit));
     return api.get<{ users: User[]; total: number }>(`/users/search?${params}`);
   },
+};
+
+// Source document API functions
+
+export const sourceDocuments = {
+  list: () => api.get<{ items: SourceDocument[]; total: number }>("/source-documents"),
+  get: (id: string) => api.get<SourceDocument>(`/source-documents/${id}`),
 };

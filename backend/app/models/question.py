@@ -20,6 +20,12 @@ from pgvector.sqlalchemy import Vector
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 
+class SourceType(str, enum.Enum):
+    MANUAL = "manual"
+    GENERATED = "generated"
+    EXTRACTED = "extracted"
+
+
 class QuestionStatus(str, enum.Enum):
     DRAFT = "draft"
     PROPOSED = "proposed"
@@ -64,9 +70,19 @@ class Question(UUIDMixin, TimestampMixin, Base):
     slack_thread_ts: Mapped[str | None] = mapped_column(String(64), nullable=True)
     slack_channel: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    source_type: Mapped[str] = mapped_column(
+        SAEnum(SourceType, name="sourcetype", values_callable=lambda e: [x.value for x in e]),
+        default=SourceType.MANUAL,
+    )
+    source_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source_documents.id"), nullable=True
+    )
+    source_passage: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     embedding = mapped_column(Vector(1024), nullable=True)
 
     created_by = relationship("User", foreign_keys=[created_by_id], lazy="selectin")
+    source_document = relationship("SourceDocument", lazy="selectin")
     confirmed_by = relationship("User", foreign_keys=[confirmed_by_id], lazy="selectin")
     assigned_respondent = relationship("User", foreign_keys=[assigned_respondent_id], lazy="selectin")
     answer_options = relationship("AnswerOption", back_populates="question", lazy="selectin")

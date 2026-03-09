@@ -562,6 +562,14 @@ export function AIControls() {
   const [genTask, setGenTask] = useState<TaskStatus | null>(null);
   const [genLoading, setGenLoading] = useState(false);
 
+  // ---- Question extraction state ----
+  const [extractSource, setExtractSource] = useState("");
+  const [extractTitle, setExtractTitle] = useState("");
+  const [extractDomain, setExtractDomain] = useState("");
+  const [extractMaxQuestions, setExtractMaxQuestions] = useState(10);
+  const [extractTask, setExtractTask] = useState<TaskStatus | null>(null);
+  const [extractLoading, setExtractLoading] = useState(false);
+
   // ---- Scaffold options state ----
   const [scaffoldQuestion, setScaffoldQuestion] = useState<Question | null>(null);
   const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
@@ -647,6 +655,25 @@ export function AIControls() {
       });
     }
     setGenLoading(false);
+  };
+
+  const handleExtract = async () => {
+    if (!extractSource.trim()) return;
+    setExtractLoading(true);
+    try {
+      const result = await ai.extractQuestions(
+        extractSource, extractTitle, extractDomain, extractMaxQuestions
+      );
+      setExtractTask({ task_id: result.task_id, status: result.status });
+      pollTask(result.task_id, setExtractTask);
+    } catch (e: unknown) {
+      setExtractTask({
+        task_id: "",
+        status: "failed",
+        error: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+    setExtractLoading(false);
   };
 
   const handleScaffold = async () => {
@@ -821,6 +848,89 @@ export function AIControls() {
               <p className="mt-1 text-muted-foreground">
                 Created {String((genTask.result as Record<string, unknown>).count)} questions
               </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Extract Questions from Document */}
+      {/* ---------------------------------------------------------------- */}
+      <section className="bg-background border border-border rounded-lg p-6">
+        <h2 className="text-lg font-semibold mb-1">Extract Questions from Document</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Extract knowledge elicitation questions from source documents using AI analysis.
+        </p>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Document Title</label>
+            <input
+              value={extractTitle}
+              onChange={(e) => setExtractTitle(e.target.value)}
+              placeholder="Document title (optional)"
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Domain</label>
+            <input
+              value={extractDomain}
+              onChange={(e) => setExtractDomain(e.target.value)}
+              placeholder="Domain or subject area"
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Source Text *</label>
+          <textarea
+            value={extractSource}
+            onChange={(e) => setExtractSource(e.target.value)}
+            placeholder="Paste your document content here..."
+            rows={10}
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">Max Questions</label>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={extractMaxQuestions}
+            onChange={(e) => setExtractMaxQuestions(parseInt(e.target.value) || 10)}
+            className="w-32 border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+        <button
+          onClick={handleExtract}
+          disabled={extractLoading || !extractSource.trim()}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium disabled:opacity-50 transition-opacity"
+        >
+          {extractLoading ? "Submitting..." : "Extract Questions"}
+        </button>
+        {extractTask && (
+          <div className="mt-3 p-3 bg-muted rounded-md text-sm">
+            <div className="flex items-center gap-2">
+              <TaskStatusBadge status={extractTask.status} />
+              {extractTask.task_id && (
+                <span className="text-muted-foreground text-xs font-mono">
+                  {extractTask.task_id.slice(0, 8)}
+                </span>
+              )}
+            </div>
+            {extractTask.error && <p className="text-destructive mt-1">{extractTask.error}</p>}
+            {extractTask.result && (
+              <div className="mt-1 text-muted-foreground">
+                <p>
+                  Created {String((extractTask.result as Record<string, unknown>).questions_created ?? (extractTask.result as Record<string, unknown>).count)} questions
+                </p>
+                {String((extractTask.result as Record<string, unknown>).document_summary || "") !== "" && (
+                  <p className="mt-1 text-xs">
+                    {String((extractTask.result as Record<string, unknown>).document_summary)}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}
