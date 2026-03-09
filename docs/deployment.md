@@ -39,6 +39,7 @@ WORKER_URL=http://worker:8001
 ANTHROPIC_API_KEY=<your-anthropic-key>
 LLM_MODEL=anthropic/claude-sonnet-4-5-20250929
 EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_API_KEY=<your-openai-key>
 WORKER_API_KEY=<service-account-api-key>
 ```
 
@@ -140,3 +141,4 @@ Migrations run automatically before the API starts (`alembic upgrade head`). For
 - Run migrations as a one-off task, not on every instance startup, when running multiple replicas
 - The worker tracks tasks in-memory — run a single instance (no horizontal scaling for v1)
 - The PostgreSQL image must be `pgvector/pgvector:pg16` (drop-in replacement for `postgres:16` with the `vector` extension)
+- See [Embeddings Setup](embeddings.md) for local GPU and cloud embedding configuration
