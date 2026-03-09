@@ -93,7 +93,7 @@ sequenceDiagram
     Author->>Frontend: Fill title, body, category, review policy
     Frontend->>Backend: POST /questions {title, body, category, ...}
     Backend->>QService: create_question()
-    QService->>DB: INSERT question (status=DRAFT, source=MANUAL)
+    QService->>DB: INSERT question (status=DRAFT, source_type=MANUAL)
     DB-->>QService: Question record
     QService-->>Backend: Question
     Backend-->>Frontend: 200 {question}
