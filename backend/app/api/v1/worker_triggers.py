@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -150,6 +150,52 @@ async def extract_questions(
         document_title=request.document_title,
         domain=request.domain,
         max_questions=request.max_questions,
+        source_document_id=str(doc.id),
+    )
+    if not result:
+        raise HTTPException(status_code=502, detail="Worker did not respond")
+    return TaskAcceptedResponse(task_id=result["task_id"], status=result["status"])
+
+
+@router.post("/extract-from-file", response_model=TaskAcceptedResponse)
+async def extract_from_file(
+    file: UploadFile = File(...),
+    document_title: str = Form(""),
+    domain: str = Form(""),
+    max_questions: int = Form(10),
+    admin: User = require_role(RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_worker()
+    from app.models.source_document import SourceDocument
+    from app.services.file_parser import parse_file
+
+    content = await file.read()
+    try:
+        source_text = parse_file(content, file.filename or "unknown", file.content_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not source_text.strip():
+        raise HTTPException(status_code=400, detail="File contains no extractable text")
+
+    title = document_title or file.filename or "Untitled"
+
+    doc = SourceDocument(
+        title=title,
+        body=source_text,
+        domain=domain or None,
+        uploaded_by_id=admin.id,
+    )
+    db.add(doc)
+    await db.flush()
+    await db.refresh(doc)
+
+    result = await worker_client.trigger_extract_questions(
+        source_text=source_text,
+        document_title=title,
+        domain=domain,
+        max_questions=max_questions,
         source_document_id=str(doc.id),
     )
     if not result:
