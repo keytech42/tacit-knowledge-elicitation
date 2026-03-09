@@ -88,6 +88,7 @@ export function QuestionDetail() {
   const [scaffoldLoading, setScaffoldLoading] = useState(false);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recReason, setRecReason] = useState<string | null>(null);
+  const [recStrategy, setRecStrategy] = useState<string | null>(null);
   const [recLoading, setRecLoading] = useState(false);
   const [assignLoading, setAssignLoading] = useState<string | null>(null);
   const [pickerSelected, setPickerSelected] = useState<User | null>(null);
@@ -228,9 +229,11 @@ export function QuestionDetail() {
       const resp = await ai.recommend(id);
       setRecommendations(resp.items);
       setRecReason(resp.reason);
+      setRecStrategy(resp.strategy);
     } catch (e: unknown) {
       setRecommendations([]);
       setRecReason(e instanceof Error ? e.message : "Failed to get recommendations.");
+      setRecStrategy(null);
     }
     setRecLoading(false);
   };
@@ -403,6 +406,11 @@ export function QuestionDetail() {
           )}
           {recommendations.length > 0 && (
             <div className="mt-3 border border-border rounded-md overflow-hidden">
+              {recStrategy && (
+                <div className="px-3 py-1.5 bg-muted/50 text-xs text-muted-foreground border-b border-border">
+                  Recommended via {recStrategy === "llm" ? "AI" : "similarity"}
+                </div>
+              )}
               <table className="w-full text-sm">
                 <thead className="bg-muted">
                   <tr>

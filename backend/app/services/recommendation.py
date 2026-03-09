@@ -41,12 +41,15 @@ async def recommend_respondents(
     strategy = _resolve_strategy()
 
     if strategy == "embedding":
-        return await _recommend_via_embedding(db, question_id, top_k)
+        result = await _recommend_via_embedding(db, question_id, top_k)
     elif strategy == "llm":
-        return await _recommend_via_llm(db, question_id, top_k)
+        result = await _recommend_via_llm(db, question_id, top_k)
     else:
         logger.error(f"Unknown RECOMMENDATION_STRATEGY: {strategy}")
-        return {"items": [], "reason": f"Unknown strategy: {strategy}"}
+        return {"items": [], "reason": f"Unknown strategy: {strategy}", "strategy": strategy}
+
+    result["strategy"] = strategy
+    return result
 
 
 async def _build_candidate_context(
