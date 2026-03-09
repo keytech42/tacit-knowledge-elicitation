@@ -101,8 +101,8 @@ class TestRunRespondentRecommendation:
         assert call_kwargs.kwargs.get("model") == "anthropic/claude-haiku-4-5-20251001"
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_llm_model(self):
-        """When RECOMMENDATION_MODEL is empty, LLM_MODEL is used."""
+    async def test_defaults_to_haiku(self):
+        """Default RECOMMENDATION_MODEL is Haiku."""
         question = {"title": "Q", "body": "B"}
         candidates = [{"user_id": "u-1", "display_name": "Alice", "answer_summaries": []}]
 
@@ -112,9 +112,9 @@ class TestRunRespondentRecommendation:
 
         with patch("worker.tasks.respondent_recommend.call_llm", new_callable=AsyncMock, return_value=mock_result) as mock_llm, \
              patch("worker.tasks.respondent_recommend.settings") as mock_settings:
-            mock_settings.RECOMMENDATION_MODEL = ""
+            mock_settings.RECOMMENDATION_MODEL = "anthropic/claude-haiku-4-5-20251001"
             mock_settings.LLM_MODEL = "anthropic/claude-sonnet-4-6"
             await run_respondent_recommendation(question, candidates)
 
         call_kwargs = mock_llm.call_args
-        assert call_kwargs.kwargs.get("model") == "anthropic/claude-sonnet-4-6"
+        assert call_kwargs.kwargs.get("model") == "anthropic/claude-haiku-4-5-20251001"

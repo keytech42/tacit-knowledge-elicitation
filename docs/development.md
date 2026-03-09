@@ -132,7 +132,7 @@ The worker service and AI features are optional. To enable:
 | `EMBEDDING_API_KEY` | api | API key for embedding provider (any non-empty value for local) |
 | `WORKER_API_KEY` | worker | Service account API key for platform auth |
 | `RECOMMENDATION_STRATEGY` | api | `auto` (default), `llm`, or `embedding`. Auto prefers embedding when available |
-| `RECOMMENDATION_MODEL` | worker | Override LLM model for recommendations (e.g., `anthropic/claude-haiku-4-5-20251001`) |
+| `RECOMMENDATION_MODEL` | worker | LLM model for recommendations (default: Haiku for cost efficiency) |
 
 See [Embeddings Setup](embeddings.md) for detailed instructions on running a local embedding model.
 

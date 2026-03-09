@@ -14,7 +14,7 @@ class WorkerSettings(BaseSettings):
     DEDUP_STRATEGY: str = "llm"  # "llm" or "embedding"
     EXTRACTION_TEMPERATURE: float = 0.3
     EXTRACTION_AUTO_SUBMIT: bool = False
-    RECOMMENDATION_MODEL: str = ""  # Override LLM_MODEL for recommendations (e.g. "anthropic/claude-haiku-4-5-20251001")
+    RECOMMENDATION_MODEL: str = "anthropic/claude-haiku-4-5-20251001"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
