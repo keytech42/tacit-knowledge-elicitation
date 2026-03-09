@@ -39,10 +39,24 @@ class PlatformClient:
             resp.raise_for_status()
             return resp.json()["questions"]
 
-    async def create_question(self, title: str, body: str, category: str | None = None) -> dict:
+    async def create_question(
+        self,
+        title: str,
+        body: str,
+        category: str | None = None,
+        source_type: str | None = None,
+        source_document_id: str | None = None,
+        source_passage: str | None = None,
+    ) -> dict:
         payload = {"title": title, "body": body}
         if category:
             payload["category"] = category
+        if source_type:
+            payload["source_type"] = source_type
+        if source_document_id:
+            payload["source_document_id"] = source_document_id
+        if source_passage:
+            payload["source_passage"] = source_passage
         async with self._client() as client:
             resp = await client.post("/api/v1/questions", json=payload)
             resp.raise_for_status()
@@ -66,6 +80,28 @@ class PlatformClient:
                 f"/api/v1/questions/{question_id}/options",
                 json={"options": options},
             )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def create_source_document(self, title: str, body: str, domain: str = "") -> dict:
+        payload = {"title": title, "body": body}
+        if domain:
+            payload["domain"] = domain
+        async with self._client() as client:
+            resp = await client.post("/api/v1/source-documents", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+
+    async def update_source_document(
+        self, doc_id: str, summary: str | None = None, question_count: int | None = None,
+    ) -> dict:
+        payload: dict = {}
+        if summary is not None:
+            payload["document_summary"] = summary
+        if question_count is not None:
+            payload["question_count"] = question_count
+        async with self._client() as client:
+            resp = await client.patch(f"/api/v1/source-documents/{doc_id}", json=payload)
             resp.raise_for_status()
             return resp.json()
 

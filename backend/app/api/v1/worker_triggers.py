@@ -119,6 +119,44 @@ async def recommend(
     )
 
 
+class ExtractQuestionsRequest(BaseModel):
+    source_text: str
+    document_title: str = ""
+    domain: str = ""
+    max_questions: int = 10
+
+
+@router.post("/extract-questions", response_model=TaskAcceptedResponse)
+async def extract_questions(
+    request: ExtractQuestionsRequest,
+    admin: User = require_role(RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_worker()
+    from app.models.source_document import SourceDocument
+
+    doc = SourceDocument(
+        title=request.document_title or "Untitled",
+        body=request.source_text,
+        domain=request.domain or None,
+        uploaded_by_id=admin.id,
+    )
+    db.add(doc)
+    await db.flush()
+    await db.refresh(doc)
+
+    result = await worker_client.trigger_extract_questions(
+        source_text=request.source_text,
+        document_title=request.document_title,
+        domain=request.domain,
+        max_questions=request.max_questions,
+        source_document_id=str(doc.id),
+    )
+    if not result:
+        raise HTTPException(status_code=502, detail="Worker did not respond")
+    return TaskAcceptedResponse(task_id=result["task_id"], status=result["status"])
+
+
 @router.get("/tasks/{task_id}")
 async def get_task_status(
     task_id: str,

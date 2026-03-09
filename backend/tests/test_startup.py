@@ -12,7 +12,7 @@ from app.main import seed_roles
 from app.models import Base
 from app.models.user import RoleName, UserType
 from app.models.answer import AnswerStatus, RevisionTrigger
-from app.models.question import QuestionStatus, Confirmation
+from app.models.question import QuestionStatus, Confirmation, SourceType
 from app.models.review import ReviewTargetType, ReviewVerdict
 
 
@@ -40,6 +40,7 @@ _ENUM_MAP = {
     "confirmation": Confirmation,
     "reviewtargettype": ReviewTargetType,
     "reviewverdict": ReviewVerdict,
+    "sourcetype": SourceType,
 }
 
 

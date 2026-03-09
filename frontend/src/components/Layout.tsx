@@ -111,6 +111,7 @@ export function Layout() {
                 <NavLink to="/admin/service-accounts">Service Accounts</NavLink>
                 <NavLink to="/admin/ai-logs">AI Logs</NavLink>
                 <NavLink to="/admin/ai">AI Controls</NavLink>
+                <NavLink to="/admin/source-documents">Documents</NavLink>
               </>
             )}
           </div>

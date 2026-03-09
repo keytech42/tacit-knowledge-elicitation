@@ -66,5 +66,23 @@ async def trigger_review_assist(answer_id: uuid.UUID) -> dict | None:
     })
 
 
+async def trigger_extract_questions(
+    source_text: str,
+    document_title: str = "",
+    domain: str = "",
+    max_questions: int = 10,
+    source_document_id: str | None = None,
+) -> dict | None:
+    payload = {
+        "source_text": source_text,
+        "document_title": document_title,
+        "domain": domain,
+        "max_questions": max_questions,
+    }
+    if source_document_id:
+        payload["source_document_id"] = source_document_id
+    return await _post("/tasks/extract-questions", payload)
+
+
 async def get_task_status(task_id: str) -> dict | None:
     return await _get(f"/tasks/{task_id}")

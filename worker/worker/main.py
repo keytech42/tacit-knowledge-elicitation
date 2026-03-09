@@ -5,6 +5,7 @@ import uuid
 from fastapi import FastAPI, HTTPException
 
 from worker.schemas import (
+    ExtractQuestionsRequest,
     GenerateQuestionsRequest,
     ReviewAssistRequest,
     ScaffoldOptionsRequest,
@@ -12,6 +13,7 @@ from worker.schemas import (
     TaskStatusResponse,
 )
 from worker.tasks.question_gen import run_question_generation
+from worker.tasks.question_extract import run_question_extraction
 from worker.tasks.answer_scaffold import run_answer_scaffolding
 from worker.tasks.review_assist import run_review_assist
 
@@ -55,6 +57,18 @@ async def trigger_generate_questions(request: GenerateQuestionsRequest):
         domain=request.domain,
         count=request.count,
         context=request.context,
+    ))
+    return TaskResponse(task_id=task_id, status="accepted")
+
+
+@app.post("/tasks/extract-questions", response_model=TaskResponse, status_code=202)
+async def trigger_extract_questions(request: ExtractQuestionsRequest):
+    task_id = _create_task(run_question_extraction(
+        source_text=request.source_text,
+        document_title=request.document_title,
+        domain=request.domain,
+        max_questions=request.max_questions,
+        source_document_id=request.source_document_id,
     ))
     return TaskResponse(task_id=task_id, status="accepted")
 

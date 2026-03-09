@@ -38,6 +38,9 @@ async def create_question(
         title=request.title, body=request.body, category=request.category,
         review_policy=request.review_policy.model_dump() if request.review_policy else None,
         show_suggestions=request.show_suggestions,
+        source_type=request.source_type or "manual",
+        source_document_id=request.source_document_id,
+        source_passage=request.source_passage,
         created_by_id=current_user.id,
     )
     db.add(question)
