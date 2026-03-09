@@ -645,9 +645,9 @@ stateDiagram-v2
 
     note right of DRAFT: Author can edit freely<br>Admin can also edit
     note right of PUBLISHED: **Accepting answers**<br>Auto-triggers *scaffold-options*<br>Embedding generated on publish
-    note right of CLOSED: **Cascade**: rejects DRAFT, SUBMITTED,<br>UNDER_REVIEW, REVISION_REQUESTED answers<br>and supersedes their PENDING reviews.<br>*APPROVED answers are preserved.*<br>assigned_respondent cleared
-    note right of ARCHIVED: **Cascade**: rejects *all* remaining answers<br>including APPROVED ones.<br>No further modifications allowed.
-    note left of IN_REVIEW: Reject returns to DRAFT<br>*without* rejecting any answers
+    note right of CLOSED: Rejects DRAFT, SUBMITTED,<br>UNDER_REVIEW, REVISION_REQUESTED answers<br>and supersedes their PENDING reviews.<br>APPROVED answers are preserved.<br>assigned_respondent cleared
+    note right of ARCHIVED: Rejects *all* remaining answers<br>including APPROVED ones.<br>No further modifications allowed.
+    note left of IN_REVIEW: "Reject" returns to DRAFT<br>*without* rejecting any answers
 ```
 
 ### Answer States
@@ -667,7 +667,7 @@ stateDiagram-v2
     note right of SUBMITTED: Revision v1 created on first submit<br>Embedding generated<br>Auto-triggers *review-assist*
     note left of UNDER_REVIEW: Entered when reviewer creates or is assigned<br>Resolution only checks *current_version* reviews
     note right of APPROVED: *confirmed_by* and *confirmed_at* set<br>Remaining PENDING reviews **superseded**
-    note left of REVISION_REQUESTED: Resubmit updates revision in-place<br>(no version bump)<br>CHANGES_REQUESTED reviews **reset to PENDING**
+    note left of REVISION_REQUESTED: "Resubmit" updates revision in-place<br>(no version bump)<br>CHANGES_REQUESTED reviews **reset to PENDING**
     note right of REJECTED: Terminal state
 ```
 
