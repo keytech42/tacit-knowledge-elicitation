@@ -197,6 +197,121 @@ class TestNotifyRespondentAssigned:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests: notify_respondent_assigned — Slack thread mention
+# ---------------------------------------------------------------------------
+
+class TestRespondentAssignedThreadMention:
+    """When a question has a Slack thread, assigning a respondent posts a thread reply."""
+
+    async def test_thread_reply_posted_with_mention(self):
+        """Thread reply is posted mentioning the respondent when thread info provided."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_lookup_slack_user", new_callable=AsyncMock, return_value="U_RESP"), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock), \
+             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+            await slack.notify_respondent_assigned(
+                question_title="Q",
+                question_id="q-1",
+                respondent_email="r@test.com",
+                respondent_name="Respondent",
+                assigner_name="Admin",
+                slack_channel="C123",
+                slack_thread_ts="1234.5678",
+            )
+
+        # _post_message called for the thread reply
+        thread_calls = [c for c in mock_post.call_args_list if c.kwargs.get("thread_ts") == "1234.5678"]
+        assert len(thread_calls) == 1
+        thread_text = thread_calls[0].args[1]
+        assert "<@U_RESP>" in thread_text
+        assert "Admin" in thread_text
+
+    async def test_no_thread_reply_without_thread_info(self):
+        """No thread reply when slack_channel/slack_thread_ts not provided."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_lookup_slack_user", new_callable=AsyncMock, return_value="U_RESP"), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock), \
+             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+            await slack.notify_respondent_assigned(
+                question_title="Q",
+                question_id="q-1",
+                respondent_email="r@test.com",
+                respondent_name="Respondent",
+                assigner_name="Admin",
+                # No slack_channel/slack_thread_ts
+            )
+
+        mock_post.assert_not_called()
+
+    async def test_thread_reply_uses_display_name_when_no_email(self):
+        """Thread reply falls back to display name when email is None."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock), \
+             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+            await slack.notify_respondent_assigned(
+                question_title="Q",
+                question_id="q-1",
+                respondent_email=None,
+                respondent_name="No Email User",
+                assigner_name="Admin",
+                slack_channel="C123",
+                slack_thread_ts="1234.5678",
+            )
+
+        thread_calls = [c for c in mock_post.call_args_list if c.kwargs.get("thread_ts") == "1234.5678"]
+        assert len(thread_calls) == 1
+        thread_text = thread_calls[0].args[1]
+        assert "No Email User" in thread_text
+
+    async def test_dm_and_thread_reply_independent(self):
+        """DM failure doesn't prevent thread reply from being posted."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_lookup_slack_user", new_callable=AsyncMock, return_value=None), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock) as mock_dm, \
+             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+            await slack.notify_respondent_assigned(
+                question_title="Q",
+                question_id="q-1",
+                respondent_email="unknown@test.com",
+                respondent_name="Unknown",
+                assigner_name="Admin",
+                slack_channel="C123",
+                slack_thread_ts="1234.5678",
+            )
+
+        # DM not sent (user lookup failed)
+        mock_dm.assert_not_called()
+        # Thread reply still posted
+        thread_calls = [c for c in mock_post.call_args_list if c.kwargs.get("thread_ts") == "1234.5678"]
+        assert len(thread_calls) == 1
+
+    async def test_route_passes_thread_info(
+        self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
+    ):
+        """assign-respondent route passes slack_channel and slack_thread_ts to notification."""
+        q = Question(
+            title="Thread Q", body="B",
+            created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+            slack_channel="C_THREAD",
+            slack_thread_ts="9999.0001",
+        )
+        db.add(q)
+        await db.flush()
+
+        with patch("app.api.v1.questions.slack.notify_respondent_assigned", new_callable=AsyncMock) as mock_notify:
+            r = await client.post(
+                f"/api/v1/questions/{q.id}/assign-respondent",
+                json={"user_id": str(respondent_user.id)},
+                headers=auth_header(admin_user),
+            )
+            assert r.status_code == 200
+            call_kwargs = mock_notify.call_args.kwargs
+            assert call_kwargs["slack_channel"] == "C_THREAD"
+            assert call_kwargs["slack_thread_ts"] == "9999.0001"
+
+
+# ---------------------------------------------------------------------------
 # Unit tests: notify_changes_requested_dm
 # ---------------------------------------------------------------------------
 

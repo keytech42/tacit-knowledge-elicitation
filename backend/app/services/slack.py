@@ -21,6 +21,7 @@ from app.templates.slack import (
     fmt_question_published,
     fmt_question_rejected,
     fmt_respondent_assigned,
+    fmt_respondent_assigned_thread,
     fmt_review_verdict,
     fmt_revision_requested,
 )
@@ -183,20 +184,31 @@ async def notify_respondent_assigned(
     respondent_email: str | None,
     respondent_name: str,
     assigner_name: str,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
-    """DM the respondent when they are assigned to a question."""
-    if not _is_enabled() or not respondent_email:
+    """DM the respondent and optionally post a thread mention when assigned."""
+    if not _is_enabled():
         return
-    slack_user_id = await _lookup_slack_user(respondent_email)
-    if not slack_user_id:
-        return
-    text = fmt_respondent_assigned(
-        respondent_name=respondent_name,
-        assigner_name=assigner_name,
-        question_title=question_title,
-        question_link=_question_link(question_id),
-    )
-    await _send_dm(slack_user_id, text)
+    # Send DM to the respondent
+    if respondent_email:
+        slack_user_id = await _lookup_slack_user(respondent_email)
+        if slack_user_id:
+            text = fmt_respondent_assigned(
+                respondent_name=respondent_name,
+                assigner_name=assigner_name,
+                question_title=question_title,
+                question_link=_question_link(question_id),
+            )
+            await _send_dm(slack_user_id, text)
+    # Post thread reply if the question has a Slack thread
+    if slack_channel and slack_thread_ts:
+        mention = await _mention_or_name(respondent_email, respondent_name)
+        thread_text = fmt_respondent_assigned_thread(
+            respondent_mention=mention,
+            assigner_name=assigner_name,
+        )
+        await _post_message(slack_channel, thread_text, thread_ts=slack_thread_ts)
 
 
 async def notify_changes_requested_dm(

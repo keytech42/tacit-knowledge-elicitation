@@ -16,6 +16,10 @@ class ReviewUpdate(BaseModel):
     comment: str | None = None
 
 
+class AssignReviewerRequest(BaseModel):
+    reviewer_id: uuid.UUID
+
+
 class ReviewCommentCreate(BaseModel):
     body: str
     parent_id: uuid.UUID | None = None

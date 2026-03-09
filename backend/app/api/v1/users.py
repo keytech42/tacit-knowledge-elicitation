@@ -17,6 +17,32 @@ async def get_current_user_info(current_user: CurrentUser):
     return current_user
 
 
+@router.get("/search", response_model=UserListResponse)
+async def search_users(
+    current_user: User = require_role(RoleName.REVIEWER, RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+    q: str = "",
+    role: str | None = None,
+    limit: int = 20,
+):
+    """Search users by name/email with optional role filter. Available to reviewers and admins."""
+    query = select(User).where(User.user_type == "human", User.is_active == True)  # noqa: E712
+
+    if role:
+        query = query.join(User.roles).where(Role.name == role)
+
+    if q.strip():
+        pattern = f"%{q.strip().lower()}%"
+        query = query.where(
+            func.lower(User.display_name).like(pattern)
+            | func.lower(func.coalesce(User.email, "")).like(pattern)
+        )
+
+    result = await db.execute(query.order_by(User.display_name).limit(min(limit, 50)))
+    users = list(result.scalars().unique().all())
+    return UserListResponse(users=users, total=len(users))
+
+
 @router.get("", response_model=UserListResponse)
 async def list_users(
     current_user: User = require_role(RoleName.ADMIN),

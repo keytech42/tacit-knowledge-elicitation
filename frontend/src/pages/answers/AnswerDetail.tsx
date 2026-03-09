@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, ai, Answer, AnswerRevision, Review, TaskStatus } from "@/api/client";
+import { api, ai, Answer, AnswerRevision, Review, TaskStatus, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
+import { UserPicker } from "@/components/UserPicker";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
   if ((isAdmin || isAuthor) && (status === "draft" || status === "revision_requested")) return { enabled: true };
@@ -37,17 +38,6 @@ function revisePermission(isAdmin: boolean, isAuthor: boolean, status: string) {
   return { enabled: false, reason: "Only approved answers can be revised" };
 }
 
-function assignReviewPermission(hasReviewerRole: boolean, isAdmin: boolean, status: string) {
-  if ((hasReviewerRole || isAdmin) && (status === "submitted" || status === "under_review")) return { enabled: true };
-  if (status === "draft")
-    return { enabled: false, reason: "Answer must be submitted first" };
-  if (status === "approved" || status === "rejected")
-    return { enabled: false, reason: "Review cycle is complete" };
-  if (status === "revision_requested")
-    return { enabled: false, reason: "Awaiting author revision", hint: "A review can be assigned after resubmission" };
-  return { enabled: false, reason: "Only reviewers or admins can assign reviews" };
-}
-
 export function AnswerDetail() {
   const { id } = useParams<{ id: string }>();
   const { user, hasRole } = useAuth();
@@ -61,7 +51,8 @@ export function AnswerDetail() {
   const [diffFrom, setDiffFrom] = useState<number>(0);
   const [diffTo, setDiffTo] = useState<number>(0);
   const [diffText, setDiffText] = useState<string | null>(null);
-  const [showAssignReview, setShowAssignReview] = useState(false);
+  const [assigningReviewer, setAssigningReviewer] = useState(false);
+  const [pickedReviewer, setPickedReviewer] = useState<User | null>(null);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [aiReviewTask, setAiReviewTask] = useState<TaskStatus | null>(null);
@@ -140,16 +131,21 @@ export function AnswerDetail() {
     }
   };
 
-  const handleCreateReview = async () => {
-    if (!id) return;
+  const handleAssignReviewer = async (selectedUser: User | null) => {
+    if (!id || !selectedUser) {
+      setPickedReviewer(null);
+      return;
+    }
+    setAssigningReviewer(true);
     try {
-      const review = await api.post<Review>("/reviews", { target_type: "answer", target_id: id });
-      setShowAssignReview(false);
+      const review = await ai.assignReviewer(id, selectedUser.id);
       setReviews([...reviews, review]);
+      setPickedReviewer(null);
       setError("");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not create review");
+      setError(err instanceof Error ? err.message : "Could not assign reviewer");
     }
+    setAssigningReviewer(false);
   };
 
   const handleAiReview = async () => {
@@ -187,7 +183,7 @@ export function AnswerDetail() {
   const editPerm = editPermission(isAdmin, isAuthor, answer.status);
   const submitPerm = submitPermission(isAdmin, isAuthor, answer.status);
   const revisePerm = revisePermission(isAdmin, isAuthor, answer.status);
-  const assignPerm = assignReviewPermission(isReviewer, isAdmin, answer.status);
+  const canAssignReview = (isReviewer || isAdmin) && (answer.status === "submitted" || answer.status === "under_review");
 
   // Use answer_version from the API (set at review creation time)
   const reviewsWithMeta = reviews.map((rev) => ({
@@ -241,35 +237,38 @@ export function AnswerDetail() {
           </div>
         )}
 
-        {/* Reviewer actions — always visible */}
-        {!editing && !revising && showReviewerActions && (
-          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
-            <span className="text-xs text-muted-foreground self-center mr-1">Review:</span>
-            {!showAssignReview ? (
-              <ActionButton label="Assign Review" onClick={() => setShowAssignReview(true)} enabled={assignPerm.enabled} disabledReason={assignPerm.reason} disabledHint={assignPerm.hint} variant="purple" />
-            ) : (
-              <>
-                <button onClick={handleCreateReview} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm active:scale-[0.97] transition-all duration-150">Confirm — Assign to Me</button>
-                <button onClick={() => setShowAssignReview(false)} className="border border-border px-3 py-1.5 rounded text-sm active:scale-[0.97] transition-all duration-150">Cancel</button>
-              </>
-            )}
-            {isAdmin && (answer.status === "submitted" || answer.status === "under_review") && (
-              <button
-                onClick={handleAiReview}
-                disabled={aiReviewLoading}
-                className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 ml-auto active:scale-[0.97] transition-all duration-150"
-              >
-                {aiReviewLoading ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Running...
-                  </span>
-                ) : "AI Review"}
-              </button>
-            )}
+        {/* Reviewer actions */}
+        {!editing && !revising && showReviewerActions && canAssignReview && (
+          <div className="mt-3 pt-3 border-t border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">Assign reviewer:</span>
+              {isAdmin && (
+                <button
+                  onClick={handleAiReview}
+                  disabled={aiReviewLoading}
+                  className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 ml-auto active:scale-[0.97] transition-all duration-150"
+                >
+                  {aiReviewLoading ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Running...
+                    </span>
+                  ) : "AI Review"}
+                </button>
+              )}
+            </div>
+            <UserPicker
+              role="reviewer"
+              selected={pickedReviewer}
+              onSelect={handleAssignReviewer}
+              placeholder="Search reviewers..."
+              disabled={assigningReviewer}
+              excludeIds={[answer.author.id]}
+              prioritizeUser={user && (isReviewer || isAdmin) ? user as User : null}
+            />
           </div>
         )}
         {aiReviewTask && (

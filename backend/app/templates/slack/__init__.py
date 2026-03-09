@@ -12,7 +12,7 @@ from app.templates.slack.answers import (
     fmt_answer_submitted,
     fmt_revision_requested,
 )
-from app.templates.slack.assignments import fmt_respondent_assigned
+from app.templates.slack.assignments import fmt_respondent_assigned, fmt_respondent_assigned_thread
 from app.templates.slack.questions import (
     fmt_question_closed,
     fmt_question_published,
@@ -31,6 +31,7 @@ __all__ = [
     "fmt_question_published",
     "fmt_question_rejected",
     "fmt_respondent_assigned",
+    "fmt_respondent_assigned_thread",
     "fmt_review_verdict",
     "fmt_revision_requested",
 ]

@@ -1347,3 +1347,88 @@ class TestMemberManagement:
         assert r.status_code == 200
         page2 = r.json()
         assert len(page2["users"]) <= 2
+
+
+class TestUserSearch:
+    """Tests for GET /users/search — fuzzy search with role filter."""
+
+    async def test_search_returns_users(
+        self, client: AsyncClient, admin_user: User, reviewer_user: User,
+    ):
+        """Basic search returns matching users."""
+        r = await client.get("/api/v1/users/search", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        data = r.json()
+        assert "users" in data
+        assert "total" in data
+        assert data["total"] >= 1
+
+    async def test_search_by_name(
+        self, client: AsyncClient, admin_user: User, reviewer_user: User,
+    ):
+        """Search by partial display name."""
+        name_part = reviewer_user.display_name[:4]
+        r = await client.get(f"/api/v1/users/search?q={name_part}", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        ids = {u["id"] for u in r.json()["users"]}
+        assert str(reviewer_user.id) in ids
+
+    async def test_search_by_role_filter(
+        self, client: AsyncClient, admin_user: User, reviewer_user: User,
+    ):
+        """Filter users by role."""
+        r = await client.get("/api/v1/users/search?role=reviewer", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        users = r.json()["users"]
+        assert len(users) >= 1
+        # All returned users should have the reviewer role
+        for u in users:
+            role_names = {role["name"] for role in u["roles"]}
+            assert "reviewer" in role_names
+
+    async def test_search_excludes_service_accounts(
+        self, client: AsyncClient, admin_user: User, db,
+    ):
+        """Search only returns human users, not service accounts."""
+        r = await client.get("/api/v1/users/search", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        for u in r.json()["users"]:
+            assert u["user_type"] == "human"
+
+    async def test_reviewer_can_search(
+        self, client: AsyncClient, reviewer_user: User,
+    ):
+        """Reviewers (not just admins) can use the search endpoint."""
+        r = await client.get("/api/v1/users/search", headers=auth_header(reviewer_user))
+        assert r.status_code == 200
+
+    async def test_respondent_cannot_search(
+        self, client: AsyncClient, respondent_user: User,
+    ):
+        """Respondent role cannot access user search."""
+        r = await client.get("/api/v1/users/search", headers=auth_header(respondent_user))
+        assert r.status_code == 403
+
+    async def test_author_cannot_search(
+        self, client: AsyncClient, author_user: User,
+    ):
+        """Author role cannot access user search."""
+        r = await client.get("/api/v1/users/search", headers=auth_header(author_user))
+        assert r.status_code == 403
+
+    async def test_search_no_matches(
+        self, client: AsyncClient, admin_user: User,
+    ):
+        """Search with non-matching query returns empty."""
+        r = await client.get("/api/v1/users/search?q=zzzznonexistent", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        assert r.json()["total"] == 0
+        assert r.json()["users"] == []
+
+    async def test_search_limit_capped(
+        self, client: AsyncClient, admin_user: User,
+    ):
+        """Limit is capped at 50 even if larger value requested."""
+        r = await client.get("/api/v1/users/search?limit=100", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        assert len(r.json()["users"]) <= 50
