@@ -224,6 +224,28 @@ export const ai = {
       max_questions: maxQuestions,
     }),
 
+  extractFromFile: async (file: File, documentTitle = "", domain = "", maxQuestions = 10) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("document_title", documentTitle);
+    formData.append("domain", domain);
+    formData.append("max_questions", String(maxQuestions));
+
+    const token = localStorage.getItem("token");
+    const resp = await fetch(`${API_BASE}/ai/extract-from-file`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+    return resp.json() as Promise<TaskAccepted>;
+  },
+
   assignRespondent: (questionId: string, userId: string) =>
     api.post<Question>(`/questions/${questionId}/assign-respondent`, { user_id: userId }),
 

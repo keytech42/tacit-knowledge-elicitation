@@ -569,6 +569,8 @@ export function AIControls() {
   const [extractMaxQuestions, setExtractMaxQuestions] = useState(10);
   const [extractTask, setExtractTask] = useState<TaskStatus | null>(null);
   const [extractLoading, setExtractLoading] = useState(false);
+  const [extractMode, setExtractMode] = useState<"text" | "file">("text");
+  const [extractFile, setExtractFile] = useState<File | null>(null);
 
   // ---- Scaffold options state ----
   const [scaffoldQuestion, setScaffoldQuestion] = useState<Question | null>(null);
@@ -658,12 +660,20 @@ export function AIControls() {
   };
 
   const handleExtract = async () => {
-    if (!extractSource.trim()) return;
+    if (extractMode === "text" && !extractSource.trim()) return;
+    if (extractMode === "file" && !extractFile) return;
     setExtractLoading(true);
     try {
-      const result = await ai.extractQuestions(
-        extractSource, extractTitle, extractDomain, extractMaxQuestions
-      );
+      let result;
+      if (extractMode === "file" && extractFile) {
+        result = await ai.extractFromFile(
+          extractFile, extractTitle, extractDomain, extractMaxQuestions
+        );
+      } else {
+        result = await ai.extractQuestions(
+          extractSource, extractTitle, extractDomain, extractMaxQuestions
+        );
+      }
       setExtractTask({ task_id: result.task_id, status: result.status });
       pollTask(result.task_id, setExtractTask);
     } catch (e: unknown) {
@@ -861,6 +871,20 @@ export function AIControls() {
         <p className="text-sm text-muted-foreground mb-4">
           Extract knowledge elicitation questions from source documents using AI analysis.
         </p>
+        <div className="flex gap-2 mb-4">
+          <button
+            className={`px-3 py-1 rounded text-sm ${extractMode === "text" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+            onClick={() => setExtractMode("text")}
+          >
+            Paste Text
+          </button>
+          <button
+            className={`px-3 py-1 rounded text-sm ${extractMode === "file" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+            onClick={() => setExtractMode("file")}
+          >
+            Upload File
+          </button>
+        </div>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium mb-1">Document Title</label>
@@ -881,16 +905,34 @@ export function AIControls() {
             />
           </div>
         </div>
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Source Text *</label>
-          <textarea
-            value={extractSource}
-            onChange={(e) => setExtractSource(e.target.value)}
-            placeholder="Paste your document content here..."
-            rows={10}
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
-          />
-        </div>
+        {extractMode === "text" && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Source Text *</label>
+            <textarea
+              value={extractSource}
+              onChange={(e) => setExtractSource(e.target.value)}
+              placeholder="Paste your document content here..."
+              rows={10}
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+            />
+          </div>
+        )}
+        {extractMode === "file" && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">File *</label>
+            <input
+              type="file"
+              accept=".txt,.md,.pdf,.docx,.json"
+              onChange={(e) => setExtractFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:opacity-90"
+            />
+            {extractFile && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {extractFile.name} ({(extractFile.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
+          </div>
+        )}
         <div className="mb-4">
           <label className="block text-sm font-medium mb-1">Max Questions</label>
           <input
@@ -904,7 +946,11 @@ export function AIControls() {
         </div>
         <button
           onClick={handleExtract}
-          disabled={extractLoading || !extractSource.trim()}
+          disabled={
+            extractLoading ||
+            (extractMode === "text" && !extractSource.trim()) ||
+            (extractMode === "file" && !extractFile)
+          }
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium disabled:opacity-50 transition-opacity"
         >
           {extractLoading ? "Submitting..." : "Extract Questions"}
