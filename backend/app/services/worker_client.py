@@ -84,5 +84,26 @@ async def trigger_extract_questions(
     return await _post("/tasks/extract-questions", payload)
 
 
+async def trigger_recommend(
+    question: dict, candidates: list[dict], top_k: int = 5,
+) -> dict | None:
+    """Synchronous call to worker for LLM-based recommendation (longer timeout)."""
+    if not _is_enabled():
+        return None
+    url = f"{settings.WORKER_URL.rstrip('/')}/tasks/recommend"
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, json={
+                "question": question,
+                "candidates": candidates,
+                "top_k": top_k,
+            })
+            resp.raise_for_status()
+            return resp.json()
+    except Exception:
+        logger.exception("Worker call failed: POST /tasks/recommend")
+        return None
+
+
 async def get_task_status(task_id: str) -> dict | None:
     return await _get(f"/tasks/{task_id}")
