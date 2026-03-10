@@ -303,18 +303,22 @@ async def update_review(
         answer = answer_result.scalar_one_or_none()
         answer_status_before = answer.status if answer else None
         await resolve_answer_reviews(review.target_id, db)
+        # Flush so answer status change is persisted before refresh
+        await db.flush()
 
     await db.refresh(review)
     await _enrich_review_context([review], db)
 
     # Notify SSE subscribers about answer status change (from review resolution)
-    if review.target_type == ReviewTargetType.ANSWER.value and answer and answer.status != answer_status_before:
-        publish_event(str(answer.question_id), {
-            "type": "answer_status_changed",
-            "answer_id": str(answer.id),
-            "status": answer.status,
-            "previous_status": answer_status_before,
-        })
+    if review.target_type == ReviewTargetType.ANSWER.value and answer:
+        await db.refresh(answer)
+        if answer.status != answer_status_before:
+            publish_event(str(answer.question_id), {
+                "type": "answer_status_changed",
+                "answer_id": str(answer.id),
+                "status": answer.status,
+                "previous_status": answer_status_before,
+            })
 
     # Slack notifications for review verdicts on answers
     if review.target_type == ReviewTargetType.ANSWER.value and answer:
