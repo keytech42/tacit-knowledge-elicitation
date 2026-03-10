@@ -54,3 +54,21 @@ async def test_different_channels_isolated():
         received = await asyncio.wait_for(q1.get(), timeout=1)
         assert received == {"type": "for_q1"}
         assert q2.empty()
+
+
+@pytest.mark.asyncio
+async def test_queue_full_drops_event(caplog):
+    """When a subscriber's queue is full (64 items), new events are dropped with a warning."""
+    async with subscribe("q1") as queue:
+        # Fill the queue to capacity (maxsize=64)
+        for i in range(64):
+            publish("q1", {"type": "fill", "i": i})
+
+        # 65th event should be dropped
+        publish("q1", {"type": "dropped"})
+        assert "SSE queue full" in caplog.text
+
+        # Queue still has exactly 64 items, all the originals
+        assert queue.qsize() == 64
+        first = await asyncio.wait_for(queue.get(), timeout=1)
+        assert first == {"type": "fill", "i": 0}

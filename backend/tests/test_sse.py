@@ -387,3 +387,93 @@ class TestSSEEventPublishing:
             assert event["answer_id"] == answer_id
             assert event["status"] == "under_review"
             assert event["previous_status"] == "submitted"
+
+    async def test_changes_requested_verdict_publishes_event(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        reviewer_user: User,
+        respondent_user: User,
+        published_question: Question,
+        db: AsyncSession,
+    ):
+        """changes_requested verdict publishes revision_requested status event."""
+        qid = str(published_question.id)
+
+        resp = await client.post(
+            f"/api/v1/questions/{qid}/answers",
+            json={"body": "Answer for changes_requested test"},
+            headers=auth_header(respondent_user),
+        )
+        answer_id = resp.json()["id"]
+        await client.post(f"/api/v1/answers/{answer_id}/submit", headers=auth_header(respondent_user))
+
+        resp = await client.post(
+            f"/api/v1/reviews/assign/{answer_id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        review_id = resp.json()["id"]
+
+        async with subscribe(qid) as queue:
+            resp = await client.patch(
+                f"/api/v1/reviews/{review_id}",
+                json={"verdict": "changes_requested", "comment": "Needs more detail"},
+                headers=auth_header(reviewer_user),
+            )
+            assert resp.status_code == 200
+
+            event = await asyncio.wait_for(queue.get(), timeout=2)
+            assert event["type"] == "answer_status_changed"
+            assert event["answer_id"] == answer_id
+            assert event["status"] == "revision_requested"
+            assert event["previous_status"] == "under_review"
+
+    async def test_sse_event_reflects_committed_state(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        reviewer_user: User,
+        respondent_user: User,
+        published_question: Question,
+        db: AsyncSession,
+    ):
+        """SSE event status matches the DB when re-fetched (commit-before-publish).
+
+        This guards against a race condition where the event is published
+        before the transaction commits, causing re-fetches to see stale data.
+        """
+        qid = str(published_question.id)
+
+        resp = await client.post(
+            f"/api/v1/questions/{qid}/answers",
+            json={"body": "Answer for commit timing test"},
+            headers=auth_header(respondent_user),
+        )
+        answer_id = resp.json()["id"]
+        await client.post(f"/api/v1/answers/{answer_id}/submit", headers=auth_header(respondent_user))
+
+        resp = await client.post(
+            f"/api/v1/reviews/assign/{answer_id}",
+            json={"reviewer_id": str(reviewer_user.id)},
+            headers=auth_header(admin_user),
+        )
+        review_id = resp.json()["id"]
+
+        async with subscribe(qid) as queue:
+            await client.patch(
+                f"/api/v1/reviews/{review_id}",
+                json={"verdict": "approved"},
+                headers=auth_header(reviewer_user),
+            )
+
+            event = await asyncio.wait_for(queue.get(), timeout=2)
+
+            # Immediately re-fetch the answer — the event's status must
+            # match the DB state, proving commit happened before publish.
+            resp = await client.get(
+                f"/api/v1/answers/{answer_id}",
+                headers=auth_header(respondent_user),
+            )
+            assert resp.status_code == 200
+            assert resp.json()["status"] == event["status"]

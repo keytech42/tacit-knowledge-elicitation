@@ -119,7 +119,7 @@ Python 3.12 is required. Tests cannot run outside Docker without it.
 ### Test Structure
 
 - `conftest.py`: Fixtures for db sessions, HTTP client, user/role factories. Enables the `vector` pgvector extension before creating tables.
-- Each test file covers one domain: `test_admin_queue.py`, `test_ai_integration.py`, `test_ai_logging.py`, `test_answer_options.py`, `test_answers.py`, `test_auth.py`, `test_e2e_workflows.py`, `test_file_parser.py`, `test_fix_integration.py`, `test_permissions.py`, `test_questions.py`, `test_recommendation.py`, `test_respondent_assignment.py`, `test_reviews.py`, `test_slack_dm.py`, `test_slack_threads.py`, `test_slack.py`, `test_source_documents.py`, `test_startup.py`, `test_state_consistency.py`
+- Each test file covers one domain: `test_admin_queue.py`, `test_ai_integration.py`, `test_ai_logging.py`, `test_answer_options.py`, `test_answers.py`, `test_auth.py`, `test_config_integrity.py`, `test_e2e_workflows.py`, `test_event_bus.py`, `test_file_parser.py`, `test_fix_integration.py`, `test_permissions.py`, `test_questions.py`, `test_recommendation.py`, `test_respondent_assignment.py`, `test_reviews.py`, `test_slack_dm.py`, `test_slack_threads.py`, `test_slack.py`, `test_source_documents.py`, `test_sse.py`, `test_startup.py`, `test_state_consistency.py`
 
 ### Writing Tests
 
