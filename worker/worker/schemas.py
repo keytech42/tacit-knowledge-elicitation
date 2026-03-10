@@ -79,6 +79,7 @@ class CandidateAnswerSummary(BaseModel):
     question_title: str = "?"
     category: str = "none"
     status: str = "unknown"
+    body_excerpt: str = ""
 
 
 class CandidateProfile(BaseModel):

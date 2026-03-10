@@ -6,10 +6,11 @@ Given a question and a list of candidate respondents (with their answer history)
 rank the candidates by how well-suited they are to answer the question.
 
 Consider:
-- **Expertise match**: Does the respondent's answer history show relevant domain knowledge?
-- **Answer quality**: Has the respondent been approved or had answers rejected?
+- **Expertise match**: Does the respondent's answer history show relevant domain knowledge? \
+Look at both the topics they've answered and the quality of their writing.
+- **Answer quality**: Has the respondent consistently produced approved answers, or have \
+they had answers rejected or sent back for revision?
 - **Category experience**: Has the respondent answered questions in the same category?
-- **Recency**: Is the respondent recently active on the platform?
 
 Be concise in your reasoning — one sentence per respondent explaining why they are \
 or are not a good fit.\
@@ -41,6 +42,9 @@ def build_user_prompt(
                     f"- [{status_label}] Q: \"{ans.get('question_title', '?')}\" "
                     f"(category: {ans.get('category', 'none')})"
                 )
+                body = ans.get("body_excerpt", "")
+                if body:
+                    parts.append(f"  Answer excerpt: \"{body}\"")
         else:
             parts.append("No answer history.")
         parts.append("")

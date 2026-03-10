@@ -93,10 +93,12 @@ async def _build_candidate_context(
             }
         if len(candidates_map[author_id]["answer_summaries"]) < _MAX_ANSWERS_PER_CANDIDATE:
             q = ans.question
+            body_excerpt = (ans.body[:200] + "...") if len(ans.body) > 200 else ans.body
             candidates_map[author_id]["answer_summaries"].append({
                 "question_title": q.title if q else "?",
                 "category": q.category if q else "none",
                 "status": ans.status,
+                "body_excerpt": body_excerpt,
             })
 
     return question_dict, list(candidates_map.values())

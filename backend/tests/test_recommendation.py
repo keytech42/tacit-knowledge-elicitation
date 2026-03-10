@@ -165,7 +165,7 @@ class TestBuildCandidateContext:
         db.add(q)
         await db.flush()
 
-        a = Answer(body="My answer", question_id=q.id, author_id=respondent_user.id, status="approved")
+        a = Answer(body="My detailed answer about deployment", question_id=q.id, author_id=respondent_user.id, status="approved")
         db.add(a)
         await db.flush()
 
@@ -173,8 +173,28 @@ class TestBuildCandidateContext:
         assert q_dict is not None
         assert len(candidates) == 1
         assert candidates[0]["user_id"] == str(respondent_user.id)
-        assert len(candidates[0]["answer_summaries"]) == 1
-        assert candidates[0]["answer_summaries"][0]["status"] == "approved"
+        summary = candidates[0]["answer_summaries"][0]
+        assert summary["status"] == "approved"
+        assert summary["question_title"] == "Test Q"
+        assert "deployment" in summary["body_excerpt"]
+
+    async def test_truncates_long_answer_body(self, db, admin_user, respondent_user):
+        from app.models.answer import Answer
+        from app.models.question import Question
+
+        q = Question(title="Test Q", body="Body", status="published", created_by_id=admin_user.id)
+        db.add(q)
+        await db.flush()
+
+        long_body = "A" * 500
+        a = Answer(body=long_body, question_id=q.id, author_id=respondent_user.id, status="approved")
+        db.add(a)
+        await db.flush()
+
+        _, candidates = await _build_candidate_context(db, q.id)
+        excerpt = candidates[0]["answer_summaries"][0]["body_excerpt"]
+        assert len(excerpt) == 203  # 200 chars + "..."
+        assert excerpt.endswith("...")
 
 
 # ---------------------------------------------------------------------------
