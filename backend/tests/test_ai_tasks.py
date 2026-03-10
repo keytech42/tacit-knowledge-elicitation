@@ -10,6 +10,14 @@ from app.models.ai_task import AITask, AITaskType, AITaskStatus
 from tests.conftest import auth_header
 
 
+@pytest.fixture()
+def enable_worker():
+    """Patch settings.WORKER_URL so _require_worker() doesn't raise 503."""
+    with patch("app.api.v1.worker_triggers.settings") as mock_settings:
+        mock_settings.WORKER_URL = "http://fake-worker:8001"
+        yield mock_settings
+
+
 @pytest.mark.asyncio
 async def test_aitasktype_values_are_lowercase():
     for member in AITaskType:
@@ -28,7 +36,7 @@ async def test_aitaskstatus_values_are_lowercase():
 
 
 @pytest.mark.asyncio
-async def test_generate_questions_creates_ai_task(client, db, admin_user):
+async def test_generate_questions_creates_ai_task(client, db, admin_user, enable_worker):
     with patch("app.services.worker_client.trigger_generate_questions", new_callable=AsyncMock) as mock_trigger:
         mock_trigger.return_value = {"task_id": "worker-123", "status": "accepted"}
 
@@ -52,7 +60,7 @@ async def test_generate_questions_creates_ai_task(client, db, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_scaffold_options_creates_ai_task(client, db, admin_user):
+async def test_scaffold_options_creates_ai_task(client, db, admin_user, enable_worker):
     question_id = str(uuid.uuid4())
     with patch("app.services.worker_client.trigger_scaffold_options", new_callable=AsyncMock) as mock_trigger:
         mock_trigger.return_value = {"task_id": "worker-456", "status": "accepted"}
@@ -69,7 +77,7 @@ async def test_scaffold_options_creates_ai_task(client, db, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_review_assist_creates_ai_task(client, db, admin_user):
+async def test_review_assist_creates_ai_task(client, db, admin_user, enable_worker):
     answer_id = str(uuid.uuid4())
     with patch("app.services.worker_client.trigger_review_assist", new_callable=AsyncMock) as mock_trigger:
         mock_trigger.return_value = {"task_id": "worker-789", "status": "accepted"}
@@ -85,7 +93,7 @@ async def test_review_assist_creates_ai_task(client, db, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_extract_questions_creates_source_doc_and_ai_task(client, db, admin_user):
+async def test_extract_questions_creates_source_doc_and_ai_task(client, db, admin_user, enable_worker):
     """Extract-questions trigger should create both a SourceDocument and an AITask."""
     with patch("app.services.worker_client.trigger_extract_questions", new_callable=AsyncMock) as mock_trigger:
         mock_trigger.return_value = {"task_id": "worker-extract-1", "status": "accepted"}
@@ -112,7 +120,7 @@ async def test_extract_questions_creates_source_doc_and_ai_task(client, db, admi
 
 
 @pytest.mark.asyncio
-async def test_worker_failure_marks_task_failed(client, db, admin_user):
+async def test_worker_failure_marks_task_failed(client, db, admin_user, enable_worker):
     with patch("app.services.worker_client.trigger_generate_questions", new_callable=AsyncMock) as mock_trigger:
         mock_trigger.return_value = None  # Worker didn't respond
 
