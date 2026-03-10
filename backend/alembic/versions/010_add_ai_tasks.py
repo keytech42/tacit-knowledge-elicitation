@@ -21,12 +21,14 @@ def upgrade() -> None:
     aitasktype = sa.Enum(
         "generate_questions", "extract_questions", "scaffold_options", "review_assist",
         name="aitasktype",
+        create_type=False,
     )
     aitasktype.create(op.get_bind(), checkfirst=True)
 
     aitaskstatus = sa.Enum(
         "pending", "running", "completed", "failed", "cancelled",
         name="aitaskstatus",
+        create_type=False,
     )
     aitaskstatus.create(op.get_bind(), checkfirst=True)
 
