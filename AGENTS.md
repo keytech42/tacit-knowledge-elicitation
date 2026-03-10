@@ -191,7 +191,17 @@ The backend proxies trigger requests via `POST /api/v1/ai/*` endpoints (admin-on
 Backend services for the worker integration:
 - `app/services/worker_client.py` — fire-and-forget HTTP calls to worker (wrapped in try/except)
 - `app/services/embeddings.py` — embedding generation via litellm (optional, guarded by `EMBEDDING_MODEL`)
-- `app/services/recommendation.py` — respondent recommendation using pgvector cosine similarity
+- `app/services/recommendation.py` — respondent recommendation (pgvector cosine similarity or LLM-based via worker, controlled by `RECOMMENDATION_STRATEGY`)
+
+### Recommendation Strategy
+
+| Strategy | Set in `.env` | What it does | Requirements |
+|----------|--------------|--------------|--------------|
+| `auto` (default) | `RECOMMENDATION_STRATEGY=auto` | Uses embeddings if `EMBEDDING_MODEL` is set, otherwise falls back to LLM | Either embedding or worker infra |
+| `llm` | `RECOMMENDATION_STRATEGY=llm` | Sends candidate answer history to Haiku for scoring | `WORKER_URL` + `ANTHROPIC_API_KEY` |
+| `embedding` | `RECOMMENDATION_STRATEGY=embedding` | pgvector cosine similarity on answer embeddings | `EMBEDDING_MODEL` + embedding server |
+
+**Quickest setup** (no GPU needed): set `RECOMMENDATION_STRATEGY=llm` and configure `WORKER_URL` + `ANTHROPIC_API_KEY`. The worker defaults to `anthropic/claude-haiku-4-5-20251001` — override with `RECOMMENDATION_MODEL` if desired.
 
 ### Embeddings and pgvector
 

@@ -76,6 +76,16 @@ The platform includes optional LLM-powered capabilities via a separate worker se
 | **Review assistance** | Auto on submit or on-demand | AI-assisted preliminary review with confidence scoring |
 | **Respondent recommendation** | On-demand | Embedding similarity (pgvector) or LLM-based scoring (Haiku) — configurable via `RECOMMENDATION_STRATEGY` |
 
+#### Recommendation Strategy
+
+| Strategy | Set in `.env` | What it does | Requirements |
+|----------|--------------|--------------|--------------|
+| `auto` (default) | `RECOMMENDATION_STRATEGY=auto` | Uses embeddings if `EMBEDDING_MODEL` is set, otherwise falls back to LLM | Either embedding or worker infra |
+| `llm` | `RECOMMENDATION_STRATEGY=llm` | Sends candidate answer history to Haiku for scoring | `WORKER_URL` + `ANTHROPIC_API_KEY` |
+| `embedding` | `RECOMMENDATION_STRATEGY=embedding` | pgvector cosine similarity on answer embeddings | `EMBEDDING_MODEL` + embedding server |
+
+**Quickest setup** (no GPU needed): set `RECOMMENDATION_STRATEGY=llm` and configure `WORKER_URL` + `ANTHROPIC_API_KEY`. The worker defaults to `anthropic/claude-haiku-4-5-20251001` — override with `RECOMMENDATION_MODEL` if desired.
+
 ### Setup
 
 1. Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) in `.env`
