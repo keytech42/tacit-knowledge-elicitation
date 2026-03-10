@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
+
 import pytest
 
 
@@ -43,6 +45,20 @@ def _require_repo_root() -> Path:
     if root is None:
         pytest.skip("Repo root not accessible (running inside Docker container)")
     return root
+
+
+def _get_compose_service_env(service: str) -> set[str]:
+    """Parse docker-compose.yml and return the set of env var names for a service."""
+    root = _require_repo_root()
+    compose_path = root / "docker-compose.yml"
+    compose = yaml.safe_load(compose_path.read_text())
+    env = compose.get("services", {}).get(service, {}).get("environment", {})
+    # environment can be a dict (KEY: value) or a list (KEY=value)
+    if isinstance(env, dict):
+        return set(env.keys())
+    if isinstance(env, list):
+        return {item.split("=", 1)[0] for item in env}
+    return set()
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +143,15 @@ class TestFrontendUrlConfig:
         assert link.endswith(">"), "Slack link must end with '>'"
         assert "|View answer>" in link, "Slack link must contain |text>"
 
+    def test_frontend_url_in_docker_compose(self):
+        """docker-compose.yml must pass FRONTEND_URL to the api service."""
+        api_env = _get_compose_service_env("api")
+        assert "FRONTEND_URL" in api_env, (
+            "FRONTEND_URL is not passed to the api service in "
+            "docker-compose.yml — Slack notifications will use the "
+            "hardcoded default instead of the host environment variable"
+        )
+
 
 # ---------------------------------------------------------------------------
 # 2. RECOMMENDATION_MODEL must be accessible to the worker service
@@ -204,11 +229,8 @@ class TestRecommendationModelConfig:
 
     def test_recommendation_model_in_docker_compose(self):
         """docker-compose.yml must pass RECOMMENDATION_MODEL to the worker service."""
-        root = _require_repo_root()
-        compose_path = root / "docker-compose.yml"
-        assert compose_path.exists(), "docker-compose.yml not found at repo root"
-        compose_text = compose_path.read_text()
-        assert "RECOMMENDATION_MODEL" in compose_text, (
+        worker_env = _get_compose_service_env("worker")
+        assert "RECOMMENDATION_MODEL" in worker_env, (
             "RECOMMENDATION_MODEL is not passed to the worker service in "
             "docker-compose.yml — the worker will use its hardcoded default "
             "and ignore the host environment variable"
