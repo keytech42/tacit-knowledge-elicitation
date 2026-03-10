@@ -65,7 +65,7 @@ test.describe("Questions", () => {
     await page.waitForURL("**/questions/**");
 
     // Verify the question detail shows correct title and draft status
-    await expect(page.getByText(title)).toBeVisible();
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByText("Draft").first()).toBeVisible();
   });
 
@@ -88,7 +88,7 @@ test.describe("Questions", () => {
 
     // Should redirect to question detail with "proposed" status
     await page.waitForURL("**/questions/**");
-    await expect(page.getByText(title)).toBeVisible();
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByText("Proposed").first()).toBeVisible();
   });
 
@@ -124,6 +124,49 @@ test.describe("Questions", () => {
     await expect(page.getByText("Published").first()).toBeVisible();
   });
 
+  test("list view cards have hover elevation styles", async ({ page }) => {
+    // Create a question to ensure at least one card exists
+    const title = `E2E Hover Test ${Date.now()}`;
+    await page.goto("/questions/new");
+    await page.getByPlaceholder("What do you want to know?").fill(title);
+    await page
+      .getByPlaceholder("Provide context, constraints, and what a good answer looks like...")
+      .fill("Testing hover elevation on list cards.");
+    await page.getByRole("button", { name: "Save as Draft" }).click();
+    await page.waitForURL("**/questions/**");
+
+    // Go to list view
+    await page.goto("/questions");
+    const listBtn = page.getByRole("button", { name: /list/i });
+    if (await listBtn.isVisible()) {
+      await listBtn.click();
+    }
+
+    const card = page.locator("main a[href^='/questions/']:not([href='/questions/new'])").first();
+    await expect(card).toBeVisible({ timeout: 5000 });
+
+    const classes = await card.getAttribute("class");
+    expect(classes).toContain("hover:shadow");
+    expect(classes).toContain("hover:-translate-y");
+  });
+
+  test("kanban cards have status-colored hover borders", async ({ page }) => {
+    await page.goto("/questions");
+
+    const boardBtn = page.getByRole("button", { name: /board/i });
+    if (await boardBtn.isVisible()) {
+      await boardBtn.click();
+    }
+
+    // Find a card in any column (exclude "New Question" button)
+    const card = page.locator("main a[href^='/questions/']:not([href='/questions/new'])").first();
+    if (await card.isVisible({ timeout: 3000 }).catch(() => false)) {
+      const classes = await card.getAttribute("class");
+      // Should use status-colored hover border, not generic primary
+      expect(classes).toContain("hover:border-status");
+    }
+  });
+
   test("question detail page shows title, body, and status", async ({
     page,
   }) => {
@@ -141,7 +184,7 @@ test.describe("Questions", () => {
     await page.waitForURL("**/questions/**");
 
     // Verify detail page elements
-    await expect(page.getByText(title)).toBeVisible();
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByText("Body for detail page test.")).toBeVisible();
     await expect(page.getByText("Draft").first()).toBeVisible();
 

@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api, ai, Answer, AnswerRevision, Review, TaskStatus, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 import { UserPicker } from "@/components/UserPicker";
@@ -57,11 +58,16 @@ export function AnswerDetail() {
   const [isLoading, setIsLoading] = useState(false);
   const [aiReviewTask, setAiReviewTask] = useState<TaskStatus | null>(null);
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
+  const [questionTitle, setQuestionTitle] = useState<string | null>(null);
 
   const load = () => {
     if (!id) return;
     api.get<Answer>(`/answers/${id}`)
-      .then((a) => { setAnswer(a); setEditBody(a.body); })
+      .then((a) => {
+        setAnswer(a);
+        setEditBody(a.body);
+        api.get<{ title: string }>(`/questions/${a.question_id}`).then((q) => setQuestionTitle(q.title)).catch(() => {});
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Answer not found"));
     api.get<AnswerRevision[]>(`/answers/${id}/versions`).then((revs) => {
       setRevisions(revs);
@@ -138,10 +144,10 @@ export function AnswerDetail() {
     }
     setAssigningReviewer(true);
     try {
-      const review = await ai.assignReviewer(id, selectedUser.id);
-      setReviews([...reviews, review]);
+      await ai.assignReviewer(id, selectedUser.id);
       setPickedReviewer(null);
       setError("");
+      load(); // Refresh answer status and reviews list
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not assign reviewer");
     }
@@ -193,6 +199,11 @@ export function AnswerDetail() {
 
   return (
     <div className="max-w-3xl mx-auto">
+      <Breadcrumb items={[
+        { label: "Questions", to: "/questions" },
+        { label: questionTitle || "Question", to: `/questions/${answer.question_id}` },
+        { label: "Answer" },
+      ]} />
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
         {/* Status + workflow hint */}
         <div className="flex items-center gap-3 mb-1">
@@ -208,6 +219,7 @@ export function AnswerDetail() {
               {revising ? "Revise answer (this will create a new version)" : "Answer body"}
             </label>
             <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[200px] bg-background text-sm" />
+            <span className="text-xs text-muted-foreground mt-1 block">{editBody.length} characters</span>
             <div className="flex gap-2 mt-3">
               {revising ? (
                 <button onClick={handleRevise} disabled={isLoading || editBody === answer.body} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">

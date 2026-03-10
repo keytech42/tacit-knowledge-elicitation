@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { STATUS_COLOR_TOKEN, badgeColor } from "./statusColors";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -51,8 +52,22 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, size = "xs" }: StatusBadgeProps) {
   const sizeClass = size === "sm" ? "text-sm px-2.5 py-1" : "text-xs px-2 py-1";
+  const prevStatus = useRef(status);
+  const [pulsing, setPulsing] = useState(false);
+
+  useEffect(() => {
+    if (prevStatus.current !== status) {
+      prevStatus.current = status;
+      setPulsing(true);
+      const timer = setTimeout(() => setPulsing(false), 200);
+      return () => clearTimeout(timer);
+    }
+  }, [status]);
+
   return (
-    <span className={`${sizeClass} rounded-full font-medium ${statusColor(status)}`}>
+    <span
+      className={`${sizeClass} rounded-full font-medium ${statusColor(status)} ${pulsing ? "badge-pulse" : ""}`}
+    >
       {statusLabel(status)}
     </span>
   );

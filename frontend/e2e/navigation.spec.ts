@@ -10,6 +10,12 @@ test.describe("Navigation", () => {
     await expect(nav.getByRole("link", { name: "KEP" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Questions" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Reviews" })).toBeVisible();
+
+    // Admin links are now behind a dropdown — click the "Admin" button to reveal them
+    const adminButton = nav.getByRole("button", { name: "Admin" });
+    await expect(adminButton).toBeVisible();
+    await adminButton.click();
+
     await expect(nav.getByRole("link", { name: "Admin Queue" })).toBeVisible();
     await expect(
       nav.getByRole("link", { name: "Service Accounts" })

@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api, ai, Review, Answer, Question, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, statusLabel } from "@/components/StatusBadge";
 import { UserPicker } from "@/components/UserPicker";
@@ -33,6 +34,9 @@ export function ReviewDetail() {
     try {
       const updated = await api.patch<Review>(`/reviews/${id}`, { verdict, comment: comment.trim() || undefined });
       setReview(updated);
+      // Re-fetch target so its status reflects any state change (e.g. answer → approved)
+      const endpoint = updated.target_type === "answer" ? `/answers/${updated.target_id}` : `/questions/${updated.target_id}`;
+      api.get(endpoint).then(setTarget as (v: unknown) => void);
     } catch (err: unknown) {
       // show error inline
     }
@@ -87,12 +91,14 @@ export function ReviewDetail() {
 
   // Show the version this review targets (from review record), not the answer's current version
   const answerVersion = review.target_type === "answer" ? review.answer_version : null;
-  const answerStatus = target && "status" in target && "current_version" in target ? (target as Answer).status : null;
+  // Use answer_status from the review response (enriched by backend) — updates immediately after verdict
+  const answerStatus = review.answer_status ?? null;
   const canAssign = review.target_type === "answer" && (hasRole("admin") || hasRole("reviewer"));
   const answerAuthorId = target && "author" in target ? (target as Answer).author?.id : null;
 
   return (
     <div className="max-w-3xl mx-auto">
+      <Breadcrumb items={[{ label: "Reviews", to: "/reviews" }, { label: "Review" }]} />
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
         <div className="flex items-center gap-3 mb-4">
           <StatusBadge status={review.verdict} />
@@ -161,8 +167,9 @@ export function ReviewDetail() {
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="Review comment (optional for approve, recommended for others)"
-                  className="w-full border border-border rounded-md p-3 min-h-[80px] bg-background text-sm mb-3"
+                  className="w-full border border-border rounded-md p-3 min-h-[80px] bg-background text-sm"
                 />
+                <span className="text-xs text-muted-foreground mt-1 mb-3 block">{comment.length} characters</span>
               </>
             )}
             <div className="flex flex-wrap gap-2">
@@ -196,15 +203,18 @@ export function ReviewDetail() {
         {review.comments.length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}
       </div>
 
-      <div className="flex gap-2">
-        <input
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-          placeholder="Add a comment..."
-          className="flex-1 border border-border rounded-md px-3 py-2 text-sm bg-background"
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }}
-        />
-        <button onClick={handleAddComment} disabled={!newComment.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">Comment</button>
+      <div>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">Add a comment</label>
+        <div className="flex gap-2">
+          <input
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder="Add a comment..."
+            className="flex-1 border border-border rounded-md px-3 py-2 text-sm bg-background"
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }}
+          />
+          <button onClick={handleAddComment} disabled={!newComment.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">Comment</button>
+        </div>
       </div>
     </div>
   );
