@@ -50,12 +50,14 @@ The `permissions` JSONB field is reserved for future fine-grained permission con
 | Action | admin | author | respondent | reviewer |
 |--------|-------|--------|------------|----------|
 | Create questions | yes | yes | - | - |
-| Answer questions | yes | yes | yes | - |
+| Answer questions | yes* | yes* | yes* | yes* |
 | Review content | yes | - | - | yes |
 | Manage users/roles | yes | - | - | - |
 | Manage service accounts | yes | - | - | - |
 | View AI logs | yes | - | - | - |
 | Publish/close questions | yes | - | - | - |
+
+*\* No role check is enforced on the create-answer endpoint; any authenticated user can answer a published question.*
 
 ## Source Documents
 
@@ -133,10 +135,13 @@ DRAFT ──[submit]──▶ PROPOSED ──[start-review]──▶ IN_REVIEW �
 {
   "min_approvals": 1,
   "auto_assign": false,
+  "auto_assign_count": 1,
   "allow_self_review": false,
   "require_comment_on_reject": true
 }
 ```
+
+`require_comment_on_reject` is included in the default policy but is not currently enforced in code; it is reserved for future use.
 
 The optional field `auto_assign_count` (default: 1) controls how many reviewers are auto-assigned when `auto_assign` is true.
 
@@ -161,6 +166,9 @@ Per-user rating and optional comment. Unique constraint on (question_id, user_id
 | selected_option_id | UUID | FK → answer_options, nullable |
 | status | enum | See state machine below |
 | current_version | integer | Incremented on each revision |
+| confirmed_by_id | UUID | FK → users, nullable |
+| confirmed_at | datetime | Nullable |
+| submitted_at | datetime | Nullable |
 | embedding | vector(1024) | pgvector embedding, nullable (generated when `EMBEDDING_MODEL` is set) |
 
 ### Answer State Machine
@@ -186,6 +194,7 @@ Immutable snapshot of an answer at a point in time.
 
 | Field | Type | Notes |
 |-------|------|-------|
+| id | UUID | Primary key |
 | answer_id | UUID | FK → answers |
 | version | integer | Sequential version number |
 | body | text | Content at this version |
@@ -215,6 +224,7 @@ Grants a user edit access to an answer. The answer author or admin can manage co
 
 | Field | Type | Notes |
 |-------|------|-------|
+| id | UUID | Primary key |
 | target_type | enum | `question` or `answer` |
 | target_id | UUID | Polymorphic FK |
 | reviewer_id | UUID | FK → users |
@@ -235,6 +245,7 @@ Automatically populated by the AI logging middleware for all write operations fr
 
 | Field | Type | Notes |
 |-------|------|-------|
+| id | UUID | Primary key |
 | service_user_id | UUID | FK → users |
 | model_id | string | Copied from service account at request time |
 | endpoint | string | `POST /api/v1/questions`, etc. |

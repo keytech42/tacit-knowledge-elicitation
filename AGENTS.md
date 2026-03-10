@@ -119,7 +119,7 @@ Python 3.12 is required. Tests cannot run outside Docker without it.
 ### Test Structure
 
 - `conftest.py`: Fixtures for db sessions, HTTP client, user/role factories. Enables the `vector` pgvector extension before creating tables.
-- Each test file covers one domain: `test_auth.py`, `test_questions.py`, `test_answers.py`, `test_reviews.py`, `test_permissions.py`, `test_ai_logging.py`, `test_startup.py`, `test_admin_queue.py`, `test_e2e_workflows.py`, `test_ai_integration.py`
+- Each test file covers one domain: `test_admin_queue.py`, `test_ai_integration.py`, `test_ai_logging.py`, `test_answer_options.py`, `test_answers.py`, `test_auth.py`, `test_e2e_workflows.py`, `test_file_parser.py`, `test_fix_integration.py`, `test_permissions.py`, `test_questions.py`, `test_recommendation.py`, `test_respondent_assignment.py`, `test_reviews.py`, `test_slack_dm.py`, `test_slack_threads.py`, `test_slack.py`, `test_source_documents.py`, `test_startup.py`, `test_state_consistency.py`
 
 ### Writing Tests
 
@@ -227,7 +227,7 @@ For cloud providers, use the provider's model name directly (e.g., `text-embeddi
 - The Dockerfile copies `pyproject.toml` before source for layer caching. `PYTHONPATH=/app` is set so `alembic` can find the `app` module.
 - Docker Compose mounts `./backend:/app` as a volume, overriding the container's `/app`. Installed packages persist in the image layer.
 - The `async_session` from `database.py` auto-commits. In tests, the `db` fixture wraps everything in a transaction that rolls back.
-- All relationships use `lazy="selectin"` to avoid async lazy-load errors. Never use `lazy="select"` (the default) with async sessions.
+- Most relationships use `lazy="selectin"` — always use it for relationships accessed in API responses to avoid async lazy-load errors.
 - The AI logging middleware only logs write operations from service accounts. Human user requests are not logged.
 - The worker uses in-memory task tracking (dict). If the worker restarts, in-flight tasks are lost.
 - The `conftest.py` test fixture creates the pgvector extension (`CREATE EXTENSION IF NOT EXISTS vector`) before `Base.metadata.create_all()`. Without this, tests fail because the Question/Answer models reference the `vector` type.

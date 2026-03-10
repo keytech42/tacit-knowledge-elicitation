@@ -30,6 +30,8 @@ make test     # run backend tests
 make migrate  # run database migrations manually
 make logs     # follow container logs
 make shell    # open bash in api container
+make seed     # seed database with sample data (5 users, 5 questions)
+make test-e2e # run Playwright end-to-end tests
 make down     # stop everything
 ```
 
@@ -74,6 +76,7 @@ The platform includes optional LLM-powered capabilities via a separate worker se
 | **Question generation** | Admin on-demand | Generate elicitation questions for a topic/domain |
 | **Answer option scaffolding** | Auto on publish or on-demand | Generate up to 4 maximally distinct answer options (replaces existing options each run) |
 | **Review assistance** | Auto on submit or on-demand | AI-assisted preliminary review with confidence scoring |
+| **Question extraction** | Admin on-demand | Extract elicitation questions from a source document via two-pass LLM (chunk extraction + consolidation) |
 | **Respondent recommendation** | On-demand | Embedding similarity (pgvector) or LLM-based scoring (Haiku) — configurable via `RECOMMENDATION_STRATEGY` |
 
 #### Recommendation Strategy

@@ -21,7 +21,49 @@ All endpoints require authentication unless noted. Two methods:
 - `Authorization: Bearer <jwt>` — for human users
 - `X-API-Key: <key>` — for service accounts
 
-The `GET /health` endpoint is the only unauthenticated route.
+The `GET /health` and `GET /auth/config` endpoints are the only unauthenticated routes.
+
+### Auth Endpoints
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `GET` | `/api/v1/auth/config` | None | Return public auth configuration | 200 |
+| `POST` | `/api/v1/auth/google` | None | Exchange Google authorization code for JWT | 200 |
+| `POST` | `/api/v1/auth/dev-login` | None | Create/return dev admin user | 200 |
+| `POST` | `/api/v1/auth/refresh` | None | Exchange an existing JWT for a new one | 200 |
+
+#### GET /api/v1/auth/config
+
+Returns the public auth configuration so the frontend can determine which login methods are available. No authentication required.
+
+**Response (200):**
+```json
+{
+  "google_client_id": "...",
+  "dev_login_enabled": true
+}
+```
+
+#### POST /api/v1/auth/refresh
+
+Exchanges an existing (valid or recently expired) JWT for a fresh one. The token is passed as the `token` query parameter.
+
+**Query parameters:**
+- `token` (string) — the JWT to refresh
+
+**Response (200):**
+```json
+{
+  "access_token": "...",
+  "token_type": "bearer",
+  "user_id": "<uuid>",
+  "email": "...",
+  "display_name": "...",
+  "roles": ["admin", "author"]
+}
+```
+
+Returns 401 if the token is invalid or the user is inactive.
 
 ### First-time Google login
 
@@ -30,6 +72,187 @@ When a user authenticates via Google for the first time, an account is created a
 ### Dev login side effects
 
 `POST /auth/dev-login` creates a `dev@localhost` user with all roles on first call. Subsequent calls return the same user. Returns 404 when `DEV_LOGIN_ENABLED` is false, so it can be disabled in production.
+
+---
+
+## User Management
+
+### Endpoints
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `GET` | `/api/v1/users/me` | Any authenticated user | Get the current user's profile | 200 |
+| `GET` | `/api/v1/users/search` | Reviewer or Admin | Search users by name/email | 200 |
+| `GET` | `/api/v1/users` | Admin | List all users (paginated) | 200 |
+| `POST` | `/api/v1/users/{user_id}/roles` | Admin | Assign a role to a user | 200 |
+| `DELETE` | `/api/v1/users/{user_id}/roles/{role_name}` | Admin | Remove a role from a user | 200 |
+
+#### GET /api/v1/users/me
+
+Returns the authenticated user's profile. Works with both JWT and API key authentication.
+
+**Response (200):** `UserResponse`
+```json
+{
+  "id": "<uuid>",
+  "user_type": "human",
+  "display_name": "...",
+  "email": "...",
+  "avatar_url": "...",
+  "is_active": true,
+  "roles": [{"id": "<uuid>", "name": "admin"}],
+  "created_at": "..."
+}
+```
+
+#### GET /api/v1/users/search
+
+Search human users by display name or email. Available to reviewers and admins.
+
+**Query parameters:**
+- `q` (string, optional) — search term matched against display name and email (case-insensitive substring match)
+- `role` (string, optional) — filter by role name (e.g., `"reviewer"`)
+- `limit` (int, default 20, max 50) — maximum results to return
+
+**Response (200):**
+```json
+{
+  "users": [UserResponse, ...],
+  "total": 5
+}
+```
+
+Only active human users are returned (service accounts are excluded).
+
+#### GET /api/v1/users
+
+List all users with pagination. Admin only.
+
+**Query parameters:**
+- `skip` (int, default 0) — offset
+- `limit` (int, default 50) — page size
+
+**Response (200):**
+```json
+{
+  "users": [UserResponse, ...],
+  "total": 42
+}
+```
+
+#### POST /api/v1/users/{user_id}/roles
+
+Assign a role to a user. Admin only.
+
+**Request body:**
+```json
+{"role_name": "reviewer"}
+```
+
+Valid role names: `admin`, `author`, `reviewer`, `respondent`.
+
+**Response (200):** the updated `UserResponse`.
+
+Returns 400 if the role name is invalid. Returns 404 if the user or role is not found. Returns 409 if the user already has the role.
+
+#### DELETE /api/v1/users/{user_id}/roles/{role_name}
+
+Remove a role from a user. Admin only.
+
+**Response (200):** the updated `UserResponse`.
+
+Returns 404 if the user, role, or assignment is not found.
+
+---
+
+## Service Accounts (Admin Only)
+
+### Endpoints
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `POST` | `/api/v1/service-accounts` | Admin | Create a service account | 201 |
+| `GET` | `/api/v1/service-accounts` | Admin | List all service accounts | 200 |
+| `GET` | `/api/v1/service-accounts/{account_id}` | Admin | Get a service account | 200 |
+| `PATCH` | `/api/v1/service-accounts/{account_id}` | Admin | Update a service account | 200 |
+| `POST` | `/api/v1/service-accounts/{account_id}/rotate-key` | Admin | Rotate API key | 200 |
+
+#### POST /api/v1/service-accounts
+
+Create a new service account with an API key.
+
+**Request body:**
+```json
+{
+  "display_name": "AI Worker",
+  "model_id": "gpt-4o",
+  "system_version": "1.0",
+  "roles": ["author", "reviewer"]
+}
+```
+
+- `display_name` (string, required)
+- `model_id` (string, optional) — identifier for the LLM model used
+- `system_version` (string, optional)
+- `roles` (list of strings, optional) — defaults to `["author"]` if omitted
+
+**Response (201):** `ServiceAccountWithKeyResponse` — includes the `api_key` field. The API key is returned exactly once at creation and cannot be retrieved later.
+
+```json
+{
+  "id": "<uuid>",
+  "display_name": "AI Worker",
+  "model_id": "gpt-4o",
+  "system_version": "1.0",
+  "is_active": true,
+  "roles": [{"id": "<uuid>", "name": "author"}, ...],
+  "created_at": "...",
+  "api_key": "ke_..."
+}
+```
+
+Returns 400 if any role name is invalid.
+
+#### GET /api/v1/service-accounts
+
+List all service accounts, newest first.
+
+**Response (200):** `list[ServiceAccountResponse]` (no `api_key` field).
+
+#### GET /api/v1/service-accounts/{account_id}
+
+Get a single service account by ID.
+
+**Response (200):** `ServiceAccountResponse`.
+
+Returns 404 if the account is not found or is not a service account.
+
+#### PATCH /api/v1/service-accounts/{account_id}
+
+Update a service account's metadata. Only `display_name`, `model_id`, and `system_version` can be changed.
+
+**Request body:**
+```json
+{
+  "display_name": "Updated Name",
+  "model_id": "claude-3.5-sonnet",
+  "system_version": "2.0"
+}
+```
+
+**Response (200):** `ServiceAccountResponse`.
+
+Returns 404 if the account is not found.
+
+#### POST /api/v1/service-accounts/{account_id}/rotate-key
+
+Generate a new API key for a service account, invalidating the previous one.
+
+**Request body:** none.
+
+**Response (200):** `ServiceAccountWithKeyResponse` — includes the new `api_key`. This is the only opportunity to capture the new key.
+
+Returns 404 if the account is not found.
 
 ---
 
@@ -121,6 +344,245 @@ Each submission creates an immutable `AnswerRevision`. The `trigger` field recor
 - **Draft / revision_requested**: only the author (or admin) can edit
 - **Approved**: author, collaborators, or admin can revise — this resets status to `submitted`
 
+### Answer Versions and Diff
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `GET` | `/api/v1/answers/{answer_id}/versions` | Any authenticated user | List all revisions for an answer | 200 |
+| `GET` | `/api/v1/answers/{answer_id}/versions/{version}` | Any authenticated user | Get a specific revision by version number | 200 |
+| `GET` | `/api/v1/answers/{answer_id}/diff` | Any authenticated user | Get a unified diff between two revisions | 200 |
+| `GET` | `/api/v1/answers/{answer_id}/staging-diff` | Any authenticated user | Compare working copy against latest committed revision | 200 |
+
+#### GET /api/v1/answers/{answer_id}/versions
+
+Returns all revisions for an answer, ordered by version number ascending.
+
+**Response (200):** `list[AnswerRevisionResponse]`
+```json
+[
+  {
+    "id": "<uuid>",
+    "answer_id": "<uuid>",
+    "version": 1,
+    "body": "...",
+    "selected_option_id": null,
+    "created_by": {UserResponse},
+    "trigger": "initial_submit",
+    "previous_status": null,
+    "created_at": "..."
+  }
+]
+```
+
+#### GET /api/v1/answers/{answer_id}/versions/{version}
+
+Get a specific revision by version number.
+
+**Response (200):** `AnswerRevisionResponse`.
+
+Returns 404 if the revision is not found.
+
+#### GET /api/v1/answers/{answer_id}/diff
+
+Get a unified text diff between two revisions.
+
+**Query parameters (required):**
+- `from` (int) — source version number
+- `to` (int) — target version number
+
+**Response (200):**
+```json
+{
+  "from_version": 1,
+  "to_version": 2,
+  "diff": "--- version 1\n+++ version 2\n...",
+  "from_created_at": "...",
+  "to_created_at": "..."
+}
+```
+
+Returns 404 if either revision is not found.
+
+#### GET /api/v1/answers/{answer_id}/staging-diff
+
+Compare the current working copy (live `answer.body`) against the latest committed revision. Useful for showing unsaved changes before submission.
+
+**Response (200):**
+```json
+{
+  "has_changes": true,
+  "latest_version": 2,
+  "diff": "--- version 2\n+++ working copy\n..."
+}
+```
+
+`has_changes` is false and `diff` is null when the working copy matches the latest revision. `latest_version` is null if no revisions exist yet.
+
+### Answer Collaborators
+
+Collaborators can edit an approved answer (triggering a post-approval revision). Only the answer author or an admin can manage collaborators.
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `POST` | `/api/v1/answers/{answer_id}/collaborators` | Author or Admin | Add a collaborator | 201 |
+| `GET` | `/api/v1/answers/{answer_id}/collaborators` | Any authenticated user | List collaborators | 200 |
+| `DELETE` | `/api/v1/answers/{answer_id}/collaborators/{user_id}` | Author or Admin | Remove a collaborator | 204 |
+
+#### POST /api/v1/answers/{answer_id}/collaborators
+
+**Request body:**
+```json
+{"user_id": "<uuid>"}
+```
+
+**Response (201):** `CollaboratorResponse`
+```json
+{
+  "id": "<uuid>",
+  "answer_id": "<uuid>",
+  "user": {UserResponse},
+  "granted_by": {UserResponse},
+  "created_at": "..."
+}
+```
+
+Returns 403 if the current user is not the answer author or admin. Returns 404 if the answer or target user is not found. Returns 409 if the user is already a collaborator.
+
+#### GET /api/v1/answers/{answer_id}/collaborators
+
+**Response (200):** `list[CollaboratorResponse]`
+
+#### DELETE /api/v1/answers/{answer_id}/collaborators/{user_id}
+
+Removes a collaborator from the answer.
+
+Returns 204 with no body on success. Returns 403 if the current user is not the answer author or admin. Returns 404 if the answer or collaborator is not found.
+
+---
+
+## Reviews
+
+### Endpoints
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `POST` | `/api/v1/reviews` | Reviewer or Admin | Create a new review | 201 |
+| `POST` | `/api/v1/reviews/assign/{answer_id}` | Reviewer or Admin | Assign a reviewer to an answer | 201 |
+| `GET` | `/api/v1/reviews` | Any authenticated user | List reviews with optional filters | 200 |
+| `GET` | `/api/v1/reviews/my-queue` | Reviewer or Admin | Get the caller's pending reviews | 200 |
+| `GET` | `/api/v1/reviews/{review_id}` | Any authenticated user | Get a single review | 200 |
+| `PATCH` | `/api/v1/reviews/{review_id}` | Reviewer or Admin | Submit a verdict on a review | 200 |
+| `POST` | `/api/v1/reviews/{review_id}/comments` | Any authenticated user | Add a threaded comment to a review | 201 |
+
+#### POST /api/v1/reviews
+
+Create a new pending review for a question or answer.
+
+**Request body:**
+```json
+{
+  "target_type": "answer",
+  "target_id": "<uuid>"
+}
+```
+
+`target_type` must be `"question"` or `"answer"`. For answer reviews, the answer must be in `submitted` or `under_review` status. Creating a review on a `submitted` answer automatically transitions it to `under_review`. The reviewer cannot be the answer's author (self-review is prevented).
+
+**Response (201):** `ReviewResponse`
+
+Returns 404 if the target is not found. Returns 409 if the target is not in a reviewable state, the reviewer is the author, or a duplicate pending review already exists for the same reviewer and version.
+
+#### POST /api/v1/reviews/assign/{answer_id}
+
+Assign a specific reviewer to an answer. The caller does not need to be the assigned reviewer.
+
+**Request body:**
+```json
+{"reviewer_id": "<uuid>"}
+```
+
+The target reviewer must have the `reviewer` role and cannot be the answer author. Like `POST /reviews`, this transitions `submitted` answers to `under_review`.
+
+**Response (201):** `ReviewResponse`
+
+Returns 400 if the target user lacks the reviewer role. Returns 404 if the answer or reviewer is not found. Returns 409 if the answer is not reviewable, the reviewer is the author, or a duplicate pending review already exists.
+
+#### GET /api/v1/reviews
+
+List reviews with optional filters.
+
+**Query parameters (all optional):**
+- `target_type` (string) — `"question"` or `"answer"`
+- `target_id` (uuid) — filter by target entity
+- `reviewer_id` (uuid) — filter by reviewer
+
+**Response (200):** `list[ReviewResponse]`
+
+Each `ReviewResponse` is enriched with contextual fields: `question_title`, `question_status`, `answer_status`, `approval_count`, and `min_approvals`.
+
+#### GET /api/v1/reviews/my-queue
+
+Get the current user's pending reviews, ordered oldest first.
+
+**Response (200):** `list[ReviewResponse]`
+
+#### GET /api/v1/reviews/{review_id}
+
+Get a single review by ID.
+
+**Response (200):** `ReviewResponse`
+
+Returns 404 if the review is not found.
+
+#### PATCH /api/v1/reviews/{review_id}
+
+Submit a verdict on a pending review. Only the assigned reviewer or an admin can submit.
+
+**Request body:**
+```json
+{
+  "verdict": "approved",
+  "comment": "Looks good."
+}
+```
+
+Valid verdicts: `approved`, `changes_requested`, `rejected`. The `comment` field is optional.
+
+Submitting a verdict triggers automatic answer status resolution (see Review Resolution Logic below). Slack notifications are sent for the verdict and any resulting status change (approval, revision requested).
+
+**Response (200):** the updated `ReviewResponse`.
+
+Returns 400 if the verdict is invalid. Returns 403 if the caller is not the reviewer or admin. Returns 409 if the review is already resolved (not pending).
+
+#### POST /api/v1/reviews/{review_id}/comments
+
+Add a threaded comment to a review. Any authenticated user can comment.
+
+**Request body:**
+```json
+{
+  "body": "Could you clarify this point?",
+  "parent_id": null
+}
+```
+
+- `body` (string, required) — comment text
+- `parent_id` (uuid, optional) — ID of a parent comment for threading
+
+**Response (201):** `ReviewCommentResponse`
+```json
+{
+  "id": "<uuid>",
+  "review_id": "<uuid>",
+  "author": {UserResponse},
+  "body": "...",
+  "parent_id": null,
+  "created_at": "..."
+}
+```
+
+Returns 404 if the review or parent comment is not found.
+
 ---
 
 ## Review Resolution Logic
@@ -136,7 +598,9 @@ This logic runs in `services/review.py:resolve_answer_reviews()`.
 
 ---
 
-## AI Logging (Implicit)
+## AI Logging
+
+### Implicit Capture
 
 The AI logging middleware automatically records all write operations (POST, PUT, PATCH, DELETE) from service accounts. No explicit API call is needed — the middleware intercepts the request/response and creates an `AIInteractionLog` entry with:
 
@@ -147,6 +611,89 @@ The AI logging middleware automatically records all write operations (POST, PUT,
 - Service account's `model_id` at request time
 
 Human users' requests are **not** logged. The middleware fails silently to avoid breaking requests.
+
+### AI Log Endpoints
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `GET` | `/api/v1/ai-logs` | Admin | List AI interaction logs (paginated) | 200 |
+| `GET` | `/api/v1/ai-logs/export` | Admin | Export all logs as JSON or CSV | 200 |
+| `GET` | `/api/v1/ai-logs/{log_id}` | Admin | Get a single log entry | 200 |
+| `POST` | `/api/v1/ai-logs/{log_id}/feedback` | Any authenticated user | Submit feedback on an AI interaction | 200 |
+
+#### GET /api/v1/ai-logs
+
+List AI interaction logs with optional filters.
+
+**Query parameters:**
+- `service_user_id` (uuid, optional) — filter by service account
+- `endpoint` (string, optional) — substring match on the endpoint path
+- `skip` (int, default 0) — offset
+- `limit` (int, default 50) — page size
+
+**Response (200):**
+```json
+{
+  "logs": [
+    {
+      "id": "<uuid>",
+      "service_user": {UserResponse},
+      "model_id": "gpt-4o",
+      "endpoint": "/api/v1/questions",
+      "request_body": {...},
+      "response_status": 200,
+      "created_entity_type": "question",
+      "created_entity_id": "<uuid>",
+      "latency_ms": 342,
+      "token_usage": null,
+      "feedback_rating": null,
+      "feedback_comment": null,
+      "feedback_by": null,
+      "feedback_at": null,
+      "created_at": "..."
+    }
+  ],
+  "total": 15
+}
+```
+
+#### GET /api/v1/ai-logs/export
+
+Export all AI interaction logs. Admin only.
+
+**Query parameters:**
+- `format` (string, default `"json"`) — must be `"json"` or `"csv"`
+
+**Response (200):**
+- When `format=json`: returns `list[AILogResponse]` as JSON.
+- When `format=csv`: returns a streaming CSV download with columns: `id`, `service_user_id`, `model_id`, `endpoint`, `response_status`, `latency_ms`, `feedback_rating`, `created_at`. The response has `Content-Disposition: attachment; filename=ai_logs.csv`.
+
+#### GET /api/v1/ai-logs/{log_id}
+
+Get a single AI interaction log by ID. Admin only.
+
+**Response (200):** `AILogResponse`
+
+Returns 404 if the log entry is not found.
+
+#### POST /api/v1/ai-logs/{log_id}/feedback
+
+Submit human feedback on an AI interaction. Available to any authenticated user (not just admins), allowing respondents and reviewers to rate AI-generated content.
+
+**Request body:**
+```json
+{
+  "rating": 4,
+  "comment": "Accurate but could be more concise"
+}
+```
+
+- `rating` (int, required) — 1 to 5
+- `comment` (string, optional)
+
+**Response (200):** the updated `AILogResponse` with `feedback_rating`, `feedback_comment`, `feedback_by`, and `feedback_at` populated.
+
+Returns 404 if the log entry is not found.
 
 ---
 
