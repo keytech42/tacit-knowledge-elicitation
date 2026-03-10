@@ -40,16 +40,17 @@ const AITaskContext = createContext<AITaskContextValue | null>(null);
 const POLL_INTERVAL = 3000;
 
 export function AITaskProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const isAdmin = user && hasRole("admin");
   const toast = useToast();
   const [tasks, setTasks] = useState<Map<string, AITask>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track tasks we've already notified about to avoid duplicate toasts
   const notifiedRef = useRef<Set<string>>(new Set());
 
-  // Load active tasks on mount (when user is authenticated)
+  // Load active tasks on mount (only for admin users)
   useEffect(() => {
-    if (!user) {
+    if (!isAdmin) {
       setTasks(new Map());
       notifiedRef.current.clear();
       return;
@@ -76,7 +77,7 @@ export function AITaskProvider({ children }: { children: ReactNode }) {
     })();
 
     return () => { cancelled = true; };
-  }, [user]);
+  }, [isAdmin]);
 
   // Single interval that polls all active tasks
   useEffect(() => {
