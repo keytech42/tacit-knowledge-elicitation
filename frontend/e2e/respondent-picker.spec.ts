@@ -34,7 +34,7 @@ test.describe("Respondent Pool Editor (QuestionDetail)", () => {
     await expect(page.getByRole("heading", { name: "AI Actions" })).toBeVisible();
 
     // Should show the "Respondent Pool" label and search input
-    await expect(page.getByText("Respondent Pool")).toBeVisible();
+    await expect(page.getByText("Respondent Pool").first()).toBeVisible();
     await expect(page.getByPlaceholder("Search respondents to add...")).toBeVisible();
   });
 
@@ -91,7 +91,7 @@ test.describe("Respondent Pool Editor (QuestionDetail)", () => {
 
     // AI Actions heading should NOT be visible on draft questions
     await expect(page.getByRole("heading", { name: "AI Actions" })).not.toBeVisible();
-    await expect(page.getByText("Respondent Pool")).not.toBeVisible();
+    await expect(page.getByText("Respondent Pool").first()).not.toBeVisible();
   });
 
   test("respondent search filters by query", async ({ page }) => {
