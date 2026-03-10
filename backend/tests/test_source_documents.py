@@ -164,6 +164,65 @@ class TestSourceDocumentCRUD:
         assert qr.status_code == 200
         assert qr.json()["source_document_id"] is None
 
+    async def test_delete_nonexistent_returns_404(self, client: AsyncClient, admin_user: User):
+        r = await client.delete(
+            f"/api/v1/source-documents/{uuid.uuid4()}", headers=auth_header(admin_user)
+        )
+        assert r.status_code == 404
+
+    async def test_download_empty_body(self, client: AsyncClient, admin_user: User, db):
+        doc = SourceDocument(title="Empty Doc", body="", uploaded_by_id=admin_user.id)
+        db.add(doc)
+        await db.flush()
+        await db.refresh(doc)
+
+        r = await client.get(
+            f"/api/v1/source-documents/{doc.id}/download", headers=auth_header(admin_user)
+        )
+        assert r.status_code == 200
+        assert r.text == ""
+        assert r.headers["content-type"].startswith("text/plain")
+
+    async def test_download_special_characters_in_title(self, client: AsyncClient, admin_user: User, db):
+        doc = SourceDocument(
+            title='Doc with "quotes" & special chars',
+            body="Content",
+            uploaded_by_id=admin_user.id,
+        )
+        db.add(doc)
+        await db.flush()
+        await db.refresh(doc)
+
+        r = await client.get(
+            f"/api/v1/source-documents/{doc.id}/download", headers=auth_header(admin_user)
+        )
+        assert r.status_code == 200
+        disposition = r.headers["content-disposition"]
+        assert "attachment" in disposition
+        # Double quotes in title replaced with single quotes per endpoint logic
+        assert "Doc with 'quotes' & special chars.txt" in disposition
+
+    async def test_large_body_content(self, client: AsyncClient, admin_user: User, db):
+        large_body = "x" * 100_000
+        doc = SourceDocument(title="Large Doc", body=large_body, uploaded_by_id=admin_user.id)
+        db.add(doc)
+        await db.flush()
+        await db.refresh(doc)
+
+        # Detail endpoint returns full body
+        r = await client.get(
+            f"/api/v1/source-documents/{doc.id}", headers=auth_header(admin_user)
+        )
+        assert r.status_code == 200
+        assert len(r.json()["body"]) == 100_000
+
+        # Download returns full body
+        r2 = await client.get(
+            f"/api/v1/source-documents/{doc.id}/download", headers=auth_header(admin_user)
+        )
+        assert r2.status_code == 200
+        assert len(r2.text) == 100_000
+
 
 class TestSourceDocumentPermissions:
     """Non-admin users cannot access source document endpoints."""

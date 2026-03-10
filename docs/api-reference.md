@@ -881,7 +881,8 @@ CRUD endpoints for managing source documents used in question extraction. All en
 |----------|--------|-------------|--------|
 | `/api/v1/source-documents` | `POST` | Create a source document | 201 |
 | `/api/v1/source-documents` | `GET` | List all source documents (newest first) | 200 |
-| `/api/v1/source-documents/{id}` | `GET` | Get a single source document | 200 |
+| `/api/v1/source-documents/{id}` | `GET` | Get a single source document (includes body) | 200 |
+| `/api/v1/source-documents/{id}/download` | `GET` | Download document body as text file | 200 |
 | `/api/v1/source-documents/{id}` | `PATCH` | Update document summary or question count | 200 |
 | `/api/v1/source-documents/{id}` | `DELETE` | Delete a source document | 204 |
 
@@ -905,6 +906,10 @@ CRUD endpoints for managing source documents used in question extraction. All en
   "total": 1
 }
 ```
+
+### Download
+
+Returns the document body as a `text/plain` attachment. The filename is derived from the document title with `.txt` extension.
 
 ### Update
 
