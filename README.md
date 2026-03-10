@@ -44,6 +44,21 @@ make up-embed       # start all services + embedding server
 make embed-status   # check embedding server health
 ```
 
+### Embedding quick start
+
+To enable embedding-based recommendations (optional):
+
+```bash
+pip install huggingface_hub          # one-time dependency for model download
+make embed-download                  # download bge-m3 Q8_0 (~605MB)
+echo 'EMBEDDING_MODEL=openai/bge-m3
+EMBEDDING_API_BASE=http://embedding:8090/v1/
+EMBEDDING_API_KEY=no-key' >> .env
+make up-embed                        # start all services + embedding server
+```
+
+See [Embeddings Setup](docs/embeddings.md) for GPU alternatives and cloud options.
+
 ### Running specific tests
 
 ```bash
