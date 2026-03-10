@@ -149,7 +149,7 @@ export function QuestionDetail() {
 
   useEffect(loadQuestion, [id]);
 
-  // Re-fetch when the tab regains focus — catches human review changes
+  // Re-fetch when the browser tab regains focus — catches human review changes
   const answersRef = useRef(answers);
   answersRef.current = answers;
   useEffect(() => {
