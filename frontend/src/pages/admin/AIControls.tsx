@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { api, ai, Question, Answer, User, TaskStatus, Recommendation } from "@/api/client";
+import { api, ai, Question, Answer, User, AITask, Recommendation } from "@/api/client";
 import { Admonition } from "@/components/Admonition";
 import { StatusBadge } from "@/components/StatusBadge";
+import { useAITasks } from "@/contexts/AITaskContext";
 
 // ---------------------------------------------------------------------------
 // Task status badge (for AI task polling status: accepted/running/completed/failed)
@@ -9,10 +10,12 @@ import { StatusBadge } from "@/components/StatusBadge";
 
 function TaskStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
+    pending: "bg-muted text-muted-foreground",
     accepted: "bg-muted text-muted-foreground",
     running: "bg-muted text-foreground",
     completed: "bg-muted text-foreground border border-border",
     failed: "bg-destructive/10 text-destructive",
+    cancelled: "bg-muted text-muted-foreground",
   };
   return (
     <span
@@ -554,12 +557,22 @@ export function AIControls() {
     [questions]
   );
 
+  // ---- Global AI task context ----
+  const { addTask, cancelTask, getTask } = useAITasks();
+  const [genTaskId, setGenTaskId] = useState<string | null>(null);
+  const [extractTaskId, setExtractTaskId] = useState<string | null>(null);
+  const [scaffoldTaskId, setScaffoldTaskId] = useState<string | null>(null);
+  const [reviewTaskId, setReviewTaskId] = useState<string | null>(null);
+  const genTask = genTaskId ? getTask(genTaskId) : null;
+  const extractTask = extractTaskId ? getTask(extractTaskId) : null;
+  const scaffoldTask = scaffoldTaskId ? getTask(scaffoldTaskId) : null;
+  const reviewTask = reviewTaskId ? getTask(reviewTaskId) : null;
+
   // ---- Question generation state ----
   const [topic, setTopic] = useState("");
   const [domain, setDomain] = useState("");
   const [count, setCount] = useState(3);
   const [genContext, setGenContext] = useState("");
-  const [genTask, setGenTask] = useState<TaskStatus | null>(null);
   const [genLoading, setGenLoading] = useState(false);
 
   // ---- Question extraction state ----
@@ -567,14 +580,12 @@ export function AIControls() {
   const [extractTitle, setExtractTitle] = useState("");
   const [extractDomain, setExtractDomain] = useState("");
   const [extractMaxQuestions, setExtractMaxQuestions] = useState(10);
-  const [extractTask, setExtractTask] = useState<TaskStatus | null>(null);
   const [extractLoading, setExtractLoading] = useState(false);
   const [extractMode, setExtractMode] = useState<"text" | "file">("text");
   const [extractFile, setExtractFile] = useState<File | null>(null);
 
   // ---- Scaffold options state ----
   const [scaffoldQuestion, setScaffoldQuestion] = useState<Question | null>(null);
-  const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
   const [scaffoldLoading, setScaffoldLoading] = useState(false);
 
   // ---- Review assist state ----
@@ -582,7 +593,6 @@ export function AIControls() {
   const [reviewAnswer, setReviewAnswer] = useState<Answer | null>(null);
   const [reviewAnswers, setReviewAnswers] = useState<Answer[]>([]);
   const [reviewAnswersLoading, setReviewAnswersLoading] = useState(false);
-  const [reviewTask, setReviewTask] = useState<TaskStatus | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
 
   // Load answers when a question is selected for review
@@ -623,39 +633,16 @@ export function AIControls() {
     [recommendations, selectedRespondents]
   );
 
-  // ---- Task polling ----
-  const pollTask = useCallback(
-    async (taskId: string, setter: (t: TaskStatus) => void) => {
-      const poll = async () => {
-        try {
-          const status = await ai.getTaskStatus(taskId);
-          setter(status);
-          if (status.status === "accepted" || status.status === "running") {
-            setTimeout(poll, 2000);
-          }
-        } catch {
-          // stop polling on error
-        }
-      };
-      poll();
-    },
-    []
-  );
-
   // ---- Handlers ----
   const handleGenerate = async () => {
     if (!topic.trim()) return;
     setGenLoading(true);
     try {
-      const result = await ai.generateQuestions(topic, domain, count, genContext || undefined);
-      setGenTask({ task_id: result.task_id, status: result.status });
-      pollTask(result.task_id, setGenTask);
-    } catch (e: unknown) {
-      setGenTask({
-        task_id: "",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-      });
+      const task = await ai.generateQuestions(topic, domain, count, genContext || undefined);
+      setGenTaskId(task.id);
+      addTask(task);
+    } catch {
+      setGenTaskId(null);
     }
     setGenLoading(false);
   };
@@ -665,24 +652,20 @@ export function AIControls() {
     if (extractMode === "file" && !extractFile) return;
     setExtractLoading(true);
     try {
-      let result;
+      let task: AITask;
       if (extractMode === "file" && extractFile) {
-        result = await ai.extractFromFile(
+        task = await ai.extractFromFile(
           extractFile, extractTitle, extractDomain, extractMaxQuestions
         );
       } else {
-        result = await ai.extractQuestions(
+        task = await ai.extractQuestions(
           extractSource, extractTitle, extractDomain, extractMaxQuestions
         );
       }
-      setExtractTask({ task_id: result.task_id, status: result.status });
-      pollTask(result.task_id, setExtractTask);
-    } catch (e: unknown) {
-      setExtractTask({
-        task_id: "",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-      });
+      setExtractTaskId(task.id);
+      addTask(task);
+    } catch {
+      setExtractTaskId(null);
     }
     setExtractLoading(false);
   };
@@ -691,15 +674,11 @@ export function AIControls() {
     if (!scaffoldQuestion) return;
     setScaffoldLoading(true);
     try {
-      const result = await ai.scaffoldOptions(scaffoldQuestion.id);
-      setScaffoldTask({ task_id: result.task_id, status: result.status });
-      pollTask(result.task_id, setScaffoldTask);
-    } catch (e: unknown) {
-      setScaffoldTask({
-        task_id: "",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-      });
+      const task = await ai.scaffoldOptions(scaffoldQuestion.id);
+      setScaffoldTaskId(task.id);
+      addTask(task);
+    } catch {
+      setScaffoldTaskId(null);
     }
     setScaffoldLoading(false);
   };
@@ -708,15 +687,11 @@ export function AIControls() {
     if (!reviewAnswer) return;
     setReviewLoading(true);
     try {
-      const result = await ai.reviewAssist(reviewAnswer.id);
-      setReviewTask({ task_id: result.task_id, status: result.status });
-      pollTask(result.task_id, setReviewTask);
-    } catch (e: unknown) {
-      setReviewTask({
-        task_id: "",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-      });
+      const task = await ai.reviewAssist(reviewAnswer.id);
+      setReviewTaskId(task.id);
+      addTask(task);
+    } catch {
+      setReviewTaskId(null);
     }
     setReviewLoading(false);
   };
@@ -850,16 +825,19 @@ export function AIControls() {
           <div className="mt-3 p-3 bg-muted rounded-md text-sm">
             <div className="flex items-center gap-2">
               <TaskStatusBadge status={genTask.status} />
-              {genTask.task_id && (
-                <span className="text-muted-foreground text-xs font-mono">
-                  {genTask.task_id.slice(0, 8)}
-                </span>
+              <span className="text-muted-foreground text-xs font-mono">
+                {genTask.id.slice(0, 8)}
+              </span>
+              {(genTask.status === "pending" || genTask.status === "running") && (
+                <button onClick={() => cancelTask(genTask.id)} className="ml-auto text-muted-foreground hover:text-destructive transition-colors" title="Cancel">
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                </button>
               )}
             </div>
             {genTask.error && <p className="text-destructive mt-1">{genTask.error}</p>}
             {genTask.result && (
               <p className="mt-1 text-muted-foreground">
-                Created {String((genTask.result as Record<string, unknown>).count)} questions
+                Created {String(genTask.result.count)} questions
               </p>
             )}
           </div>
@@ -962,21 +940,24 @@ export function AIControls() {
           <div className="mt-3 p-3 bg-muted rounded-md text-sm">
             <div className="flex items-center gap-2">
               <TaskStatusBadge status={extractTask.status} />
-              {extractTask.task_id && (
-                <span className="text-muted-foreground text-xs font-mono">
-                  {extractTask.task_id.slice(0, 8)}
-                </span>
+              <span className="text-muted-foreground text-xs font-mono">
+                {extractTask.id.slice(0, 8)}
+              </span>
+              {(extractTask.status === "pending" || extractTask.status === "running") && (
+                <button onClick={() => cancelTask(extractTask.id)} className="ml-auto text-muted-foreground hover:text-destructive transition-colors" title="Cancel">
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                </button>
               )}
             </div>
             {extractTask.error && <p className="text-destructive mt-1">{extractTask.error}</p>}
             {extractTask.result && (
               <div className="mt-1 text-muted-foreground">
                 <p>
-                  Created {String((extractTask.result as Record<string, unknown>).questions_created ?? (extractTask.result as Record<string, unknown>).count)} questions
+                  Created {String(extractTask.result.questions_created ?? extractTask.result.count)} questions
                 </p>
-                {String((extractTask.result as Record<string, unknown>).document_summary || "") !== "" && (
+                {String(extractTask.result.document_summary || "") !== "" && (
                   <p className="mt-1 text-xs">
-                    {String((extractTask.result as Record<string, unknown>).document_summary)}
+                    {String(extractTask.result.document_summary)}
                   </p>
                 )}
               </div>
@@ -1017,10 +998,13 @@ export function AIControls() {
           <div className="mt-3 p-3 bg-muted rounded-md text-sm">
             <div className="flex items-center gap-2">
               <TaskStatusBadge status={scaffoldTask.status} />
-              {scaffoldTask.task_id && (
-                <span className="text-muted-foreground text-xs font-mono">
-                  {scaffoldTask.task_id.slice(0, 8)}
-                </span>
+              <span className="text-muted-foreground text-xs font-mono">
+                {scaffoldTask.id.slice(0, 8)}
+              </span>
+              {(scaffoldTask.status === "pending" || scaffoldTask.status === "running") && (
+                <button onClick={() => cancelTask(scaffoldTask.id)} className="ml-auto text-muted-foreground hover:text-destructive transition-colors" title="Cancel">
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                </button>
               )}
             </div>
             {scaffoldTask.error && <p className="text-destructive mt-1">{scaffoldTask.error}</p>}
@@ -1096,10 +1080,13 @@ export function AIControls() {
           <div className="mt-3 p-3 bg-muted rounded-md text-sm">
             <div className="flex items-center gap-2">
               <TaskStatusBadge status={reviewTask.status} />
-              {reviewTask.task_id && (
-                <span className="text-muted-foreground text-xs font-mono">
-                  {reviewTask.task_id.slice(0, 8)}
-                </span>
+              <span className="text-muted-foreground text-xs font-mono">
+                {reviewTask.id.slice(0, 8)}
+              </span>
+              {(reviewTask.status === "pending" || reviewTask.status === "running") && (
+                <button onClick={() => cancelTask(reviewTask.id)} className="ml-auto text-muted-foreground hover:text-destructive transition-colors" title="Cancel">
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                </button>
               )}
             </div>
             {reviewTask.error && <p className="text-destructive mt-1">{reviewTask.error}</p>}
@@ -1108,22 +1095,19 @@ export function AIControls() {
                 <div className="p-2 bg-background rounded border border-border">
                   <div className="text-xs text-muted-foreground">Verdict</div>
                   <div className="text-sm font-medium">
-                    {String((reviewTask.result as Record<string, unknown>).verdict)}
+                    {String(reviewTask.result.verdict)}
                   </div>
                 </div>
                 <div className="p-2 bg-background rounded border border-border">
                   <div className="text-xs text-muted-foreground">Confidence</div>
                   <div className="text-sm font-medium">
-                    {(
-                      Number((reviewTask.result as Record<string, unknown>).confidence) * 100
-                    ).toFixed(0)}
-                    %
+                    {(Number(reviewTask.result.confidence) * 100).toFixed(0)}%
                   </div>
                 </div>
                 <div className="p-2 bg-background rounded border border-border">
                   <div className="text-xs text-muted-foreground">Submitted</div>
                   <div className="text-sm font-medium">
-                    {String((reviewTask.result as Record<string, unknown>).submitted)}
+                    {String(reviewTask.result.submitted)}
                   </div>
                 </div>
               </div>

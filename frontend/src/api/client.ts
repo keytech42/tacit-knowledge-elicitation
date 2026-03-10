@@ -245,7 +245,7 @@ export const ai = {
     }),
 
   getTaskStatus: (taskId: string) =>
-    api.get<TaskStatus>(`/ai/tasks/${taskId}`),
+    api.get<AITask>(`/ai/tasks/${taskId}`),
 
   extractQuestions: (sourceText: string, documentTitle = "", domain = "", maxQuestions = 10) =>
     api.post<TaskAccepted>("/ai/extract-questions", {

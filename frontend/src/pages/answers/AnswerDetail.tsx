@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, ai, Answer, AnswerRevision, Review, TaskStatus, User } from "@/api/client";
+import { api, ai, Answer, AnswerRevision, Review, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 import { UserPicker } from "@/components/UserPicker";
+import { useAITasks } from "@/contexts/AITaskContext";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
   if ((isAdmin || isAuthor) && (status === "draft" || status === "revision_requested")) return { enabled: true };
@@ -56,7 +57,9 @@ export function AnswerDetail() {
   const [pickedReviewer, setPickedReviewer] = useState<User | null>(null);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [aiReviewTask, setAiReviewTask] = useState<TaskStatus | null>(null);
+  const { addTask, cancelTask, getTask } = useAITasks();
+  const [aiReviewTaskId, setAiReviewTaskId] = useState<string | null>(null);
+  const aiReviewTask = aiReviewTaskId ? getTask(aiReviewTaskId) : null;
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
   const [questionTitle, setQuestionTitle] = useState<string | null>(null);
 
@@ -158,25 +161,27 @@ export function AnswerDetail() {
     if (!id || aiReviewLoading) return;
     setAiReviewLoading(true);
     try {
-      const result = await ai.reviewAssist(id);
-      setAiReviewTask({ task_id: result.task_id, status: result.status });
-      const poll = async () => {
-        try {
-          const status = await ai.getTaskStatus(result.task_id);
-          setAiReviewTask(status);
-          if (status.status === "accepted" || status.status === "running") {
-            setTimeout(poll, 2000);
-          } else if (status.status === "completed") {
-            load(); // Reload to show new review
-          }
-        } catch { /* stop polling */ }
-      };
-      poll();
-    } catch (e: unknown) {
-      setAiReviewTask({ task_id: "", status: "failed", error: e instanceof Error ? e.message : "Failed" });
+      const task = await ai.reviewAssist(id);
+      setAiReviewTaskId(task.id);
+      addTask(task);
+    } catch {
+      setAiReviewTaskId(null);
     }
     setAiReviewLoading(false);
   };
+
+  // Reload when AI review task completes
+  const prevReviewStatus = useRef(aiReviewTask?.status);
+  useEffect(() => {
+    if (
+      prevReviewStatus.current &&
+      (prevReviewStatus.current === "pending" || prevReviewStatus.current === "running") &&
+      aiReviewTask?.status === "completed"
+    ) {
+      load();
+    }
+    prevReviewStatus.current = aiReviewTask?.status;
+  }, [aiReviewTask?.status]);
 
   if (!answer) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
 
@@ -284,18 +289,23 @@ export function AnswerDetail() {
           </div>
         )}
         {aiReviewTask && (
-          <div className="mt-2 px-1 text-xs">
+          <div className="mt-2 px-1 text-xs flex items-center gap-2">
             <span className={`inline-block px-2 py-0.5 rounded-full ${
               aiReviewTask.status === "completed" ? "bg-muted text-foreground" :
               aiReviewTask.status === "failed" ? "bg-destructive/10 text-destructive" :
               "bg-muted text-muted-foreground"
             }`}>{aiReviewTask.status}</span>
-            {aiReviewTask.error && <span className="text-destructive ml-2">{aiReviewTask.error}</span>}
+            {aiReviewTask.error && <span className="text-destructive">{aiReviewTask.error}</span>}
             {aiReviewTask.result && (
-              <span className="ml-2 text-muted-foreground">
-                Confidence: {String((aiReviewTask.result as Record<string, unknown>).confidence)},
-                Submitted: {String((aiReviewTask.result as Record<string, unknown>).submitted)}
+              <span className="text-muted-foreground">
+                Confidence: {String(aiReviewTask.result.confidence)},
+                Submitted: {String(aiReviewTask.result.submitted)}
               </span>
+            )}
+            {(aiReviewTask.status === "pending" || aiReviewTask.status === "running") && (
+              <button onClick={() => cancelTask(aiReviewTask.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Cancel">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+              </button>
             )}
           </div>
         )}
