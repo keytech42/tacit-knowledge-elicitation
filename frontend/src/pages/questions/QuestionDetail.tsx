@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api, ai, Question, Answer, Recommendation, TaskStatus, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -131,6 +131,10 @@ export function QuestionDetail() {
   const [assignLoading, setAssignLoading] = useState<string | null>(null);
   const [pickerSelected, setPickerSelected] = useState<User | null>(null);
 
+  // Polling ref for background worker state changes (e.g., AI auto-review after answer submit)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
   const loadQuestion = () => {
     if (!id) return;
     api.get<Question>(`/questions/${id}`).then((q) => {
@@ -194,12 +198,35 @@ export function QuestionDetail() {
   const handleSubmitAnswer = async () => {
     if (!id || !newAnswer.trim()) return;
     try {
-      const answer = await api.post<Answer>(`/questions/${id}/answers`, { body: newAnswer });
-      await api.post<Answer>(`/answers/${answer.id}/submit`);
+      const created = await api.post<Answer>(`/questions/${id}/answers`, { body: newAnswer });
+      await api.post<Answer>(`/answers/${created.id}/submit`);
       setNewAnswer("");
       setSelectedOptionId(null);
       loadQuestion();
       toast.success("Answer submitted successfully");
+
+      // Poll for background AI review — worker auto-reviews submitted answers
+      if (pollRef.current) clearInterval(pollRef.current);
+      let attempts = 0;
+      pollRef.current = setInterval(async () => {
+        attempts++;
+        if (attempts > 10) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          return;
+        }
+        try {
+          const fresh = await api.get<Answer>(`/answers/${created.id}`);
+          if (fresh.status !== "submitted") {
+            loadQuestion();
+            if (pollRef.current) clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        } catch {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }, 3000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Submit failed";
       setError(msg);
