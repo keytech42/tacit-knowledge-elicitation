@@ -613,6 +613,7 @@ export function AIControls() {
   const [recQuestion, setRecQuestion] = useState<Question | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recReason, setRecReason] = useState<string | null>(null);
+  const [recStrategy, setRecStrategy] = useState<string | null>(null);
   const [recLoading, setRecLoading] = useState(false);
   const [selectedRespondents, setSelectedRespondents] = useState<User[]>([]);
 
@@ -728,9 +729,11 @@ export function AIControls() {
       const resp = await ai.recommend(recQuestion.id);
       setRecommendations(resp.items);
       setRecReason(resp.reason);
+      setRecStrategy(resp.strategy);
     } catch (e: unknown) {
       setRecommendations([]);
       setRecReason(e instanceof Error ? e.message : "Failed to get recommendations.");
+      setRecStrategy(null);
     }
     setRecLoading(false);
   };
@@ -1168,6 +1171,11 @@ export function AIControls() {
           {recommendations.length > 0 && (
             <Admonition variant="success">
               {recommendations.length} respondent{recommendations.length !== 1 ? "s" : ""} recommended
+              {recStrategy && (
+                <span className="ml-1.5 text-xs opacity-75">
+                  via {recStrategy === "llm" ? "AI" : "similarity"}
+                </span>
+              )}
             </Admonition>
           )}
 

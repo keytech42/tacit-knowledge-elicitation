@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from worker.schemas import (
     ExtractQuestionsRequest,
     GenerateQuestionsRequest,
+    RecommendRespondentsRequest,
     ReviewAssistRequest,
     ScaffoldOptionsRequest,
     TaskResponse,
@@ -16,6 +17,7 @@ from worker.tasks.question_gen import run_question_generation
 from worker.tasks.question_extract import run_question_extraction
 from worker.tasks.answer_scaffold import run_answer_scaffolding
 from worker.tasks.review_assist import run_review_assist
+from worker.tasks.respondent_recommend import run_respondent_recommendation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -88,6 +90,17 @@ async def trigger_review_assist(request: ReviewAssistRequest):
         answer_id=request.answer_id,
     ))
     return TaskResponse(task_id=task_id, status="accepted")
+
+
+@app.post("/tasks/recommend")
+async def trigger_recommend(request: RecommendRespondentsRequest):
+    """Synchronous LLM-based recommendation — returns results directly."""
+    result = await run_respondent_recommendation(
+        question=request.question,
+        candidates=[c.model_dump() for c in request.candidates],
+        top_k=request.top_k,
+    )
+    return result
 
 
 @app.get("/tasks/{task_id}", response_model=TaskStatusResponse)

@@ -16,6 +16,12 @@ Before deploying to production, ensure the following:
 - [ ] Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) if using AI features
 - [ ] Create a service account with `author` + `reviewer` roles for the worker and set `WORKER_API_KEY`
 
+### Slack
+
+- [ ] Create a Slack app with Bot Token Scopes: `chat:write`, `users:read`, `users:read.email`, `conversations:open` (for DMs)
+- [ ] Set `SLACK_BOT_TOKEN` and `SLACK_DEFAULT_CHANNEL`
+- [ ] Set `FRONTEND_URL` to the production frontend URL
+
 ### Database
 
 - [ ] Use a managed PostgreSQL instance (not the Docker container)
@@ -37,10 +43,20 @@ CORS_ORIGINS=["https://your-domain.com"]
 # AI / Worker (optional)
 WORKER_URL=http://worker:8001
 ANTHROPIC_API_KEY=<your-anthropic-key>
-LLM_MODEL=anthropic/claude-sonnet-4-5-20250929
+LLM_MODEL=anthropic/claude-sonnet-4-6
 EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_API_BASE=<embedding-api-base-url>  # for local llama.cpp/TEI; omit for cloud
 EMBEDDING_API_KEY=<your-openai-key>
 WORKER_API_KEY=<service-account-api-key>
+RECOMMENDATION_STRATEGY=auto  # auto (default), llm, or embedding
+RECOMMENDATION_MODEL=anthropic/claude-haiku-4-5-20251001
+DEDUP_STRATEGY=llm  # llm (default) or embedding
+EXTRACTION_AUTO_SUBMIT=false
+
+# Slack (optional)
+SLACK_BOT_TOKEN=xoxb-<your-slack-bot-token>
+SLACK_DEFAULT_CHANNEL=#knowledge-elicitation
+FRONTEND_URL=https://your-domain.com
 ```
 
 ## Docker Compose (Staging)
@@ -105,7 +121,7 @@ docker build -t knowledge-worker ./worker
 docker run -d \
   -e PLATFORM_API_URL=http://api:8000 \
   -e PLATFORM_API_KEY=<service-account-api-key> \
-  -e LLM_MODEL=anthropic/claude-sonnet-4-5-20250929 \
+  -e LLM_MODEL=anthropic/claude-sonnet-4-6 \
   -e ANTHROPIC_API_KEY=<your-key> \
   -p 8001:8001 \
   knowledge-worker \
@@ -118,7 +134,7 @@ The worker requires a service account with `author` and `reviewer` roles. Create
 curl -X POST http://api:8000/api/v1/service-accounts \
   -H "Authorization: Bearer <admin-jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-5-20250929", "roles": ["author", "reviewer"]}'
+  -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-6", "roles": ["author", "reviewer"]}'
 ```
 
 The returned `api_key` becomes the `PLATFORM_API_KEY` for the worker and `WORKER_API_KEY` for the backend.

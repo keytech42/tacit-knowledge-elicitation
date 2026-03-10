@@ -30,6 +30,8 @@ make test     # run backend tests
 make migrate  # run database migrations manually
 make logs     # follow container logs
 make shell    # open bash in api container
+make seed     # seed database with sample data (5 users, 5 questions)
+make test-e2e # run Playwright end-to-end tests
 make down     # stop everything
 ```
 
@@ -61,7 +63,7 @@ See `.env.example` for all environment variables. Key settings:
 | `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:5173"]` |
 | `WORKER_URL` | LLM worker service URL (empty = disabled) | empty |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM tasks | empty |
-| `LLM_MODEL` | litellm model identifier for the worker | `anthropic/claude-sonnet-4-5-20250929` |
+| `LLM_MODEL` | litellm model identifier for the worker | `anthropic/claude-sonnet-4-6` |
 | `EMBEDDING_MODEL` | Embedding model for pgvector (empty = disabled) | empty |
 | `WORKER_API_KEY` | Service account API key for the worker | empty |
 
@@ -74,7 +76,18 @@ The platform includes optional LLM-powered capabilities via a separate worker se
 | **Question generation** | Admin on-demand | Generate elicitation questions for a topic/domain |
 | **Answer option scaffolding** | Auto on publish or on-demand | Generate up to 4 maximally distinct answer options (replaces existing options each run) |
 | **Review assistance** | Auto on submit or on-demand | AI-assisted preliminary review with confidence scoring |
-| **Respondent recommendation** | On-demand | Embedding-based similarity matching via pgvector |
+| **Question extraction** | Admin on-demand | Extract elicitation questions from a source document via two-pass LLM (chunk extraction + consolidation) |
+| **Respondent recommendation** | On-demand | Embedding similarity (pgvector) or LLM-based scoring (Haiku) — configurable via `RECOMMENDATION_STRATEGY` |
+
+#### Recommendation Strategy
+
+| Strategy | Set in `.env` | What it does | Requirements |
+|----------|--------------|--------------|--------------|
+| `auto` (default) | `RECOMMENDATION_STRATEGY=auto` | Uses embeddings if `EMBEDDING_MODEL` is set, otherwise falls back to LLM | Either embedding or worker infra |
+| `llm` | `RECOMMENDATION_STRATEGY=llm` | Sends candidate answer history to Haiku for scoring | `WORKER_URL` + `ANTHROPIC_API_KEY` |
+| `embedding` | `RECOMMENDATION_STRATEGY=embedding` | pgvector cosine similarity on answer embeddings | `EMBEDDING_MODEL` + embedding server |
+
+**Quickest setup** (no GPU needed): set `RECOMMENDATION_STRATEGY=llm` and configure `WORKER_URL` + `ANTHROPIC_API_KEY`. The worker defaults to `anthropic/claude-haiku-4-5-20251001` — override with `RECOMMENDATION_MODEL` if desired.
 
 ### Setup
 

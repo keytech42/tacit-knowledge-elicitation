@@ -48,6 +48,7 @@ class RecommendationItem(BaseModel):
 class RecommendationResponse(BaseModel):
     items: list[RecommendationItem]
     reason: str | None = None
+    strategy: str | None = None
 
 
 class TaskAcceptedResponse(BaseModel):
@@ -116,6 +117,7 @@ async def recommend(
     return RecommendationResponse(
         items=[RecommendationItem(**r) for r in result["items"]],
         reason=result.get("reason"),
+        strategy=result.get("strategy"),
     )
 
 

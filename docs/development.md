@@ -126,11 +126,13 @@ The worker service and AI features are optional. To enable:
 |----------|---------|---------|
 | `WORKER_URL` | api | Worker endpoint (e.g., `http://worker:8001`). Empty = disabled |
 | `ANTHROPIC_API_KEY` | api, worker | Anthropic API key for LLM calls |
-| `LLM_MODEL` | worker | litellm model ID (default: `anthropic/claude-sonnet-4-5-20250929`) |
+| `LLM_MODEL` | worker | litellm model ID (default: `anthropic/claude-sonnet-4-6`) |
 | `EMBEDDING_MODEL` | api | Embedding model for pgvector (e.g., `openai/bge-m3`). Empty = disabled |
 | `EMBEDDING_API_BASE` | api | Embedding server URL (e.g., `http://host.docker.internal:8090/v1/`) |
 | `EMBEDDING_API_KEY` | api | API key for embedding provider (any non-empty value for local) |
 | `WORKER_API_KEY` | worker | Service account API key for platform auth |
+| `RECOMMENDATION_STRATEGY` | api | `auto` (default), `llm`, or `embedding`. Auto prefers embedding when available |
+| `RECOMMENDATION_MODEL` | worker | LLM model for recommendations (default: Haiku for cost efficiency) |
 
 See [Embeddings Setup](embeddings.md) for detailed instructions on running a local embedding model.
 

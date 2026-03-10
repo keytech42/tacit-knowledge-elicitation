@@ -75,6 +75,35 @@ class ExtractQuestionsRequest(BaseModel):
     source_document_id: str | None = None
 
 
+class CandidateAnswerSummary(BaseModel):
+    question_title: str = "?"
+    category: str = "none"
+    status: str = "unknown"
+    body_excerpt: str = ""
+
+
+class CandidateProfile(BaseModel):
+    user_id: str
+    display_name: str
+    answer_summaries: list[CandidateAnswerSummary] = []
+
+
+class RecommendRespondentsRequest(BaseModel):
+    question: dict
+    candidates: list[CandidateProfile]
+    top_k: int = 5
+
+
+class RecommendedRespondent(BaseModel):
+    user_id: str
+    score: float = Field(ge=0.0, le=1.0)
+    reasoning: str
+
+
+class RecommendationResult(BaseModel):
+    respondents: list[RecommendedRespondent]
+
+
 class TaskResponse(BaseModel):
     task_id: str
     status: str

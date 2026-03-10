@@ -190,6 +190,7 @@ export interface Recommendation {
 export interface RecommendationResponse {
   items: Recommendation[];
   reason: string | null;
+  strategy: "llm" | "embedding" | null;
 }
 
 // AI-related API functions

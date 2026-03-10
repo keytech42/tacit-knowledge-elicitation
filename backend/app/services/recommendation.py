@@ -1,16 +1,32 @@
-"""Respondent recommendation based on embedding similarity + structured scoring."""
+"""Respondent recommendation — embedding similarity or LLM-based."""
+
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.answer import Answer, AnswerStatus
 from app.models.question import Question
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+# Max recent answers per candidate to include in LLM context
+_MAX_ANSWERS_PER_CANDIDATE = 10
+
+
+def _resolve_strategy() -> str:
+    """Resolve 'auto' to a concrete strategy based on available infrastructure."""
+    strategy = settings.RECOMMENDATION_STRATEGY
+    if strategy != "auto":
+        return strategy
+    # Auto: prefer embedding if model is configured, otherwise LLM
+    if settings.EMBEDDING_MODEL:
+        return "embedding"
+    return "llm"
 
 
 async def recommend_respondents(
@@ -18,12 +34,121 @@ async def recommend_respondents(
     question_id: uuid.UUID,
     top_k: int = 5,
 ) -> dict:
-    """Recommend respondents for a question based on embedding similarity and scoring.
+    """Dispatch to the configured recommendation strategy.
+
+    Returns a dict: {items: [{user_id, display_name, score, reasoning}], reason: str | None}
+    """
+    strategy = _resolve_strategy()
+
+    if strategy == "embedding":
+        result = await _recommend_via_embedding(db, question_id, top_k)
+    elif strategy == "llm":
+        result = await _recommend_via_llm(db, question_id, top_k)
+    else:
+        logger.error(f"Unknown RECOMMENDATION_STRATEGY: {strategy}")
+        return {"items": [], "reason": f"Unknown strategy: {strategy}", "strategy": strategy}
+
+    result["strategy"] = strategy
+    return result
+
+
+async def _build_candidate_context(
+    db: AsyncSession,
+    question_id: uuid.UUID,
+) -> tuple[dict | None, list[dict]]:
+    """Gather question and candidate data from DB for LLM recommendation.
+
+    Returns (question_dict, candidates_list).
+    """
+    result = await db.execute(select(Question).where(Question.id == question_id))
+    question = result.scalar_one_or_none()
+    if not question:
+        return None, []
+
+    question_dict = {
+        "title": question.title,
+        "body": question.body,
+        "category": question.category,
+    }
+
+    # Get all answers with their questions and authors
+    answer_result = await db.execute(
+        select(Answer)
+        .join(Question, Answer.question_id == Question.id)
+        .where(Answer.author_id.isnot(None))
+        .order_by(Answer.created_at.desc())
+    )
+    answers = answer_result.scalars().all()
+
+    # Build candidate profiles
+    candidates_map: dict[uuid.UUID, dict] = {}
+    for ans in answers:
+        author_id = ans.author_id
+        if author_id not in candidates_map:
+            author = ans.author
+            candidates_map[author_id] = {
+                "user_id": str(author_id),
+                "display_name": author.display_name if author else "Unknown",
+                "answer_summaries": [],
+            }
+        if len(candidates_map[author_id]["answer_summaries"]) < _MAX_ANSWERS_PER_CANDIDATE:
+            q = ans.question
+            body_excerpt = (ans.body[:200] + "...") if len(ans.body) > 200 else ans.body
+            candidates_map[author_id]["answer_summaries"].append({
+                "question_title": q.title if q else "?",
+                "category": q.category if q else "none",
+                "status": ans.status,
+                "body_excerpt": body_excerpt,
+            })
+
+    return question_dict, list(candidates_map.values())
+
+
+async def _recommend_via_llm(
+    db: AsyncSession,
+    question_id: uuid.UUID,
+    top_k: int = 5,
+) -> dict:
+    """Delegate recommendation to the worker's LLM-based recommender."""
+    from app.services import worker_client
+
+    if not settings.WORKER_URL:
+        return {
+            "items": [],
+            "reason": (
+                "LLM recommendation requires WORKER_URL to be configured. "
+                "Either set WORKER_URL or switch RECOMMENDATION_STRATEGY to 'embedding'."
+            ),
+        }
+
+    question_dict, candidates = await _build_candidate_context(db, question_id)
+    if question_dict is None:
+        return {"items": [], "reason": "Question not found."}
+    if not candidates:
+        return {"items": [], "reason": "No respondents with answer history found."}
+
+    result = await worker_client.trigger_recommend(
+        question=question_dict,
+        candidates=candidates,
+        top_k=top_k,
+    )
+    if result is None:
+        return {
+            "items": [],
+            "reason": "Worker service did not respond. Check worker logs.",
+        }
+    return result
+
+
+async def _recommend_via_embedding(
+    db: AsyncSession,
+    question_id: uuid.UUID,
+    top_k: int = 5,
+) -> dict:
+    """Recommend respondents based on embedding similarity and structured scoring.
 
     Scoring formula:
     0.4 * semantic_similarity + 0.3 * approval_rate + 0.2 * category_match + 0.1 * recency
-
-    Returns a dict: {items: [{user_id, display_name, score, reasoning}], reason: str | None}
     """
     def _empty(reason: str) -> dict:
         return {"items": [], "reason": reason}

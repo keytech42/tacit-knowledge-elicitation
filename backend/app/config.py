@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = ""  # e.g. "openai/bge-m3" (local llama.cpp/TEI) or "text-embedding-3-small" (OpenAI)
     EMBEDDING_API_BASE: str = ""  # e.g. "http://host.docker.internal:8090/v1/" (local) or "" (cloud)
     EMBEDDING_API_KEY: str = ""  # e.g. "no-key" (local) or actual API key (cloud)
+    RECOMMENDATION_STRATEGY: str = "auto"  # "auto", "llm", or "embedding"
     SLACK_BOT_TOKEN: str = ""  # xoxb-... Bot User OAuth Token
     SLACK_DEFAULT_CHANNEL: str = ""  # e.g. "#knowledge-elicitation" or channel ID
     FRONTEND_URL: str = "http://localhost:5173"

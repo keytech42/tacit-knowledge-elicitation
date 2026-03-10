@@ -4,7 +4,8 @@ from unittest.mock import patch
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event, text as sa_text
+from sqlalchemy import event, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -13,11 +14,14 @@ from app.main import app
 from app.models import Base
 from app.models.user import Role, RoleName, User, UserType
 from app.services.auth import create_jwt_token, generate_api_key, hash_api_key
-from sqlalchemy import select
 
-TEST_DATABASE_URL = settings.DATABASE_URL.replace("/knowledge_elicitation", "/knowledge_elicitation_test")
+TEST_DATABASE_URL = settings.DATABASE_URL.replace(
+    "/knowledge_elicitation", "/knowledge_elicitation_test"
+)
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-test_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+test_session_factory = async_sessionmaker(
+    test_engine, class_=AsyncSession, expire_on_commit=False
+)
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -56,7 +60,9 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
     app.dependency_overrides.clear()
 
@@ -77,7 +83,12 @@ async def roles(db: AsyncSession) -> dict[str, Role]:
 
 @pytest_asyncio.fixture
 async def admin_user(db: AsyncSession, roles: dict[str, Role]) -> User:
-    user = User(user_type=UserType.HUMAN, external_id="google_admin_123", display_name="Admin User", email="admin@test.com")
+    user = User(
+        user_type=UserType.HUMAN,
+        external_id="google_admin_123",
+        display_name="Admin User",
+        email="admin@test.com",
+    )
     db.add(user)
     await db.flush()
     await db.refresh(user, ["roles"])
@@ -89,7 +100,12 @@ async def admin_user(db: AsyncSession, roles: dict[str, Role]) -> User:
 
 @pytest_asyncio.fixture
 async def author_user(db: AsyncSession, roles: dict[str, Role]) -> User:
-    user = User(user_type=UserType.HUMAN, external_id="google_author_123", display_name="Author User", email="author@test.com")
+    user = User(
+        user_type=UserType.HUMAN,
+        external_id="google_author_123",
+        display_name="Author User",
+        email="author@test.com",
+    )
     db.add(user)
     await db.flush()
     await db.refresh(user, ["roles"])
@@ -100,7 +116,12 @@ async def author_user(db: AsyncSession, roles: dict[str, Role]) -> User:
 
 @pytest_asyncio.fixture
 async def respondent_user(db: AsyncSession, roles: dict[str, Role]) -> User:
-    user = User(user_type=UserType.HUMAN, external_id="google_respondent_123", display_name="Respondent User", email="respondent@test.com")
+    user = User(
+        user_type=UserType.HUMAN,
+        external_id="google_respondent_123",
+        display_name="Respondent User",
+        email="respondent@test.com",
+    )
     db.add(user)
     await db.flush()
     await db.refresh(user, ["roles"])
@@ -111,7 +132,12 @@ async def respondent_user(db: AsyncSession, roles: dict[str, Role]) -> User:
 
 @pytest_asyncio.fixture
 async def reviewer_user(db: AsyncSession, roles: dict[str, Role]) -> User:
-    user = User(user_type=UserType.HUMAN, external_id="google_reviewer_123", display_name="Reviewer User", email="reviewer@test.com")
+    user = User(
+        user_type=UserType.HUMAN,
+        external_id="google_reviewer_123",
+        display_name="Reviewer User",
+        email="reviewer@test.com",
+    )
     db.add(user)
     await db.flush()
     await db.refresh(user, ["roles"])
@@ -123,7 +149,12 @@ async def reviewer_user(db: AsyncSession, roles: dict[str, Role]) -> User:
 @pytest_asyncio.fixture
 async def service_user(db: AsyncSession, roles: dict[str, Role]) -> tuple[User, str]:
     api_key = generate_api_key()
-    user = User(user_type=UserType.SERVICE, display_name="Test LLM Agent", model_id="claude-sonnet-4-5-20250929", api_key_hash=hash_api_key(api_key))
+    user = User(
+        user_type=UserType.SERVICE,
+        display_name="Test LLM Agent",
+        model_id="claude-sonnet-4-6",
+        api_key_hash=hash_api_key(api_key),
+    )
     db.add(user)
     await db.flush()
     await db.refresh(user, ["roles"])

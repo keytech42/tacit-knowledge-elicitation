@@ -96,6 +96,8 @@ A separate FastAPI service that handles LLM-powered capabilities via litellm (pr
 | Question generation | `POST /tasks/generate-questions` | Admin on-demand |
 | Answer option scaffolding | `POST /tasks/scaffold-options` | Auto on question publish, or on-demand. Replaces existing options (max 4, maximally distinct). |
 | Review assistance | `POST /tasks/review-assist` | Auto on answer submit, or on-demand |
+| Question extraction | `POST /tasks/extract-questions` | Admin on-demand. Two-pass LLM extraction from source documents: pass 1 extracts candidates from each chunk, pass 2 consolidates and deduplicates. Text is split on paragraph boundaries at ~4K chars; single-chunk documents skip consolidation. Extracted questions land as `draft` by default (`EXTRACTION_AUTO_SUBMIT` to override). |
+| Respondent recommendation | `POST /tasks/recommend-respondents` | On-demand via recommendation service. LLM-based alternative to embedding similarity -- evaluates candidate respondent profiles against the question and scores them. Uses Haiku by default (`RECOMMENDATION_MODEL`). |
 
 Tasks run as background `asyncio.Task` instances with in-memory status tracking. The backend proxies trigger requests via admin-only `/api/v1/ai/*` endpoints.
 
@@ -111,7 +113,9 @@ worker/
 ├── tasks/               # Task implementations
 │   ├── question_gen.py
 │   ├── answer_scaffold.py
-│   └── review_assist.py
+│   ├── review_assist.py
+│   ├── question_extract.py
+│   └── respondent_recommend.py
 └── prompts/             # System/user prompt templates
 ```
 
@@ -123,7 +127,7 @@ PostgreSQL 16 with pgvector extension (`pgvector/pgvector:pg16` Docker image) an
 
 ### pgvector
 
-The `vector` extension enables embedding storage and cosine similarity search. The `questions` and `answers` tables have optional `embedding vector(1536)` columns with hnsw indexes. Embeddings are generated via litellm when `EMBEDDING_MODEL` is configured.
+The `vector` extension enables embedding storage and cosine similarity search. The `questions` and `answers` tables have optional `embedding vector(1024)` columns with hnsw indexes. Embeddings are generated via litellm when `EMBEDDING_MODEL` is configured.
 
 ### Migrations
 
@@ -132,6 +136,11 @@ Alembic manages schema migrations:
 - `002_add_review_answer_version.py` — review → answer version tracking
 - `003_add_revision_content_hash.py` — content deduplication via SHA-256 hash
 - `004_add_pgvector_embeddings.py` — enables pgvector extension, adds embedding columns and hnsw indexes
+- `005_resize_embeddings_to_1024.py` — resizes embedding columns from 1536 to 1024 dimensions
+- `006_add_assigned_respondent_to_questions.py` — respondent assignment FK on questions
+- `007_add_slack_thread_columns_to_questions.py` — Slack thread tracking (channel, thread_ts) on questions
+- `008_add_superseded_review_verdict.py` — adds `superseded` to the reviewverdict enum
+- `009_add_source_documents_and_extraction.py` — source_documents table, source_type enum, extraction columns on questions
 
 Migrations run automatically on `docker compose up` via the api service command: `alembic upgrade head && uvicorn ...`.
 
@@ -139,10 +148,66 @@ Migrations run automatically on `docker compose up` via the api service command:
 
 LLM agents and automated systems authenticate as service accounts via API keys. Service accounts can be created with multiple roles (e.g., `["author", "reviewer"]` for the worker). The AI logging middleware automatically records all their write operations for audit and monitoring.
 
+## Slack Integration
+
+The platform sends Slack notifications via the `slack_sdk` async client. All notification functions follow a fire-and-forget pattern -- exceptions are caught internally so Slack outages or misconfiguration never block core operations.
+
+### Thread Lifecycle
+
+When a question is published, a message is posted to the configured channel, creating a Slack thread. The thread timestamp and channel are stored on the Question model. All subsequent events for that question (answer submissions, review verdicts, respondent assignments, approval, closure) are posted as replies in that thread.
+
+### DM Notifications
+
+Certain events send direct messages to the affected user:
+
+- **Respondent assignment** -- DMs the respondent when they are assigned to a question, with a link to the question. Also posts a thread reply mentioning the assignee.
+- **Changes requested** -- DMs the answer author when a reviewer requests changes, including the reviewer comment if provided.
+
+Slack user IDs are resolved by email lookup (`users.lookupByEmail`) with an in-memory cache.
+
+### Markdown Conversion
+
+Message bodies are converted from markdown to Slack's mrkdwn format (`_md_to_mrkdwn()`): headings become bold, `**bold**` becomes `*bold*`, links become `<url|text>`, bullets become `\u2022`, and HTML tags are stripped. Code spans and fenced blocks are preserved. Output is truncated to 2000 characters.
+
+### Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `SLACK_BOT_TOKEN` | Bot User OAuth Token (`xoxb-...`). When empty, all notifications are silently skipped. |
+| `SLACK_DEFAULT_CHANNEL` | Channel name or ID for question threads (e.g., `#knowledge-elicitation`). |
+| `FRONTEND_URL` | Base URL for deep links in Slack messages (e.g., `http://localhost:5173`). |
+
+### Templates
+
+Message formatting functions live in `backend/app/templates/slack/`:
+
+- `questions.py` -- question published, rejected, closed
+- `answers.py` -- answer submitted, approved
+- `reviews.py` -- review verdict, revision requested, changes requested DM
+- `assignments.py` -- respondent assigned (DM and thread)
+
+## File Parsing
+
+The file upload and parsing layer (`backend/app/services/file_parser.py`) extracts plain text from uploaded documents for the question extraction pipeline. Supported formats:
+
+| Format | Parser | Library |
+|--------|--------|---------|
+| `.txt` | `TextParser` | Built-in (UTF-8 decode) |
+| `.md` | `TextParser` | Built-in (UTF-8 decode) |
+| `.pdf` | `PdfParser` | pymupdf |
+| `.docx` | `DocxParser` | python-docx |
+| `.json` | `JsonParser` | Built-in (recursive string extraction) |
+
+Files are resolved by content type first, then by extension as a fallback. Maximum file size is 10 MB.
+
 ## Respondent Recommendation
 
-Embedding-based respondent recommendation runs entirely in the backend (no LLM call at query time):
+Recommendations match questions to suitable respondents using one of two strategies, configured via `RECOMMENDATION_STRATEGY`:
 
-1. Questions and answers get embeddings generated on create/update (via litellm)
-2. `POST /api/v1/ai/recommend` finds answers with similar embeddings using pgvector cosine similarity
-3. Results are grouped by author and scored: `0.4 * semantic_similarity + 0.3 * approval_rate + 0.2 * category_match + 0.1 * recency`
+| Strategy | How it works |
+|----------|-------------|
+| `embedding` | pgvector cosine similarity between question and answer embeddings, scored: `0.4 * semantic_similarity + 0.3 * approval_rate + 0.2 * category_match + 0.1 * recency`. Runs entirely in the backend -- no LLM call at query time. Requires `EMBEDDING_MODEL` to be configured. |
+| `llm` | The backend gathers candidate profiles from the database and sends them to the worker, which uses LLM reasoning to score and rank respondents. Uses Haiku by default (`RECOMMENDATION_MODEL`). Requires `WORKER_URL` to be configured. |
+| `auto` (default) | Prefers `embedding` when `EMBEDDING_MODEL` is set, otherwise falls back to `llm`. |
+
+The API endpoint is `POST /api/v1/ai/recommend`.
