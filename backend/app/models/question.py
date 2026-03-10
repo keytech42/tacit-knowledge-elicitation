@@ -79,12 +79,18 @@ class Question(UUIDMixin, TimestampMixin, Base):
     )
     source_passage: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    respondent_pool_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
     embedding = mapped_column(Vector(1024), nullable=True)
 
     created_by = relationship("User", foreign_keys=[created_by_id], lazy="selectin")
     source_document = relationship("SourceDocument", lazy="selectin")
     confirmed_by = relationship("User", foreign_keys=[confirmed_by_id], lazy="selectin")
     assigned_respondent = relationship("User", foreign_keys=[assigned_respondent_id], lazy="selectin")
+    assigned_respondents = relationship(
+        "QuestionRespondent", foreign_keys="QuestionRespondent.question_id",
+        lazy="selectin", cascade="all, delete-orphan",
+    )
     answer_options = relationship("AnswerOption", back_populates="question", lazy="selectin")
     feedback = relationship("QuestionQualityFeedback", back_populates="question")
 

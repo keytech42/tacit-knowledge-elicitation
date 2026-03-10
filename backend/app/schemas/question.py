@@ -40,6 +40,23 @@ class AssignRespondentRequest(BaseModel):
     user_id: uuid.UUID
 
 
+class RespondentPoolRequest(BaseModel):
+    user_ids: list[uuid.UUID]
+    expected_version: int
+
+
+class RespondentPoolMember(BaseModel):
+    id: uuid.UUID
+    user: UserResponse
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class RespondentPoolResponse(BaseModel):
+    respondents: list[RespondentPoolMember]
+    version: int
+
+
 class AnswerOptionResponse(BaseModel):
     id: uuid.UUID
     body: str
@@ -70,6 +87,8 @@ class QuestionResponse(BaseModel):
     source_type: str | None = None
     source_document_id: uuid.UUID | None = None
     source_passage: str | None = None
+    assigned_respondents: list[RespondentPoolMember] = []
+    respondent_pool_version: int = 0
     answer_options: list[AnswerOptionResponse] = []
     model_config = {"from_attributes": True}
 
