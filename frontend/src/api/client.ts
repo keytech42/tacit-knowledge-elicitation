@@ -185,22 +185,6 @@ export interface TaskStatus {
   error?: string;
 }
 
-export interface AITask {
-  id: string;
-  task_type: string;
-  status: string; // pending, running, completed, failed, cancelled
-  worker_task_id: string | null;
-  result: Record<string, unknown> | null;
-  error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AITaskListResponse {
-  items: AITask[];
-  total: number;
-}
-
 export interface Recommendation {
   user_id: string;
   display_name: string;
@@ -218,16 +202,16 @@ export interface RecommendationResponse {
 
 export const ai = {
   generateQuestions: (topic: string, domain = "", count = 3, context?: string) =>
-    api.post<AITask>("/ai/generate-questions", { topic, domain, count, context }),
+    api.post<TaskAccepted>("/ai/generate-questions", { topic, domain, count, context }),
 
   scaffoldOptions: (questionId: string, numOptions = 4) =>
-    api.post<AITask>("/ai/scaffold-options", {
+    api.post<TaskAccepted>("/ai/scaffold-options", {
       question_id: questionId,
       num_options: numOptions,
     }),
 
   reviewAssist: (answerId: string) =>
-    api.post<AITask>("/ai/review-assist", { answer_id: answerId }),
+    api.post<TaskAccepted>("/ai/review-assist", { answer_id: answerId }),
 
   recommend: (questionId: string, topK = 5) =>
     api.post<RecommendationResponse>("/ai/recommend", {
@@ -236,16 +220,10 @@ export const ai = {
     }),
 
   getTaskStatus: (taskId: string) =>
-    api.get<AITask>(`/ai/tasks/${taskId}`),
-
-  listTasks: (status?: string) =>
-    api.get<AITaskListResponse>(`/ai/tasks${status ? `?status=${status}` : ""}`),
-
-  cancelTask: (id: string) =>
-    api.post<AITask>(`/ai/tasks/${id}/cancel`, {}),
+    api.get<TaskStatus>(`/ai/tasks/${taskId}`),
 
   extractQuestions: (sourceText: string, documentTitle = "", domain = "", maxQuestions = 10) =>
-    api.post<AITask>("/ai/extract-questions", {
+    api.post<TaskAccepted>("/ai/extract-questions", {
       source_text: sourceText,
       document_title: documentTitle,
       domain: domain,
@@ -271,7 +249,7 @@ export const ai = {
       const err = await resp.json().catch(() => ({ detail: resp.statusText }));
       throw new Error(err.detail || resp.statusText);
     }
-    return resp.json() as Promise<AITask>;
+    return resp.json() as Promise<TaskAccepted>;
   },
 
   assignRespondent: (questionId: string, userId: string) =>
