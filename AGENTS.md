@@ -119,7 +119,7 @@ Python 3.12 is required. Tests cannot run outside Docker without it.
 ### Test Structure
 
 - `conftest.py`: Fixtures for db sessions, HTTP client, user/role factories. Enables the `vector` pgvector extension before creating tables.
-- Each test file covers one domain: `test_admin_queue.py`, `test_ai_integration.py`, `test_ai_logging.py`, `test_answer_options.py`, `test_answers.py`, `test_auth.py`, `test_e2e_workflows.py`, `test_file_parser.py`, `test_fix_integration.py`, `test_permissions.py`, `test_questions.py`, `test_recommendation.py`, `test_respondent_assignment.py`, `test_reviews.py`, `test_slack_dm.py`, `test_slack_threads.py`, `test_slack.py`, `test_source_documents.py`, `test_startup.py`, `test_state_consistency.py`
+- Each test file covers one domain: `test_admin_queue.py`, `test_ai_integration.py`, `test_ai_logging.py`, `test_answer_options.py`, `test_answers.py`, `test_auth.py`, `test_config_integrity.py`, `test_e2e_workflows.py`, `test_event_bus.py`, `test_file_parser.py`, `test_fix_integration.py`, `test_permissions.py`, `test_questions.py`, `test_recommendation.py`, `test_respondent_assignment.py`, `test_reviews.py`, `test_slack_dm.py`, `test_slack_threads.py`, `test_slack.py`, `test_source_documents.py`, `test_sse.py`, `test_startup.py`, `test_state_consistency.py`
 
 ### Writing Tests
 
@@ -221,6 +221,31 @@ EMBEDDING_API_KEY=no-key
 ```
 
 For cloud providers, use the provider's model name directly (e.g., `text-embedding-3-small` for OpenAI).
+
+### Event Publishing and Transaction Ordering
+
+**Never publish an event that triggers external reads of your data before the transaction is committed.**
+
+`flush()` writes to the database within a transaction — other sessions can't see it under PostgreSQL's READ COMMITTED isolation. If you publish an SSE event (or webhook, WebSocket message, etc.) after `flush()` but before `commit()`, the recipient will re-fetch and read stale data.
+
+```python
+# WRONG — event fires before commit, re-fetch sees old data
+await db.flush()
+publish_event(channel, {"type": "status_changed", ...})
+await slack.notify(...)  # slow — gives browser time to re-fetch stale data
+return response  # get_db auto-commits here, too late
+
+# RIGHT — commit first, then publish
+await db.flush()
+await db.commit()
+publish_event(channel, {"type": "status_changed", ...})
+await slack.notify(...)
+return response
+```
+
+This is especially dangerous with in-process pub/sub (like `asyncio.Queue`) because events are delivered instantly — there's zero network latency to mask the race. External brokers (Redis, RabbitMQ) may hide the bug with slight delivery delay, making it even harder to diagnose when it surfaces.
+
+The `get_db` dependency auto-commits after the handler returns. Calling `commit()` mid-handler is safe — the subsequent auto-commit is a no-op if no new changes were made.
 
 ## Gotchas
 

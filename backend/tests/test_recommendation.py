@@ -275,3 +275,21 @@ class TestRecommendEndpoint:
         data = resp.json()
         assert len(data["items"]) == 1
         assert data["items"][0]["display_name"] == "Bob"
+        assert data["strategy"] == "llm"
+
+    async def test_recommend_strategy_field_for_embedding(self, client, admin_user, db):
+        """Endpoint response includes strategy='embedding' when using embedding strategy."""
+        from app.models.question import Question
+
+        q = Question(title="Strategy Test", body="Body", status="published", created_by_id=admin_user.id)
+        db.add(q)
+        await db.flush()
+
+        with patch("app.services.recommendation._resolve_strategy", return_value="embedding"):
+            resp = await client.post(
+                "/api/v1/ai/recommend",
+                json={"question_id": str(q.id)},
+                headers=auth_header(admin_user),
+            )
+        assert resp.status_code == 200
+        assert resp.json()["strategy"] == "embedding"

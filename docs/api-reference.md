@@ -921,6 +921,32 @@ Deleting a source document nullifies the `source_document_id` on any linked ques
 
 ---
 
+## Real-Time Events (SSE)
+
+### `GET /questions/{question_id}/events?token=<jwt>`
+
+Server-Sent Events endpoint for real-time answer status updates on a question. The browser holds a persistent connection and receives events as they happen — no polling needed.
+
+**Authentication**: JWT passed via `token` query parameter (the browser's `EventSource` API cannot set custom headers).
+
+**Event types**:
+
+| Event | Fired when | Payload fields |
+|-------|-----------|----------------|
+| `answer_status_changed` | Answer status transitions (submit, review verdict, reviewer assignment) | `answer_id`, `status`, `previous_status` (optional) |
+
+**SSE format**:
+```
+event: answer_status_changed
+data: {"type":"answer_status_changed","answer_id":"...","status":"approved","previous_status":"under_review"}
+```
+
+**Keepalive**: A comment (`: keepalive`) is sent every 30 seconds to prevent proxy/browser timeout. An initial `: connected` comment is sent on connection.
+
+**Reconnection**: The browser's `EventSource` API auto-reconnects on connection loss with exponential backoff.
+
+---
+
 ## Visibility Rules
 
 Not captured in OpenAPI:
