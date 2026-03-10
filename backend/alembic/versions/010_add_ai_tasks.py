@@ -18,25 +18,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    aitasktype = sa.Enum(
-        "generate_questions", "extract_questions", "scaffold_options", "review_assist",
-        name="aitasktype",
-        create_type=False,
-    )
-    aitasktype.create(op.get_bind(), checkfirst=True)
-
-    aitaskstatus = sa.Enum(
-        "pending", "running", "completed", "failed", "cancelled",
-        name="aitaskstatus",
-        create_type=False,
-    )
-    aitaskstatus.create(op.get_bind(), checkfirst=True)
-
     op.create_table(
         "ai_tasks",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("task_type", aitasktype, nullable=False),
-        sa.Column("status", aitaskstatus, nullable=False, server_default="pending"),
+        sa.Column(
+            "task_type",
+            sa.Enum(
+                "generate_questions", "extract_questions", "scaffold_options", "review_assist",
+                name="aitasktype",
+            ),
+            nullable=False,
+        ),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "pending", "running", "completed", "failed", "cancelled",
+                name="aitaskstatus",
+            ),
+            nullable=False,
+            server_default="pending",
+        ),
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),
