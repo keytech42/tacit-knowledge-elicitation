@@ -91,7 +91,8 @@ export function ReviewDetail() {
 
   // Show the version this review targets (from review record), not the answer's current version
   const answerVersion = review.target_type === "answer" ? review.answer_version : null;
-  const answerStatus = target && "status" in target && "current_version" in target ? (target as Answer).status : null;
+  // Use answer_status from the review response (enriched by backend) — updates immediately after verdict
+  const answerStatus = review.answer_status ?? null;
   const canAssign = review.target_type === "answer" && (hasRole("admin") || hasRole("reviewer"));
   const answerAuthorId = target && "author" in target ? (target as Answer).author?.id : null;
 

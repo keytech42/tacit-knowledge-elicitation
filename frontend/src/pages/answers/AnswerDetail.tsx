@@ -144,10 +144,10 @@ export function AnswerDetail() {
     }
     setAssigningReviewer(true);
     try {
-      const review = await ai.assignReviewer(id, selectedUser.id);
-      setReviews([...reviews, review]);
+      await ai.assignReviewer(id, selectedUser.id);
       setPickedReviewer(null);
       setError("");
+      load(); // Refresh answer status and reviews list
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not assign reviewer");
     }
