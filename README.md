@@ -13,26 +13,35 @@ Open http://localhost:5173 and click **Sign in as Test User** to log in as a dev
 
 ## Architecture
 
-| Service | Tech | Port |
-|---------|------|------|
-| **api** | FastAPI + SQLAlchemy (async) | 8000 |
-| **web** | React 18 + TypeScript + Vite | 5173 |
-| **worker** | FastAPI + litellm (LLM tasks) | 8001 |
-| **db** | PostgreSQL 16 + pgvector | 5432 |
+| Service | Tech | Port | Profile |
+|---------|------|------|---------|
+| **api** | FastAPI + SQLAlchemy (async) | 8000 | default |
+| **web** | React 18 + TypeScript + Vite | 5173 | default |
+| **worker** | FastAPI + litellm (LLM tasks) | 8001 | default |
+| **db** | PostgreSQL 16 + pgvector | 5432 | default |
+| **embedding** | llama.cpp (bge-m3 Q8_0) | 8090 | `embedding` |
 
-Migrations run automatically on container start via Alembic. The worker service is optional — the platform functions fully without it.
+Migrations run automatically on container start via Alembic. The worker and embedding services are optional — the platform functions fully without them.
+
+> [!WARNING]
+> The `embedding` Docker Compose service runs **CPU-only inference**. This is sufficient for typical workloads (a few embeddings per minute), but if you have a GPU available, use a GPU-accelerated setup instead for better throughput. See [Embeddings Setup](docs/embeddings.md#gpu-alternatives) for CUDA, Metal, ROCm, and cloud options.
 
 ## Development
 
 ```bash
-make up       # start all services (build + run)
-make test     # run backend tests
-make migrate  # run database migrations manually
-make logs     # follow container logs
-make shell    # open bash in api container
-make seed     # seed database with sample data (5 users, 5 questions)
-make test-e2e # run Playwright end-to-end tests
-make down     # stop everything
+make up             # start core services (db, api, web, worker)
+make test           # run backend tests
+make migrate        # run database migrations manually
+make logs           # follow container logs
+make shell          # open bash in api container
+make seed           # seed database with sample data (5 users, 5 questions)
+make test-e2e       # run Playwright end-to-end tests
+make down           # stop everything
+
+# Embedding server (optional — for embedding-based recommendations)
+make embed-download # download bge-m3 model (~605MB)
+make up-embed       # start all services + embedding server
+make embed-status   # check embedding server health
 ```
 
 ### Running specific tests

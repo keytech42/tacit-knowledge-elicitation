@@ -210,14 +210,19 @@ The Question and Answer models have optional `embedding` columns (`Vector(1024)`
 **Model**: bge-m3 (1024 dimensions, 8K context, excellent English + Korean support).
 
 **Inference engines**:
-- **Development (macOS)**: llama.cpp with Metal GPU acceleration. Run natively (not in Docker — Docker on macOS cannot access Metal GPU). Use `llama-server` with `--embeddings` flag.
-- **Production (Linux)**: HuggingFace TEI with CUDA GPU support, runs in Docker.
+- **Docker Compose (CPU)**: `make up-embed` starts the `embedding` service (llama.cpp server, CPU-only). Model GGUF must be downloaded first via `make embed-download`.
+- **macOS dev (Metal GPU)**: Run llama-server natively on host (Docker on macOS cannot access Metal GPU). Use `host.docker.internal` in `EMBEDDING_API_BASE`.
+- **Linux GPU**: Use `ghcr.io/ggml-org/llama.cpp:server-cuda` or HuggingFace TEI via `docker-compose.override.yml`.
 
-**litellm config**: Use `openai/` prefix with `api_base` pointing to the local server:
+**litellm config**: Use `openai/` prefix with `api_base` pointing to the embedding server:
 ```
+# Docker Compose (embedding service on compose network)
 EMBEDDING_MODEL=openai/bge-m3
-EMBEDDING_API_BASE=http://host.docker.internal:8090/v1/
+EMBEDDING_API_BASE=http://embedding:8090/v1/
 EMBEDDING_API_KEY=no-key
+
+# macOS dev (host-side llama-server)
+EMBEDDING_API_BASE=http://host.docker.internal:8090/v1/
 ```
 
 For cloud providers, use the provider's model name directly (e.g., `text-embedding-3-small` for OpenAI).

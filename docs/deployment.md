@@ -157,4 +157,4 @@ Migrations run automatically before the API starts (`alembic upgrade head`). For
 - Run migrations as a one-off task, not on every instance startup, when running multiple replicas
 - The worker tracks tasks in-memory — run a single instance (no horizontal scaling for v1)
 - The PostgreSQL image must be `pgvector/pgvector:pg16` (drop-in replacement for `postgres:16` with the `vector` extension)
-- See [Embeddings Setup](embeddings.md) for local GPU and cloud embedding configuration
+- The embedding service is optional — enable with `--profile embedding` or `make up-embed`. See [Embeddings Setup](embeddings.md) for CPU, GPU, and cloud options
