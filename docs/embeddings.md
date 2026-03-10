@@ -2,7 +2,7 @@
 
 Embeddings power the respondent recommendation system, which uses pgvector cosine similarity to match questions with the best-suited respondents based on their past answers.
 
-When enabled, embeddings are generated automatically whenever a question or answer is created or updated. When disabled, the recommendation endpoint falls back to a simple random selection.
+When enabled, embeddings are generated automatically whenever a question or answer is created or updated. When disabled (or `RECOMMENDATION_STRATEGY=llm`), recommendations use LLM-based scoring via the worker service instead. See `docs/architecture.md` for strategy comparison.
 
 ## Quick Start (Local Development)
 

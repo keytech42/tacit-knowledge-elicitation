@@ -74,7 +74,7 @@ The platform includes optional LLM-powered capabilities via a separate worker se
 | **Question generation** | Admin on-demand | Generate elicitation questions for a topic/domain |
 | **Answer option scaffolding** | Auto on publish or on-demand | Generate up to 4 maximally distinct answer options (replaces existing options each run) |
 | **Review assistance** | Auto on submit or on-demand | AI-assisted preliminary review with confidence scoring |
-| **Respondent recommendation** | On-demand | Embedding-based similarity matching via pgvector |
+| **Respondent recommendation** | On-demand | Embedding similarity (pgvector) or LLM-based scoring (Haiku) — configurable via `RECOMMENDATION_STRATEGY` |
 
 ### Setup
 
