@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api, ai, Question, Answer, Recommendation, TaskStatus, User } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -9,6 +9,7 @@ import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, statusLabel, WORKFLOW_HINTS } from "@/components/StatusBadge";
 import { useToast } from "@/components/ToastContext";
 import { UserPicker } from "@/components/UserPicker";
+import { useQuestionEvents } from "@/hooks/useQuestionEvents";
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
@@ -131,10 +132,6 @@ export function QuestionDetail() {
   const [assignLoading, setAssignLoading] = useState<string | null>(null);
   const [pickerSelected, setPickerSelected] = useState<User | null>(null);
 
-  // Polling ref for background worker state changes (e.g., AI auto-review after answer submit)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
   const loadQuestion = () => {
     if (!id) return;
     api.get<Question>(`/questions/${id}`).then((q) => {
@@ -149,26 +146,13 @@ export function QuestionDetail() {
 
   useEffect(loadQuestion, [id]);
 
-  // Re-fetch when the browser tab regains focus — catches human review changes
-  const answersRef = useRef(answers);
-  answersRef.current = answers;
-  useEffect(() => {
-    const onFocus = () => {
-      if (!id) return;
-      const prev = answersRef.current;
-      api.get<{ answers: Answer[]; total: number }>(`/questions/${id}/answers`).then((d) => {
-        setAnswers(d.answers);
-        for (const fresh of d.answers) {
-          const old = prev.find((a) => a.id === fresh.id);
-          if (old && old.status !== fresh.status) {
-            toast.info(`Answer status: ${statusLabel(fresh.status)}`);
-          }
-        }
-      }).catch(() => {});
-    };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [id]);
+  // Real-time answer status updates via SSE
+  useQuestionEvents(id, (event) => {
+    if (event.type === "answer_status_changed") {
+      toast.info(`Answer status: ${statusLabel(event.status)}`);
+      loadQuestion();
+    }
+  });
 
   // Keep picker in sync with assigned respondent
   useEffect(() => {
@@ -225,36 +209,7 @@ export function QuestionDetail() {
       setSelectedOptionId(null);
       loadQuestion();
       toast.success("Answer submitted successfully");
-
-      // Poll for background AI review — worker auto-reviews submitted answers
-      // Tracks through intermediate states (submitted → under_review → approved/changes_requested)
-      if (pollRef.current) clearInterval(pollRef.current);
-      let attempts = 0;
-      let lastStatus = "submitted";
-      const terminalStatuses = new Set(["approved", "revision_requested", "rejected", "draft"]);
-      pollRef.current = setInterval(async () => {
-        attempts++;
-        if (attempts > 20) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-          return;
-        }
-        try {
-          const fresh = await api.get<Answer>(`/answers/${created.id}`);
-          if (fresh.status !== lastStatus) {
-            lastStatus = fresh.status;
-            loadQuestion();
-            toast.info(`Answer status: ${statusLabel(fresh.status)}`);
-            if (terminalStatuses.has(fresh.status)) {
-              if (pollRef.current) clearInterval(pollRef.current);
-              pollRef.current = null;
-            }
-          }
-        } catch {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      }, 3000);
+      // Status updates arrive via SSE — no polling needed
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Submit failed";
       setError(msg);

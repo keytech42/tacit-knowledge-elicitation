@@ -12,6 +12,7 @@ from app.models.review import Review, ReviewComment, ReviewTargetType, ReviewVer
 from app.models.user import RoleName, User
 from app.schemas.review import AssignReviewerRequest, ReviewCommentCreate, ReviewCommentResponse, ReviewCreate, ReviewResponse, ReviewUpdate
 from app.services import slack
+from app.services.event_bus import publish as publish_event
 from app.services.review import auto_assign_reviewers, resolve_answer_reviews
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -95,6 +96,12 @@ async def create_review(
         # Move to under_review if submitted
         if target.status == AnswerStatus.SUBMITTED.value:
             target.status = AnswerStatus.UNDER_REVIEW.value
+            publish_event(str(target.question_id), {
+                "type": "answer_status_changed",
+                "answer_id": str(target.id),
+                "status": AnswerStatus.UNDER_REVIEW.value,
+                "previous_status": AnswerStatus.SUBMITTED.value,
+            })
     elif request.target_type == "question":
         result = await db.execute(select(Question).where(Question.id == request.target_id))
         target = result.scalar_one_or_none()
@@ -193,6 +200,12 @@ async def assign_reviewer(
     # Move to under_review if submitted
     if answer.status == AnswerStatus.SUBMITTED.value:
         answer.status = AnswerStatus.UNDER_REVIEW.value
+        publish_event(str(answer.question_id), {
+            "type": "answer_status_changed",
+            "answer_id": str(answer.id),
+            "status": AnswerStatus.UNDER_REVIEW.value,
+            "previous_status": AnswerStatus.SUBMITTED.value,
+        })
 
     await db.flush()
     await db.refresh(review)
@@ -293,6 +306,15 @@ async def update_review(
 
     await db.refresh(review)
     await _enrich_review_context([review], db)
+
+    # Notify SSE subscribers about answer status change (from review resolution)
+    if review.target_type == ReviewTargetType.ANSWER.value and answer and answer.status != answer_status_before:
+        publish_event(str(answer.question_id), {
+            "type": "answer_status_changed",
+            "answer_id": str(answer.id),
+            "status": answer.status,
+            "previous_status": answer_status_before,
+        })
 
     # Slack notifications for review verdicts on answers
     if review.target_type == ReviewTargetType.ANSWER.value and answer:
