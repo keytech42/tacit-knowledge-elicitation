@@ -149,6 +149,27 @@ export function QuestionDetail() {
 
   useEffect(loadQuestion, [id]);
 
+  // Re-fetch when the tab regains focus — catches human review changes
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+  useEffect(() => {
+    const onFocus = () => {
+      if (!id) return;
+      const prev = answersRef.current;
+      api.get<{ answers: Answer[]; total: number }>(`/questions/${id}/answers`).then((d) => {
+        setAnswers(d.answers);
+        for (const fresh of d.answers) {
+          const old = prev.find((a) => a.id === fresh.id);
+          if (old && old.status !== fresh.status) {
+            toast.info(`Answer status: ${statusLabel(fresh.status)}`);
+          }
+        }
+      }).catch(() => {});
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [id]);
+
   // Keep picker in sync with assigned respondent
   useEffect(() => {
     setPickerSelected(question?.assigned_respondent ?? null);
