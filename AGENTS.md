@@ -222,6 +222,31 @@ EMBEDDING_API_KEY=no-key
 
 For cloud providers, use the provider's model name directly (e.g., `text-embedding-3-small` for OpenAI).
 
+### Event Publishing and Transaction Ordering
+
+**Never publish an event that triggers external reads of your data before the transaction is committed.**
+
+`flush()` writes to the database within a transaction — other sessions can't see it under PostgreSQL's READ COMMITTED isolation. If you publish an SSE event (or webhook, WebSocket message, etc.) after `flush()` but before `commit()`, the recipient will re-fetch and read stale data.
+
+```python
+# WRONG — event fires before commit, re-fetch sees old data
+await db.flush()
+publish_event(channel, {"type": "status_changed", ...})
+await slack.notify(...)  # slow — gives browser time to re-fetch stale data
+return response  # get_db auto-commits here, too late
+
+# RIGHT — commit first, then publish
+await db.flush()
+await db.commit()
+publish_event(channel, {"type": "status_changed", ...})
+await slack.notify(...)
+return response
+```
+
+This is especially dangerous with in-process pub/sub (like `asyncio.Queue`) because events are delivered instantly — there's zero network latency to mask the race. External brokers (Redis, RabbitMQ) may hide the bug with slight delivery delay, making it even harder to diagnose when it surfaces.
+
+The `get_db` dependency auto-commits after the handler returns. Calling `commit()` mid-handler is safe — the subsequent auto-commit is a no-op if no new changes were made.
+
 ## Gotchas
 
 - The Dockerfile copies `pyproject.toml` before source for layer caching. `PYTHONPATH=/app` is set so `alembic` can find the `app` module.
