@@ -300,6 +300,88 @@ The optional field `auto_assign_count` (default: 1) controls how many reviewers 
 
 Returns 409 if the question is not in `published` status. Returns 404 if the question or user is not found. A Slack DM notification is sent to the assigned respondent (fire-and-forget).
 
+### Admin Queue
+
+`GET /api/v1/questions/admin-queue` — returns all actionable questions grouped by status bucket. Admin only.
+
+**Request body:** none.
+
+**Response (200):** `AdminQueueResponse`
+```json
+{
+  "proposed": [AdminQueueItem, ...],
+  "in_review": [AdminQueueItem, ...],
+  "pending": [AdminQueueItem, ...],
+  "published": [AdminQueueItem, ...],
+  "closed": [AdminQueueItem, ...]
+}
+```
+
+Each `AdminQueueItem` contains:
+```json
+{
+  "id": "<uuid>",
+  "title": "...",
+  "body": "...",
+  "category": "...",
+  "status": "proposed",
+  "quality_score": null,
+  "created_by": {UserResponse},
+  "created_at": "...",
+  "updated_at": "...",
+  "published_at": null,
+  "answer_count": 3,
+  "approved_count": 1,
+  "pending_count": 2
+}
+```
+
+The `pending` bucket contains published questions that have in-progress answers (submitted, under_review, or revision_requested). Published questions with no in-progress answers appear in the `published` bucket. Questions are ordered newest first within each bucket.
+
+### Categories
+
+`GET /api/v1/questions/categories` — returns a deduplicated list of all category strings currently in use. Any authenticated user.
+
+**Request body:** none.
+
+**Response (200):** `list[str]`
+```json
+["Security", "Architecture", "Deployment"]
+```
+
+Returns only non-null categories. The list is unordered.
+
+### Quality Feedback
+
+`POST /api/v1/questions/{question_id}/feedback` — submit quality feedback for a question. Any authenticated user. Limited to one entry per user per question.
+
+**Request body:**
+```json
+{
+  "rating": 4,
+  "comment": "Well-structured question"
+}
+```
+
+- `rating` (int, required) — 1 to 5
+- `comment` (string, optional)
+
+**Response (201):** `QualityFeedbackResponse`
+```json
+{
+  "id": "<uuid>",
+  "question_id": "<uuid>",
+  "user": {UserResponse},
+  "rating": 4,
+  "comment": "Well-structured question",
+  "created_at": "..."
+}
+```
+
+Submitting feedback automatically recalculates the question's `quality_score` as the average of all feedback ratings.
+
+Returns 404 if the question is not found. Returns 409 if the user has already submitted feedback for this question.
+
 ### Backfill Slack Threads
 
 `POST /api/v1/questions/backfill-slack-threads` — creates Slack threads for published and closed questions that do not already have one. Admin only.
@@ -338,6 +420,25 @@ Each submission creates an immutable `AnswerRevision`. The `trigger` field recor
 | `initial_submit` | First `POST .../submit` (creates version 1) |
 | `revision_after_review` | Resubmit after `changes_requested` feedback |
 | `post_approval_update` | `POST .../revise` on an already-approved answer |
+
+### Post-Approval Revision
+
+`POST /api/v1/answers/{answer_id}/revise` — create a post-approval revision on an already-approved answer. Resets the answer status to `submitted` and creates a new revision with trigger `post_approval_update`. Available to the answer author, collaborators, or admin.
+
+**Request body (optional):**
+```json
+{
+  "body": "Updated answer text",
+  "selected_option_id": "<uuid>"
+}
+```
+
+- `body` (string, optional) — new answer body; if omitted, the existing body is snapshotted
+- `selected_option_id` (uuid, optional) — new selected option; if omitted, the existing selection is kept
+
+**Response (200):** `AnswerResponse` — the updated answer with status `submitted` and incremented `current_version`.
+
+Returns 404 if the answer is not found. Returns 403 if the caller is not the author, a collaborator, or an admin. Returns 409 if the answer is not in `approved` status.
 
 ### Edit permissions
 
