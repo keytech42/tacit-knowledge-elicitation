@@ -11,7 +11,7 @@ async function createPublishedQuestion(page: Page, suffix: string) {
   await page.getByPlaceholder("What do you want to know?").fill(title);
   await page
     .getByPlaceholder("Provide context, constraints, and what a good answer looks like...")
-    .fill("Question for respondent picker e2e test.");
+    .fill("Question for respondent pool e2e test.");
   await page.getByRole("button", { name: "Save as Draft" }).click();
   await page.waitForURL("**/questions/**");
 
@@ -26,22 +26,22 @@ async function createPublishedQuestion(page: Page, suffix: string) {
   return { url: page.url(), title };
 }
 
-test.describe("Respondent Picker (QuestionDetail)", () => {
-  test("AI Actions section visible on published question for admin", async ({ page }) => {
-    await createPublishedQuestion(page, `${Date.now()}-ai-section`);
+test.describe("Respondent Pool Editor (QuestionDetail)", () => {
+  test("Respondent Pool visible on published question for admin", async ({ page }) => {
+    await createPublishedQuestion(page, `${Date.now()}-pool-section`);
 
     // The AI Actions section should be visible for admin users
     await expect(page.getByRole("heading", { name: "AI Actions" })).toBeVisible();
 
-    // Should show the "Assign Respondent" label (UserPicker)
-    await expect(page.getByText("Assign Respondent")).toBeVisible();
-    await expect(page.getByPlaceholder("Search respondents by name or email...")).toBeVisible();
+    // Should show the "Respondent Pool" label and search input
+    await expect(page.getByText("Respondent Pool")).toBeVisible();
+    await expect(page.getByPlaceholder("Search respondents to add...")).toBeVisible();
   });
 
-  test("respondent picker dropdown shows results", async ({ page }) => {
-    await createPublishedQuestion(page, `${Date.now()}-respondent-dropdown`);
+  test("respondent pool dropdown shows results", async ({ page }) => {
+    await createPublishedQuestion(page, `${Date.now()}-pool-dropdown`);
 
-    const input = page.getByPlaceholder("Search respondents by name or email...");
+    const input = page.getByPlaceholder("Search respondents to add...");
     await input.click();
 
     // Dropdown should appear
@@ -52,24 +52,30 @@ test.describe("Respondent Picker (QuestionDetail)", () => {
     await expect(listbox.locator("[role=option]").first()).toBeVisible({ timeout: 5000 });
   });
 
-  test("assign respondent and verify assignment shown", async ({ page }) => {
-    await createPublishedQuestion(page, `${Date.now()}-assign-resp`);
+  test("add respondent to pool and confirm changes", async ({ page }) => {
+    await createPublishedQuestion(page, `${Date.now()}-add-pool`);
 
-    const input = page.getByPlaceholder("Search respondents by name or email...");
+    const input = page.getByPlaceholder("Search respondents to add...");
     await input.click();
 
     // Wait for dropdown results
     const listbox = page.getByRole("listbox");
     await expect(listbox.locator("[role=option]").first()).toBeVisible({ timeout: 5000 });
 
-    // Click the first result
+    // Click the first result to add to pool
     await listbox.locator("[role=option]").first().click();
 
-    // The picker should now show the selected user (with clear button)
-    await expect(page.getByRole("button", { name: "Clear selection" })).toBeVisible({ timeout: 5000 });
+    // Should show the "Confirm Changes" button (pool has unsaved changes)
+    await expect(page.getByRole("button", { name: "Confirm Changes" })).toBeVisible({ timeout: 5000 });
 
-    // The question header should show "Assigned: <name>"
-    await expect(page.getByText(/Assigned:/).first()).toBeVisible();
+    // Confirm the changes
+    await page.getByRole("button", { name: "Confirm Changes" }).click();
+
+    // After saving, the confirm button should disappear (no pending changes)
+    await expect(page.getByRole("button", { name: "Confirm Changes" })).not.toBeVisible({ timeout: 5000 });
+
+    // The respondent count should show 1/5
+    await expect(page.getByText("1/5 respondents")).toBeVisible();
   });
 
   test("AI Actions not shown on draft questions", async ({ page }) => {
@@ -85,13 +91,13 @@ test.describe("Respondent Picker (QuestionDetail)", () => {
 
     // AI Actions heading should NOT be visible on draft questions
     await expect(page.getByRole("heading", { name: "AI Actions" })).not.toBeVisible();
-    await expect(page.getByText("Assign Respondent")).not.toBeVisible();
+    await expect(page.getByText("Respondent Pool")).not.toBeVisible();
   });
 
   test("respondent search filters by query", async ({ page }) => {
     await createPublishedQuestion(page, `${Date.now()}-search-filter`);
 
-    const input = page.getByPlaceholder("Search respondents by name or email...");
+    const input = page.getByPlaceholder("Search respondents to add...");
     await input.click();
     await input.fill("Test");
 
