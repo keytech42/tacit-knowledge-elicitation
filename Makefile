@@ -1,4 +1,7 @@
-.PHONY: up down test test-e2e migrate logs shell seed
+.PHONY: up down test test-e2e migrate logs shell seed \
+       up-embed down-embed embed-download embed-status
+
+# --- Core services ---
 
 up:
 	docker compose up --build
@@ -24,3 +27,42 @@ shell:
 
 seed:
 	docker compose exec api python scripts/seed.py
+
+# --- Embedding service ---
+
+EMBEDDING_MODEL_DIR ?= ./models
+EMBEDDING_MODEL_FILE ?= bge-m3-q8_0.gguf
+
+embed-download:
+	@mkdir -p $(EMBEDDING_MODEL_DIR)
+	@if [ -f "$(EMBEDDING_MODEL_DIR)/$(EMBEDDING_MODEL_FILE)" ]; then \
+		echo "Model already exists at $(EMBEDDING_MODEL_DIR)/$(EMBEDDING_MODEL_FILE)"; \
+	else \
+		echo "Downloading bge-m3 Q8_0 (~605MB)..."; \
+		python3 -c " \
+from huggingface_hub import hf_hub_download; \
+hf_hub_download( \
+    repo_id='ggml-org/bge-m3-Q8_0-GGUF', \
+    filename='bge-m3-q8_0.gguf', \
+    local_dir='$(EMBEDDING_MODEL_DIR)', \
+); \
+print('Done') \
+"; \
+	fi
+
+up-embed:
+	@if [ ! -f "$(EMBEDDING_MODEL_DIR)/$(EMBEDDING_MODEL_FILE)" ]; then \
+		echo "Error: Model not found at $(EMBEDDING_MODEL_DIR)/$(EMBEDDING_MODEL_FILE)"; \
+		echo "Run 'make embed-download' first."; \
+		exit 1; \
+	fi
+	docker compose --profile embedding up --build
+
+down-embed:
+	docker compose --profile embedding down
+
+embed-status:
+	@printf "Embedding service: "
+	@curl -sf http://localhost:$${EMBEDDING_HOST_PORT:-8090}/health \
+		&& echo " healthy" \
+		|| echo " not running"
