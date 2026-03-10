@@ -164,7 +164,7 @@ These endpoints proxy requests to the LLM worker service. They return 503 if `WO
 | `POST /api/v1/ai/recommend` | Get respondent recommendations (runs in backend, no worker needed) | `{question_id, top_k?}` |
 | `GET /api/v1/ai/tasks/{task_id}` | Check task status (proxied to worker) | -- |
 
-Worker-proxied endpoints (`generate-questions`, `scaffold-options`, `review-assist`, `extract-questions`, `extract-from-file`) return `{task_id, status}` on acceptance (HTTP 202). Poll `GET /api/v1/ai/tasks/{task_id}` for completion. They return 503 if `WORKER_URL` is not configured, or 502 if the worker does not respond.
+Worker-proxied endpoints (`generate-questions`, `scaffold-options`, `review-assist`, `extract-questions`, `extract-from-file`) return `{task_id, status}` on acceptance (HTTP 200). Poll `GET /api/v1/ai/tasks/{task_id}` for completion. They return 503 if `WORKER_URL` is not configured, or 502 if the worker does not respond.
 
 ### Auto-Triggers
 
