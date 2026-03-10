@@ -53,15 +53,44 @@ class TestSourceDocumentCRUD:
         assert "Doc 1" in titles
         assert "Doc 2" in titles
 
-    async def test_get_source_document(self, client: AsyncClient, admin_user: User, db):
-        doc = SourceDocument(title="Single Doc", body="Body", uploaded_by_id=admin_user.id)
+    async def test_get_source_document_returns_body(self, client: AsyncClient, admin_user: User, db):
+        doc = SourceDocument(title="Single Doc", body="Full body content here", uploaded_by_id=admin_user.id)
         db.add(doc)
         await db.flush()
         await db.refresh(doc)
 
         r = await client.get(f"/api/v1/source-documents/{doc.id}", headers=auth_header(admin_user))
         assert r.status_code == 200
-        assert r.json()["title"] == "Single Doc"
+        data = r.json()
+        assert data["title"] == "Single Doc"
+        assert data["body"] == "Full body content here"
+
+    async def test_list_does_not_return_body(self, client: AsyncClient, admin_user: User, db):
+        doc = SourceDocument(title="List Doc", body="Should not appear", uploaded_by_id=admin_user.id)
+        db.add(doc)
+        await db.flush()
+
+        r = await client.get("/api/v1/source-documents", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        for item in r.json()["items"]:
+            assert "body" not in item
+
+    async def test_download_source_document(self, client: AsyncClient, admin_user: User, db):
+        doc = SourceDocument(title="Download Me", body="Download content here", uploaded_by_id=admin_user.id)
+        db.add(doc)
+        await db.flush()
+        await db.refresh(doc)
+
+        r = await client.get(f"/api/v1/source-documents/{doc.id}/download", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        assert r.text == "Download content here"
+        assert r.headers["content-type"].startswith("text/plain")
+        assert "attachment" in r.headers["content-disposition"]
+        assert "Download Me.txt" in r.headers["content-disposition"]
+
+    async def test_download_nonexistent_returns_404(self, client: AsyncClient, admin_user: User):
+        r = await client.get(f"/api/v1/source-documents/{uuid.uuid4()}/download", headers=auth_header(admin_user))
+        assert r.status_code == 404
 
     async def test_get_nonexistent_returns_404(self, client: AsyncClient, admin_user: User):
         r = await client.get(f"/api/v1/source-documents/{uuid.uuid4()}", headers=auth_header(admin_user))
@@ -149,6 +178,15 @@ class TestSourceDocumentPermissions:
 
     async def test_respondent_cannot_list(self, client: AsyncClient, respondent_user: User):
         r = await client.get("/api/v1/source-documents", headers=auth_header(respondent_user))
+        assert r.status_code == 403
+
+    async def test_respondent_cannot_download(self, client: AsyncClient, respondent_user: User, admin_user: User, db):
+        doc = SourceDocument(title="T", body="B", uploaded_by_id=admin_user.id)
+        db.add(doc)
+        await db.flush()
+        await db.refresh(doc)
+
+        r = await client.get(f"/api/v1/source-documents/{doc.id}/download", headers=auth_header(respondent_user))
         assert r.status_code == 403
 
     async def test_reviewer_cannot_delete(self, client: AsyncClient, reviewer_user: User, admin_user: User, db):

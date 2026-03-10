@@ -29,6 +29,10 @@ class SourceDocumentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SourceDocumentDetailResponse(SourceDocumentResponse):
+    body: str
+
+
 class SourceDocumentListResponse(BaseModel):
     items: list[SourceDocumentResponse]
     total: int

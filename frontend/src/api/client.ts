@@ -167,6 +167,10 @@ export interface SourceDocument {
   updated_at: string;
 }
 
+export interface SourceDocumentDetail extends SourceDocument {
+  body: string;
+}
+
 // AI-related types
 
 export interface TaskAccepted {
@@ -179,6 +183,22 @@ export interface TaskStatus {
   status: string; // accepted, running, completed, failed
   result?: Record<string, unknown>;
   error?: string;
+}
+
+export interface AITask {
+  id: string;
+  task_type: string;
+  status: string; // pending, running, completed, failed, cancelled
+  worker_task_id: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AITaskListResponse {
+  items: AITask[];
+  total: number;
 }
 
 export interface Recommendation {
@@ -198,16 +218,16 @@ export interface RecommendationResponse {
 
 export const ai = {
   generateQuestions: (topic: string, domain = "", count = 3, context?: string) =>
-    api.post<TaskAccepted>("/ai/generate-questions", { topic, domain, count, context }),
+    api.post<AITask>("/ai/generate-questions", { topic, domain, count, context }),
 
   scaffoldOptions: (questionId: string, numOptions = 4) =>
-    api.post<TaskAccepted>("/ai/scaffold-options", {
+    api.post<AITask>("/ai/scaffold-options", {
       question_id: questionId,
       num_options: numOptions,
     }),
 
   reviewAssist: (answerId: string) =>
-    api.post<TaskAccepted>("/ai/review-assist", { answer_id: answerId }),
+    api.post<AITask>("/ai/review-assist", { answer_id: answerId }),
 
   recommend: (questionId: string, topK = 5) =>
     api.post<RecommendationResponse>("/ai/recommend", {
@@ -216,10 +236,16 @@ export const ai = {
     }),
 
   getTaskStatus: (taskId: string) =>
-    api.get<TaskStatus>(`/ai/tasks/${taskId}`),
+    api.get<AITask>(`/ai/tasks/${taskId}`),
+
+  listTasks: (status?: string) =>
+    api.get<AITaskListResponse>(`/ai/tasks${status ? `?status=${status}` : ""}`),
+
+  cancelTask: (id: string) =>
+    api.post<AITask>(`/ai/tasks/${id}/cancel`, {}),
 
   extractQuestions: (sourceText: string, documentTitle = "", domain = "", maxQuestions = 10) =>
-    api.post<TaskAccepted>("/ai/extract-questions", {
+    api.post<AITask>("/ai/extract-questions", {
       source_text: sourceText,
       document_title: documentTitle,
       domain: domain,
@@ -245,7 +271,7 @@ export const ai = {
       const err = await resp.json().catch(() => ({ detail: resp.statusText }));
       throw new Error(err.detail || resp.statusText);
     }
-    return resp.json() as Promise<TaskAccepted>;
+    return resp.json() as Promise<AITask>;
   },
 
   assignRespondent: (questionId: string, userId: string) =>
@@ -267,5 +293,6 @@ export const ai = {
 
 export const sourceDocuments = {
   list: () => api.get<{ items: SourceDocument[]; total: number }>("/source-documents"),
-  get: (id: string) => api.get<SourceDocument>(`/source-documents/${id}`),
+  get: (id: string) => api.get<SourceDocumentDetail>(`/source-documents/${id}`),
+  delete: (id: string) => api.delete(`/source-documents/${id}`),
 };
