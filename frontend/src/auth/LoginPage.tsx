@@ -14,6 +14,27 @@ function GoogleIcon() {
   );
 }
 
+function LogoMark() {
+  return (
+    <svg
+      width="48"
+      height="48"
+      viewBox="0 0 48 48"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="mx-auto mb-4"
+    >
+      <rect width="48" height="48" rx="12" fill="#0D4994" />
+      <path
+        d="M24 12C17.373 12 12 17.373 12 24C12 28.418 14.578 32.242 18.348 34.125V36.75C18.348 37.44 18.908 38 19.598 38H28.402C29.092 38 29.652 37.44 29.652 36.75V34.125C33.422 32.242 36 28.418 36 24C36 17.373 30.627 12 24 12Z"
+        fill="white"
+        opacity="0.95"
+      />
+      <circle cx="24" cy="23" r="4" fill="#0D4994" />
+    </svg>
+  );
+}
+
 function GoogleLoginButton({ onSuccess, onError }: { onSuccess: (code: string) => void; onError: () => void }) {
   const googleLogin = useGoogleLogin({
     flow: "auth-code",
@@ -73,8 +94,16 @@ export function LoginPage() {
   const devLoginEnabled = authConfig?.dev_login_enabled ?? !googleClientId;
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-muted">
+    <div
+      className="flex items-center justify-center min-h-screen bg-muted"
+      style={{
+        backgroundImage:
+          "radial-gradient(circle, #d4d4d4 1px, transparent 1px)",
+        backgroundSize: "24px 24px",
+      }}
+    >
       <div className="bg-background p-8 rounded-lg shadow-lg max-w-md w-full text-center">
+        <LogoMark />
         <h1 className="text-2xl font-bold mb-2">Knowledge Elicitation Platform</h1>
         <p className="text-muted-foreground mb-8">
           Sign in to contribute to organizational knowledge

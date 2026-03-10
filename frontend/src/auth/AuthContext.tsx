@@ -67,10 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user.roles.some((r) => r.name === role);
   };
 
-  // Verify token on mount
+  // Refresh user profile on mount — picks up role changes without re-login
   useEffect(() => {
     const token = api.getToken();
-    if (token && !user) {
+    if (token) {
       api.get<User>("/users/me")
         .then((u) => {
           setUser(u);
@@ -79,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch(() => {
           api.clearToken();
           setUser(null);
+          localStorage.removeItem("user");
         });
     }
   }, []);

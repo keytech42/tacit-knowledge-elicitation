@@ -57,6 +57,15 @@ const BORDER_CLASSES: Record<string, string> = {
   "status-orange": "border-status-orange/30",
 };
 
+const HOVER_BORDER_CLASSES: Record<string, string> = {
+  "status-gray": "hover:border-status-gray/40",
+  "status-amber": "hover:border-status-amber/40",
+  "status-blue": "hover:border-status-blue/40",
+  "status-green": "hover:border-status-green/40",
+  "status-red": "hover:border-status-red/40",
+  "status-orange": "hover:border-status-orange/40",
+};
+
 /** Generate badge classes from a status token. */
 export function badgeColor(token: string): string {
   return BADGE_CLASSES[token] ?? "bg-muted text-muted-foreground";
@@ -65,4 +74,9 @@ export function badgeColor(token: string): string {
 /** Generate border class from a status token. */
 export function borderColor(token: string): string {
   return BORDER_CLASSES[token] ?? "border-border";
+}
+
+/** Generate hover border class from a status token. */
+export function hoverBorderColor(token: string): string {
+  return HOVER_BORDER_CLASSES[token] ?? "hover:border-primary/30";
 }

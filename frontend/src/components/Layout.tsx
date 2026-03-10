@@ -19,6 +19,79 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   );
 }
 
+const adminLinks = [
+  { to: "/admin/questions", label: "Admin Queue" },
+  { to: "/admin/service-accounts", label: "Service Accounts" },
+  { to: "/admin/ai-logs", label: "AI Logs" },
+  { to: "/admin/ai", label: "AI Controls" },
+  { to: "/admin/source-documents", label: "Documents" },
+];
+
+function AdminDropdown() {
+  const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const isAdminActive = adminLinks.some(
+    (l) => pathname === l.to || pathname.startsWith(l.to + "/")
+  );
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={`text-sm px-3 py-1.5 rounded-md transition-colors flex items-center gap-1 ${
+          isAdminActive
+            ? "bg-primary text-primary-foreground font-medium"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+        }`}
+      >
+        Admin
+        <svg
+          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 mt-1 w-48 bg-background border border-border rounded-lg shadow-lg py-1 z-50">
+          {adminLinks.map((link) => {
+            const isActive = pathname === link.to || pathname.startsWith(link.to + "/");
+            return (
+              <Link
+                key={link.to}
+                to={link.to}
+                onClick={() => setOpen(false)}
+                className={`block px-3 py-2 text-sm transition-colors ${
+                  isActive
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-foreground hover:bg-muted"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserMenu() {
   const { user, logout, hasRole } = useAuth();
   const navigate = useNavigate();
@@ -60,7 +133,18 @@ function UserMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1 w-48 bg-background border border-border rounded-lg shadow-lg py-1 z-50">
+        <div
+          className="absolute right-0 mt-1 w-48 bg-background border border-border rounded-lg shadow-lg py-1 z-50"
+          style={{
+            animation: "userMenuIn 100ms ease-out",
+          }}
+        >
+          <style>{`
+            @keyframes userMenuIn {
+              from { opacity: 0; transform: translateY(-4px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
           <div className="px-3 py-2 border-b border-border">
             <p className="text-sm font-medium truncate">{user.display_name}</p>
             {user.email && <p className="text-xs text-muted-foreground truncate">{user.email}</p>}
@@ -94,9 +178,16 @@ function UserMenu() {
 
 export function Layout() {
   const { hasRole } = useAuth();
+  const { pathname } = useLocation();
 
   return (
     <div className="min-h-screen bg-muted">
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
       <nav className="bg-background border-b border-border">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-1">
@@ -105,21 +196,15 @@ export function Layout() {
             {(hasRole("reviewer") || hasRole("admin")) && (
               <NavLink to="/reviews">Reviews</NavLink>
             )}
-            {hasRole("admin") && (
-              <>
-                <NavLink to="/admin/questions">Admin Queue</NavLink>
-                <NavLink to="/admin/service-accounts">Service Accounts</NavLink>
-                <NavLink to="/admin/ai-logs">AI Logs</NavLink>
-                <NavLink to="/admin/ai">AI Controls</NavLink>
-                <NavLink to="/admin/source-documents">Documents</NavLink>
-              </>
-            )}
+            {hasRole("admin") && <AdminDropdown />}
           </div>
           <UserMenu />
         </div>
       </nav>
       <main className="max-w-7xl mx-auto px-4 py-6">
-        <Outlet />
+        <div key={pathname} style={{ animation: "fadeIn 150ms ease-out" }}>
+          <Outlet />
+        </div>
       </main>
     </div>
   );

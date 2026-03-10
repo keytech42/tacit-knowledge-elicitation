@@ -4,9 +4,40 @@ import { api, ai, Question, Answer, Recommendation, TaskStatus, User } from "@/a
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { Admonition } from "@/components/Admonition";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
+import { useToast } from "@/components/ToastContext";
 import { UserPicker } from "@/components/UserPicker";
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+      viewBox="0 0 20 20"
+      fill="currentColor"
+    >
+      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function StarIcon({ filled, onMouseEnter, onMouseLeave, onClick }: { filled: boolean; onMouseEnter?: () => void; onMouseLeave?: () => void; onClick?: () => void }) {
+  return (
+    <svg
+      className={`w-6 h-6 cursor-pointer transition-colors ${filled ? "text-primary" : "text-muted-foreground"}`}
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={filled ? 0 : 1.5}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onClick={onClick}
+    >
+      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+    </svg>
+  );
+}
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
   if (status === "archived") return { enabled: false, reason: "Archived questions are read-only" };
@@ -69,6 +100,7 @@ export function QuestionDetail() {
   const { id } = useParams<{ id: string }>();
   const { user, hasRole } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [question, setQuestion] = useState<Question | null>(null);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [newAnswer, setNewAnswer] = useState("");
@@ -82,6 +114,12 @@ export function QuestionDetail() {
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [hoverRating, setHoverRating] = useState(0);
+
+  // Collapsible sections
+  const [aiOpen, setAiOpen] = useState(true);
+  const [answerOpen, setAnswerOpen] = useState(true);
+  const [ratingOpen, setRatingOpen] = useState(true);
 
   // AI features
   const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
@@ -118,8 +156,11 @@ export function QuestionDetail() {
       const updated = await api.post<Question>(`/questions/${id}/${action}`);
       setQuestion(updated);
       setError("");
+      toast.success(`Question ${action.replace(/-/g, " ")} successful`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Action failed");
+      const msg = err instanceof Error ? err.message : "Action failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -158,8 +199,11 @@ export function QuestionDetail() {
       setNewAnswer("");
       setSelectedOptionId(null);
       loadQuestion();
+      toast.success("Answer submitted successfully");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Submit failed");
+      const msg = err instanceof Error ? err.message : "Submit failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -262,6 +306,7 @@ export function QuestionDetail() {
 
   return (
     <div className="max-w-3xl mx-auto">
+      <Breadcrumb items={[{ label: "Questions", to: "/questions" }, { label: question.title }]} />
       <div className="bg-background p-6 rounded-lg border border-border mb-6">
         {/* Status + workflow hint */}
         <div className="flex items-center gap-3 mb-1">
@@ -285,6 +330,7 @@ export function QuestionDetail() {
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Body</label>
               <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} className="w-full border border-border rounded-md p-3 min-h-[150px] bg-background text-sm" />
+              <span className="text-xs text-muted-foreground mt-1 block">{editBody.length} characters</span>
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Category</label>
@@ -352,182 +398,9 @@ export function QuestionDetail() {
         )}
       </div>
 
-      {/* AI actions for admin on published questions */}
-      {isAdmin && question.status === "published" && (
-        <div className="bg-background p-4 rounded-lg border border-border mb-6">
-          <h2 className="font-semibold text-sm mb-3">AI Actions</h2>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleScaffoldOptions}
-              disabled={scaffoldLoading}
-              className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
-            >
-              {scaffoldLoading ? "Generating..." : "Generate Answer Options"}
-            </button>
-            <button
-              onClick={handleGetRecommendations}
-              disabled={recLoading}
-              className="border border-border text-foreground px-3 py-1.5 rounded text-sm hover:bg-muted disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
-            >
-              {recLoading ? "Loading..." : "Recommend Respondents"}
-            </button>
-          </div>
-          <div className="mt-4">
-            <UserPicker
-              role="respondent"
-              selected={pickerSelected}
-              onSelect={(user) => {
-                if (user) {
-                  handleAssignRespondent(user.id);
-                } else {
-                  setPickerSelected(null);
-                }
-              }}
-              label="Assign Respondent"
-              placeholder="Search respondents by name or email..."
-            />
-          </div>
-          {scaffoldTask && (
-            <div className="mt-2 text-xs">
-              <span className={`inline-block px-2 py-0.5 rounded-full ${
-                scaffoldTask.status === "completed" ? "bg-muted text-foreground" :
-                scaffoldTask.status === "failed" ? "bg-destructive/10 text-destructive" :
-                "bg-muted text-muted-foreground"
-              }`}>{scaffoldTask.status}</span>
-              {scaffoldTask.error && <span className="text-destructive ml-2">{scaffoldTask.error}</span>}
-            </div>
-          )}
-          {recReason && recommendations.length === 0 && (
-            <div className="mt-3">
-              <Admonition variant="warning" title="No recommendations available" size="xs">
-                {recReason}
-              </Admonition>
-            </div>
-          )}
-          {recommendations.length > 0 && (
-            <div className="mt-3 border border-border rounded-md overflow-hidden">
-              {recStrategy && (
-                <div className="px-3 py-1.5 bg-muted/50 text-xs text-muted-foreground border-b border-border">
-                  Recommended via {recStrategy === "llm" ? "AI" : "similarity"}
-                </div>
-              )}
-              <table className="w-full text-sm">
-                <thead className="bg-muted">
-                  <tr>
-                    <th className="text-left px-3 py-1.5 text-xs font-medium">Respondent</th>
-                    <th className="text-left px-3 py-1.5 text-xs font-medium">Score</th>
-                    <th className="text-left px-3 py-1.5 text-xs font-medium">Reasoning</th>
-                    <th className="text-right px-3 py-1.5 text-xs font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recommendations.map((r) => {
-                    const isAssigned = question.assigned_respondent?.id === r.user_id;
-                    return (
-                    <tr key={r.user_id} className="border-t border-border">
-                      <td className="px-3 py-1.5 text-xs">{r.display_name}</td>
-                      <td className="px-3 py-1.5 text-xs">{(r.score * 100).toFixed(0)}%</td>
-                      <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.reasoning}</td>
-                      <td className="px-3 py-1.5 text-xs text-right">
-                        {isAssigned ? (
-                          <span className="text-xs text-primary font-medium">Assigned</span>
-                        ) : (
-                          <button
-                            onClick={() => handleAssignRespondent(r.user_id)}
-                            disabled={assignLoading === r.user_id}
-                            className="text-xs text-primary hover:underline disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
-                          >
-                            {assignLoading === r.user_id ? "Assigning..." : "Assign"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && <p className="text-destructive text-sm mb-4">{error}</p>}
-
-      {/* Answer form */}
-      {question.status === "published" && (
-        <div className="bg-background p-6 rounded-lg border border-border mb-6">
-          <h2 className="font-semibold mb-1">Submit Your Answer</h2>
-
-          {/* Answer templates */}
-          {(question.show_suggestions || isAdmin) && question.answer_options.length > 0 && (
-            <div className="mb-5">
-              <p className="text-xs text-muted-foreground mb-3">Select a template to start with, or write from scratch</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {question.answer_options.map((opt, idx) => {
-                  const isSelected = selectedOptionId === opt.id;
-                  return (
-                    <div key={opt.id} className="group relative">
-                      <button
-                        onClick={() => handleOptionClick(opt.id, opt.body)}
-                        className={`relative w-full h-full flex flex-col items-start justify-start text-left rounded-lg border bg-background p-3 overflow-hidden transition-all duration-200 ${
-                          isSelected
-                            ? "border-primary ring-1 ring-primary"
-                            : "border-border"
-                        }`}
-                      >
-                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
-                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                        }`}>
-                          {idx + 1}
-                        </span>
-                        <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
-                        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background to-transparent pointer-events-none" />
-                      </button>
-                      {/* Hover overlay — identical layout, no truncation */}
-                      <button
-                        onClick={() => handleOptionClick(opt.id, opt.body)}
-                        className={`absolute inset-x-0 top-0 z-10 hidden group-hover:flex flex-col items-start justify-start w-full text-left rounded-lg border bg-background p-3 shadow-lg min-h-full ${
-                          isSelected
-                            ? "border-primary ring-1 ring-primary"
-                            : "border-foreground/20"
-                        }`}
-                      >
-                        <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
-                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                        }`}>
-                          {idx + 1}
-                        </span>
-                        <p className="text-sm text-foreground/80 leading-relaxed">{opt.body}</p>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <textarea
-            value={newAnswer}
-            onChange={(e) => handleAnswerChange(e.target.value)}
-            className="w-full border border-border rounded-lg p-3 min-h-[120px] bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
-            placeholder="Write your answer..."
-          />
-          <div className="flex items-center justify-between mt-3">
-            <div>
-              {selectedOptionId && (
-                <span className="text-xs text-muted-foreground">Editing from template — changes are saved to your answer</span>
-              )}
-            </div>
-            <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50 active:scale-[0.97] transition-all duration-150">
-              Submit Answer
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Answers list */}
       <h2 className="font-semibold text-lg mb-3">Answers ({answers.length})</h2>
-      <div className="space-y-3">
+      <div className="space-y-3 mb-6">
         {answers.map((a) => (
           <Link key={a.id} to={`/answers/${a.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30">
             <div className="flex items-center gap-3 mb-2">
@@ -541,17 +414,238 @@ export function QuestionDetail() {
         {answers.length === 0 && <p className="text-center text-muted-foreground py-4">No answers yet.</p>}
       </div>
 
+      {error && <p className="text-destructive text-sm mb-4">{error}</p>}
+
+      {/* AI actions for admin on published questions */}
+      {isAdmin && question.status === "published" && (
+        <div className="bg-background p-4 rounded-lg border border-border mb-6">
+          <div className="flex items-center justify-between cursor-pointer" onClick={() => setAiOpen(!aiOpen)}>
+            <h2 className="font-semibold text-sm">AI Actions</h2>
+            <ChevronIcon expanded={aiOpen} />
+          </div>
+          {aiOpen && (
+            <div className="mt-3 overflow-hidden">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleScaffoldOptions}
+                  disabled={scaffoldLoading}
+                  className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
+                >
+                  {scaffoldLoading ? "Generating..." : "Generate Answer Options"}
+                </button>
+                <button
+                  onClick={handleGetRecommendations}
+                  disabled={recLoading}
+                  className="border border-border text-foreground px-3 py-1.5 rounded text-sm hover:bg-muted disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
+                >
+                  {recLoading ? "Loading..." : "Recommend Respondents"}
+                </button>
+              </div>
+              <div className="mt-4">
+                <UserPicker
+                  role="respondent"
+                  selected={pickerSelected}
+                  onSelect={(user) => {
+                    if (user) {
+                      handleAssignRespondent(user.id);
+                    } else {
+                      setPickerSelected(null);
+                    }
+                  }}
+                  label="Assign Respondent"
+                  placeholder="Search respondents by name or email..."
+                />
+              </div>
+              {scaffoldTask && (
+                <div className="mt-2 text-xs">
+                  <span className={`inline-block px-2 py-0.5 rounded-full ${
+                    scaffoldTask.status === "completed" ? "bg-muted text-foreground" :
+                    scaffoldTask.status === "failed" ? "bg-destructive/10 text-destructive" :
+                    "bg-muted text-muted-foreground"
+                  }`}>{scaffoldTask.status}</span>
+                  {scaffoldTask.error && <span className="text-destructive ml-2">{scaffoldTask.error}</span>}
+                </div>
+              )}
+              {recReason && recommendations.length === 0 && (
+                <div className="mt-3">
+                  <Admonition variant="warning" title="No recommendations available" size="xs">
+                    {recReason}
+                  </Admonition>
+                </div>
+              )}
+              {recommendations.length > 0 && (
+                <div className="mt-3 border border-border rounded-md overflow-hidden">
+                  {recStrategy && (
+                    <div className="px-3 py-1.5 bg-muted/50 text-xs text-muted-foreground border-b border-border">
+                      Recommended via {recStrategy === "llm" ? "AI" : "similarity"}
+                    </div>
+                  )}
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="text-left px-3 py-1.5 text-xs font-medium">Respondent</th>
+                        <th className="text-left px-3 py-1.5 text-xs font-medium">Score</th>
+                        <th className="text-left px-3 py-1.5 text-xs font-medium">Reasoning</th>
+                        <th className="text-right px-3 py-1.5 text-xs font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recommendations.map((r) => {
+                        const isAssigned = question.assigned_respondent?.id === r.user_id;
+                        return (
+                        <tr key={r.user_id} className="border-t border-border">
+                          <td className="px-3 py-1.5 text-xs">{r.display_name}</td>
+                          <td className="px-3 py-1.5 text-xs">{(r.score * 100).toFixed(0)}%</td>
+                          <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.reasoning}</td>
+                          <td className="px-3 py-1.5 text-xs text-right">
+                            {isAssigned ? (
+                              <span className="text-xs text-primary font-medium">Assigned</span>
+                            ) : (
+                              <button
+                                onClick={() => handleAssignRespondent(r.user_id)}
+                                disabled={assignLoading === r.user_id}
+                                className="text-xs text-primary hover:underline disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
+                              >
+                                {assignLoading === r.user_id ? "Assigning..." : "Assign"}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Answer form */}
+      {question.status === "published" && (
+        <div className="bg-background p-6 rounded-lg border border-border mb-6">
+          <div className="flex items-center justify-between cursor-pointer" onClick={() => setAnswerOpen(!answerOpen)}>
+            <h2 className="font-semibold">Submit Your Answer</h2>
+            <ChevronIcon expanded={answerOpen} />
+          </div>
+
+          {answerOpen && (
+            <div className="mt-3 overflow-hidden">
+              {/* Answer templates */}
+              {(question.show_suggestions || isAdmin) && question.answer_options.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-xs text-muted-foreground mb-3">Select a template to start with, or write from scratch</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {question.answer_options.map((opt, idx) => {
+                      const isSelected = selectedOptionId === opt.id;
+                      return (
+                        <div key={opt.id} className="group relative">
+                          <button
+                            onClick={() => handleOptionClick(opt.id, opt.body)}
+                            className={`relative w-full h-full flex flex-col items-start justify-start text-left rounded-lg border bg-background p-3 overflow-hidden transition-colors duration-200 ${
+                              isSelected
+                                ? "border-primary ring-1 ring-primary"
+                                : "border-border"
+                            }`}
+                          >
+                            {isSelected && (
+                              <svg className="absolute top-2 right-2 w-4 h-4 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                            <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                              isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                            }`}>
+                              {idx + 1}
+                            </span>
+                            <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{opt.body}</p>
+                            <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+                          </button>
+                          {/* Hover overlay — identical layout, no truncation */}
+                          <button
+                            onClick={() => handleOptionClick(opt.id, opt.body)}
+                            className={`absolute inset-x-0 top-0 z-10 hidden group-hover:flex flex-col items-start justify-start w-full text-left rounded-lg border bg-background p-3 shadow-lg min-h-full ${
+                              isSelected
+                                ? "border-primary ring-1 ring-primary"
+                                : "border-foreground/20"
+                            }`}
+                          >
+                            {isSelected && (
+                              <svg className="absolute top-2 right-2 w-4 h-4 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                            <span className={`inline-block text-[10px] font-medium mb-1.5 px-1.5 py-0.5 rounded ${
+                              isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                            }`}>
+                              {idx + 1}
+                            </span>
+                            <p className="text-sm text-foreground/80 leading-relaxed">{opt.body}</p>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {selectedOptionId && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Using template #{question.answer_options.findIndex((o) => o.id === selectedOptionId) + 1}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Your Answer</label>
+              <textarea
+                value={newAnswer}
+                onChange={(e) => handleAnswerChange(e.target.value)}
+                className="w-full border border-border rounded-lg p-3 min-h-[120px] bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+                placeholder="Write your answer..."
+              />
+              <span className="text-xs text-muted-foreground mt-1 block">{newAnswer.length} characters</span>
+              <div className="flex items-center justify-between mt-3">
+                <div>
+                  {selectedOptionId && (
+                    <span className="text-xs text-muted-foreground">Editing from template — changes are saved to your answer</span>
+                  )}
+                </div>
+                <button onClick={handleSubmitAnswer} disabled={!newAnswer.trim()} className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50 active:scale-[0.97] transition-all duration-150">
+                  Submit Answer
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Visual divider between contribution and feedback sections */}
+      <hr className="border-border my-8" />
+
       {/* Quality feedback */}
       {(question.status === "published" || question.status === "closed") && !feedbackSubmitted && (
-        <div className="bg-background p-4 rounded-lg border border-border mt-6">
-          <h2 className="font-semibold mb-2 text-sm">Rate this question</h2>
-          <div className="flex items-center gap-1 mb-2">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} onClick={() => setFeedbackRating(n)} className={`w-8 h-8 rounded text-sm font-medium ${n <= feedbackRating ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>{n}</button>
-            ))}
+        <div className="bg-background p-4 rounded-lg border border-border">
+          <div className="flex items-center justify-between cursor-pointer" onClick={() => setRatingOpen(!ratingOpen)}>
+            <h2 className="font-semibold text-sm">Rate this question</h2>
+            <ChevronIcon expanded={ratingOpen} />
           </div>
-          <input value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} placeholder="Optional comment" className="w-full border border-border rounded-md px-3 py-1.5 bg-background text-sm mb-2" />
-          <button onClick={handleSubmitFeedback} disabled={feedbackRating < 1} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">Submit Feedback</button>
+          {ratingOpen && (
+            <div className="mt-3 overflow-hidden">
+              <div className="flex items-center gap-0.5 mb-3">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <StarIcon
+                    key={n}
+                    filled={n <= (hoverRating || feedbackRating)}
+                    onMouseEnter={() => setHoverRating(n)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    onClick={() => setFeedbackRating(n)}
+                  />
+                ))}
+              </div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Comment</label>
+              <input value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} placeholder="Optional comment" className="w-full border border-border rounded-md px-3 py-1.5 bg-background text-sm mb-2" />
+              <button onClick={handleSubmitFeedback} disabled={feedbackRating < 1} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">Submit Feedback</button>
+            </div>
+          )}
         </div>
       )}
     </div>

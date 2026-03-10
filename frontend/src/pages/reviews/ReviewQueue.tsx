@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { api, Review } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { StatusBadge, statusColor, statusLabel } from "@/components/StatusBadge";
-import { borderColor, STATUS_COLOR_TOKEN } from "@/components/statusColors";
+import { borderColor, hoverBorderColor, STATUS_COLOR_TOKEN, badgeColor } from "@/components/statusColors";
 import { Tooltip } from "@/components/Tooltip";
+import { timeAgo, exactDateTime } from "@/utils/timeAgo";
 
 const VERDICT_BORDER_COLORS: Record<string, string> = {
   pending: borderColor(STATUS_COLOR_TOKEN["pending"]),
@@ -51,11 +52,11 @@ function ReviewStatusChips({ rev }: { rev: Review }) {
   );
 }
 
-function KanbanCard({ rev }: { rev: Review }) {
+function KanbanCard({ rev, hoverBorder }: { rev: Review; hoverBorder: string }) {
   return (
     <Link
       to={`/reviews/${rev.id}`}
-      className="block bg-background p-3 rounded-lg border border-border hover:border-primary/30 transition-colors shadow-sm"
+      className={`block bg-background p-3 rounded-lg border border-border ${hoverBorder} hover:shadow-md hover:-translate-y-[2px] transition-all duration-200 shadow-sm`}
     >
       {rev.question_title && (
         <p className="text-xs font-medium text-foreground/80 line-clamp-1">{rev.question_title}</p>
@@ -74,7 +75,12 @@ function KanbanCard({ rev }: { rev: Review }) {
         )}
       </div>
       <ReviewStatusChips rev={rev} />
-      <div className="text-[10px] text-muted-foreground mt-1.5">{new Date(rev.created_at).toLocaleDateString()}</div>
+      <div className="flex items-center justify-between mt-1.5">
+        <span className="text-[10px] text-muted-foreground">{rev.reviewer?.display_name}</span>
+        <Tooltip text={exactDateTime(rev.created_at)}>
+          <span className="text-[10px] text-muted-foreground">{timeAgo(rev.created_at)}</span>
+        </Tooltip>
+      </div>
     </Link>
   );
 }
@@ -87,61 +93,89 @@ function KanbanBoard({ reviews }: { reviews: Review[] }) {
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: "calc(100vh - 280px)" }}>
-      {ALL_VERDICTS.map((verdict) => (
-        <div key={verdict} className="flex-shrink-0 w-64">
-          <div className="flex items-center gap-2 mb-3 px-1">
-            <Tooltip text={VERDICT_TOOLTIPS[verdict]}>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(verdict)}`}>
-                {statusLabel(verdict)}
-              </span>
-            </Tooltip>
-            <span className="text-xs text-muted-foreground">{grouped[verdict].length}</span>
+      {ALL_VERDICTS.map((verdict) => {
+        const token = STATUS_COLOR_TOKEN[verdict];
+        const countClasses = token
+          ? `${badgeColor(token)} rounded-full px-1.5 text-[10px] font-medium`
+          : "text-xs text-muted-foreground";
+        const hoverBorder = token ? hoverBorderColor(token) : "hover:border-primary/30";
+        return (
+          <div key={verdict} className="flex-shrink-0 w-64">
+            <div className="flex items-center gap-2 mb-3 px-1">
+              <Tooltip text={VERDICT_TOOLTIPS[verdict]}>
+                <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor(verdict)}`}>
+                  {statusLabel(verdict)}
+                </span>
+              </Tooltip>
+              <span className={countClasses}>{grouped[verdict].length}</span>
+            </div>
+            <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${VERDICT_BORDER_COLORS[verdict]} min-h-[200px]`}>
+              {grouped[verdict].map((rev) => <KanbanCard key={rev.id} rev={rev} hoverBorder={hoverBorder} />)}
+              {grouped[verdict].length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 border-dashed border-2 border-border/50 rounded-lg">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 mb-2">
+                    <path d="M9 2h6l3 3v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5l3-3z" />
+                    <path d="M9 2v3H6" />
+                    <path d="M15 2v3h3" />
+                    <line x1="9" y1="12" x2="15" y2="12" />
+                    <line x1="9" y1="16" x2="13" y2="16" />
+                  </svg>
+                  <span className="text-xs text-muted-foreground/60">No items</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className={`space-y-2 p-2 rounded-lg bg-muted/50 border ${VERDICT_BORDER_COLORS[verdict]} min-h-[200px]`}>
-            {grouped[verdict].map((rev) => <KanbanCard key={rev.id} rev={rev} />)}
-            {grouped[verdict].length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No items</p>}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function ReviewList({ reviews }: { reviews: Review[] }) {
+function ReviewList({ reviews, activeTab }: { reviews: Review[]; activeTab: string }) {
   return (
     <div className="space-y-3">
-      {reviews.map((rev) => (
-        <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-4 rounded-lg border border-border hover:border-primary/30 transition-colors">
-          <div className="flex items-center gap-3">
-            <Tooltip text={VERDICT_TOOLTIPS[rev.verdict]}>
-              <StatusBadge status={rev.verdict} />
-            </Tooltip>
-            {rev.question_title && (
-              <span className="text-sm text-foreground/70 truncate max-w-[300px]">{rev.question_title}</span>
-            )}
-            {rev.answer_version != null && (
-              <span className="text-xs text-muted-foreground font-mono">v{rev.answer_version}</span>
-            )}
-            <span className="text-xs text-muted-foreground ml-auto">{rev.reviewer.display_name} &middot; {new Date(rev.created_at).toLocaleDateString()}</span>
-          </div>
-          <div className="flex items-center gap-1.5 mt-1.5">
-            {rev.answer_status && (
-              <Tooltip text={ANSWER_STATUS_TOOLTIPS[rev.answer_status]}>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-[10px] text-muted-foreground">Answer:</span>
-                  <StatusBadge status={rev.answer_status} size="xs" />
-                </span>
+      {reviews.map((rev) => {
+        const token = STATUS_COLOR_TOKEN[rev.verdict];
+        const hoverBorder = token ? hoverBorderColor(token) : "hover:border-primary/30";
+        return (
+          <Link key={rev.id} to={`/reviews/${rev.id}`} className={`block bg-background p-4 rounded-lg border border-border ${hoverBorder} hover:shadow-sm hover:-translate-y-[1px] transition-all duration-200`}>
+            <div className="flex items-center gap-3">
+              <Tooltip text={VERDICT_TOOLTIPS[rev.verdict]}>
+                <StatusBadge status={rev.verdict} />
               </Tooltip>
-            )}
-            {rev.approval_count != null && rev.min_approvals != null && (
-              <Tooltip text={`${rev.approval_count} of ${rev.min_approvals} required approvals`}>
-                <span className="text-[10px] text-muted-foreground">{rev.approval_count}/{rev.min_approvals} approvals</span>
-              </Tooltip>
-            )}
-          </div>
-        </Link>
-      ))}
-      {reviews.length === 0 && <p className="text-center text-muted-foreground py-8">No reviews in this section.</p>}
+              {rev.question_title && (
+                <span className="text-sm text-foreground/70 truncate max-w-[300px]">{rev.question_title}</span>
+              )}
+              {rev.answer_version != null && (
+                <span className="text-xs text-muted-foreground font-mono">v{rev.answer_version}</span>
+              )}
+              <span className="text-xs text-muted-foreground ml-auto">
+                {rev.reviewer?.display_name}
+                {" · "}
+                <Tooltip text={exactDateTime(rev.created_at)}>
+                  <span>{timeAgo(rev.created_at)}</span>
+                </Tooltip>
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              {rev.answer_status && (
+                <Tooltip text={ANSWER_STATUS_TOOLTIPS[rev.answer_status]}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-[10px] text-muted-foreground">Answer:</span>
+                    <StatusBadge status={rev.answer_status} size="xs" />
+                  </span>
+                </Tooltip>
+              )}
+              {rev.approval_count != null && rev.min_approvals != null && (
+                <Tooltip text={`${rev.approval_count} of ${rev.min_approvals} required approvals`}>
+                  <span className="text-[10px] text-muted-foreground">{rev.approval_count}/{rev.min_approvals} approvals</span>
+                </Tooltip>
+              )}
+            </div>
+          </Link>
+        );
+      })}
+      {reviews.length === 0 && <p className="text-center text-muted-foreground py-8">No pending {activeTab} reviews.</p>}
     </div>
   );
 }
@@ -209,7 +243,7 @@ export function ReviewQueue() {
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          Answer Reviews
+          {viewMode === "list" ? "Pending Answer Reviews" : "Answer Reviews"}
         </button>
         <button
           onClick={() => handleTabChange("question")}
@@ -219,14 +253,14 @@ export function ReviewQueue() {
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          Question Reviews
+          {viewMode === "list" ? "Pending Question Reviews" : "Question Reviews"}
         </button>
       </div>
 
       {viewMode === "kanban" ? (
         <KanbanBoard reviews={reviews} />
       ) : (
-        <ReviewList reviews={reviews} />
+        <ReviewList reviews={reviews} activeTab={activeTab} />
       )}
     </div>
   );

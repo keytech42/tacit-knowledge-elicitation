@@ -3,10 +3,10 @@
 @theme {
   --color-background: #ffffff;
   --color-foreground: #0a0a0a;
-  --color-muted: #f5f5f5;
+  --color-muted: #fafaf8;
   --color-muted-foreground: #737373;
   --color-border: #e5e5e5;
-  --color-primary: #171717;
+  --color-primary: #0D4994;
   --color-primary-foreground: #fafafa;
   --color-secondary: #f5f5f5;
   --color-secondary-foreground: #171717;
@@ -14,10 +14,16 @@
   --color-accent-foreground: #171717;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #fafafa;
-  --color-ring: #0a0a0a;
+  --color-ring: #0D4994;
   --color-popover: #ffffff;
   --color-popover-foreground: #0a0a0a;
   --radius: 0.5rem;
+
+  /* Shadow hierarchy */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.07);
+  --shadow-nav: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
 
   /* Semantic status palette — shared by badges, borders, backgrounds */
   --color-status-gray: #737373;
@@ -26,4 +32,19 @@
   --color-status-green: #16a34a;
   --color-status-red: #dc2626;
   --color-status-orange: #ea580c;
+}
+
+/* Prevent layout shift when collapsing sections removes the scrollbar */
+html {
+  scrollbar-gutter: stable;
+}
+
+/* Status badge pulse animation */
+@keyframes badge-pulse {
+  0% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.badge-pulse {
+  animation: badge-pulse 200ms ease-out;
 }
