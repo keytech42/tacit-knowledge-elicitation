@@ -28,6 +28,7 @@ async function request<T>(
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
     ...options,
     headers,
   });
