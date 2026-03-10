@@ -247,63 +247,48 @@ class TestApiDocumentation:
                     paths.append(route.path)
         return sorted(set(paths))
 
-    def _read_api_reference(self) -> str:
-        """Read the API reference markdown file."""
+    def _read_api_reference_lines(self) -> list[str]:
+        """Read the API reference markdown file as lines."""
         root = _require_repo_root()
         doc_path = root / "docs" / "api-reference.md"
         assert doc_path.exists(), (
             f"API reference doc not found at {doc_path} — "
             "create docs/api-reference.md or update the test path"
         )
-        return doc_path.read_text()
+        return doc_path.read_text().splitlines()
 
-    def _path_is_documented(self, path: str, doc_text: str) -> bool:
-        """Check if a route path appears in the documentation in any
-        recognizable form."""
-        # 1. Exact match of the full path
-        if path in doc_text:
-            return True
+    def _path_is_documented(self, path: str, doc_lines: list[str]) -> bool:
+        """Check if a route path appears in a structured location in the docs.
 
-        # 2. Without /api/v1 prefix (docs may use shorter form)
-        short_path = path.replace("/api/v1/", "/")
-        if short_path in doc_text:
-            return True
+        Only matches lines that contain BOTH an HTTP method keyword AND the
+        path (or a normalized variant). This avoids false positives from
+        casual prose mentions while tolerating the various markdown formats
+        used in the doc (tables, headers, inline code, bold references).
+        """
+        _METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 
-        # 3. With generic parameter names: {question_id} -> {id}
-        generic_path = re.sub(r"\{[^}]+\}", "{id}", path)
-        if generic_path in doc_text:
-            return True
-        generic_short = re.sub(r"\{[^}]+\}", "{id}", short_path)
-        if generic_short in doc_text:
-            return True
+        # Strip /api/v1 prefix: docs sometimes use short paths
+        short = path.replace("/api/v1", "")
+        # Normalize param names: {question_id} -> {id}
+        generic = re.sub(r"\{[^}]+\}", "{id}", path)
+        generic_short = re.sub(r"\{[^}]+\}", "{id}", short)
 
-        # 4. Check the path suffix (last two non-param segments)
-        # e.g., for /api/v1/questions/{id}/submit -> "questions/{id}/submit"
-        segments = [s for s in path.split("/") if s and s != "api" and s != "v1"]
-        if len(segments) >= 2:
-            suffix = "/".join(segments[-2:])
-            if suffix in doc_text:
-                return True
-            # Also try with generic params
-            generic_suffix = re.sub(r"\{[^}]+\}", "{id}", suffix)
-            if generic_suffix in doc_text:
-                return True
+        candidates = {path, short, generic, generic_short}
 
-        # 5. For resource collection routes like /api/v1/questions,
-        #    check if the resource name appears as a documented section
-        non_param_segments = [s for s in segments if not s.startswith("{")]
-        if non_param_segments:
-            # Match patterns like "`/questions`" or "/questions" or "questions"
-            resource = "/".join(non_param_segments)
-            if resource in doc_text:
-                return True
+        for line in doc_lines:
+            upper = line.upper()
+            if not any(m in upper for m in _METHODS):
+                continue
+            for candidate in candidates:
+                if candidate in line:
+                    return True
 
         return False
 
     def test_api_reference_doc_exists(self):
         """The API reference document must exist."""
-        doc_text = self._read_api_reference()
-        assert len(doc_text) > 100, "API reference doc is suspiciously short"
+        doc_lines = self._read_api_reference_lines()
+        assert len(doc_lines) > 10, "API reference doc is suspiciously short"
 
     def test_all_routes_are_documented(self):
         """Every non-trivial API route path must appear somewhere in the
@@ -311,14 +296,14 @@ class TestApiDocumentation:
 
         This catches the case where a developer adds a new endpoint but
         forgets to document it."""
-        doc_text = self._read_api_reference()
+        doc_lines = self._read_api_reference_lines()
         route_paths = self._get_all_route_paths()
 
         assert len(route_paths) > 0, "No routes found — is the app configured correctly?"
 
         undocumented = []
         for path in route_paths:
-            if not self._path_is_documented(path, doc_text):
+            if not self._path_is_documented(path, doc_lines):
                 undocumented.append(path)
 
         if undocumented:

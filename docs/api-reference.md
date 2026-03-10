@@ -411,6 +411,24 @@ DRAFT ──[submit]──▶ SUBMITTED ──[review starts]──▶ UNDER_REV
                                              └──[revise]──▶ SUBMITTED
 ```
 
+### Answer Transition Endpoints
+
+| Endpoint | Transition | Who |
+|----------|-----------|-----|
+| `POST /answers/{id}/submit` | draft → submitted | author or admin |
+| `PATCH /reviews/{id}` (verdict) | submitted → under_review / approved / changes_requested / rejected | reviewer |
+| `POST /answers/{id}/revise` | approved → submitted | author, collaborator, or admin |
+
+#### POST /api/v1/answers/{answer_id}/submit
+
+Submit an answer (transitions from `draft` to `submitted`). Creates an `AnswerRevision` with trigger `initial_submit` (version 1) or `revision_after_review` (subsequent versions). Also generates an embedding and triggers the review-assist auto-trigger when `WORKER_URL` is configured.
+
+**Request body:** none.
+
+**Response (200):** `AnswerResponse` — the updated answer with status `submitted`.
+
+Returns 409 if the answer is not in a submittable state (`draft` or `revision_requested`).
+
 ### Revision triggers
 
 Each submission creates an immutable `AnswerRevision`. The `trigger` field records why:
