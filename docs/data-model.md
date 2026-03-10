@@ -32,7 +32,7 @@ User ──┬── Role (many-to-many via user_roles)
 | email | string | Unique, nullable |
 | is_active | boolean | Default true |
 | avatar_url | string | Nullable |
-| model_id | string | For service accounts (e.g. `claude-sonnet-4-5-20250929`) |
+| model_id | string | For service accounts (e.g. `claude-sonnet-4-6`) |
 | system_version | string | For service accounts |
 | api_key_hash | string | SHA256 hash of API key |
 

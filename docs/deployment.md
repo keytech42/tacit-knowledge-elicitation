@@ -37,7 +37,7 @@ CORS_ORIGINS=["https://your-domain.com"]
 # AI / Worker (optional)
 WORKER_URL=http://worker:8001
 ANTHROPIC_API_KEY=<your-anthropic-key>
-LLM_MODEL=anthropic/claude-sonnet-4-5-20250929
+LLM_MODEL=anthropic/claude-sonnet-4-6
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_API_KEY=<your-openai-key>
 WORKER_API_KEY=<service-account-api-key>
@@ -105,7 +105,7 @@ docker build -t knowledge-worker ./worker
 docker run -d \
   -e PLATFORM_API_URL=http://api:8000 \
   -e PLATFORM_API_KEY=<service-account-api-key> \
-  -e LLM_MODEL=anthropic/claude-sonnet-4-5-20250929 \
+  -e LLM_MODEL=anthropic/claude-sonnet-4-6 \
   -e ANTHROPIC_API_KEY=<your-key> \
   -p 8001:8001 \
   knowledge-worker \
@@ -118,7 +118,7 @@ The worker requires a service account with `author` and `reviewer` roles. Create
 curl -X POST http://api:8000/api/v1/service-accounts \
   -H "Authorization: Bearer <admin-jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-5-20250929", "roles": ["author", "reviewer"]}'
+  -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-6", "roles": ["author", "reviewer"]}'
 ```
 
 The returned `api_key` becomes the `PLATFORM_API_KEY` for the worker and `WORKER_API_KEY` for the backend.

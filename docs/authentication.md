@@ -62,7 +62,7 @@ The LLM worker needs both `author` (to create questions and answer options) and 
 ```json
 {
   "display_name": "LLM Worker",
-  "model_id": "claude-sonnet-4-5-20250929",
+  "model_id": "claude-sonnet-4-6",
   "roles": ["author", "reviewer"]
 }
 ```

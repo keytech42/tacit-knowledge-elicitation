@@ -61,7 +61,7 @@ See `.env.example` for all environment variables. Key settings:
 | `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:5173"]` |
 | `WORKER_URL` | LLM worker service URL (empty = disabled) | empty |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM tasks | empty |
-| `LLM_MODEL` | litellm model identifier for the worker | `anthropic/claude-sonnet-4-5-20250929` |
+| `LLM_MODEL` | litellm model identifier for the worker | `anthropic/claude-sonnet-4-6` |
 | `EMBEDDING_MODEL` | Embedding model for pgvector (empty = disabled) | empty |
 | `WORKER_API_KEY` | Service account API key for the worker | empty |
 
