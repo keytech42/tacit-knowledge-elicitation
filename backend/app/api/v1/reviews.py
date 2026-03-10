@@ -135,9 +135,26 @@ async def create_review(
         answer_version=target.current_version if request.target_type == "answer" else None,
     )
     db.add(review)
+
+    # Track whether we need to publish an SSE event
+    status_changed = False
+    if request.target_type == "answer" and target.status == AnswerStatus.SUBMITTED.value:
+        status_changed = True
+
     await db.flush()
     await db.refresh(review)
     await _enrich_review_context([review], db)
+
+    # Commit before publishing SSE events so re-fetches see committed data
+    if status_changed:
+        await db.commit()
+        publish_event(str(target.question_id), {
+            "type": "answer_status_changed",
+            "answer_id": str(target.id),
+            "status": AnswerStatus.UNDER_REVIEW.value,
+            "previous_status": AnswerStatus.SUBMITTED.value,
+        })
+
     return review
 
 
@@ -198,8 +215,17 @@ async def assign_reviewer(
     db.add(review)
 
     # Move to under_review if submitted
-    if answer.status == AnswerStatus.SUBMITTED.value:
+    status_changed = answer.status == AnswerStatus.SUBMITTED.value
+    if status_changed:
         answer.status = AnswerStatus.UNDER_REVIEW.value
+
+    await db.flush()
+    await db.refresh(review)
+    await _enrich_review_context([review], db)
+
+    # Commit before publishing SSE events so re-fetches see committed data
+    if status_changed:
+        await db.commit()
         publish_event(str(answer.question_id), {
             "type": "answer_status_changed",
             "answer_id": str(answer.id),
@@ -207,9 +233,6 @@ async def assign_reviewer(
             "previous_status": AnswerStatus.SUBMITTED.value,
         })
 
-    await db.flush()
-    await db.refresh(review)
-    await _enrich_review_context([review], db)
     return review
 
 
@@ -309,20 +332,26 @@ async def update_review(
     await db.refresh(review)
     await _enrich_review_context([review], db)
 
-    # Notify SSE subscribers about answer status change (from review resolution)
+    # Commit before publishing SSE events so re-fetches see committed data.
+    # Also read final answer status after commit for SSE + Slack notifications.
+    answer_status_after = None
     if review.target_type == ReviewTargetType.ANSWER.value and answer:
         await db.refresh(answer)
-        if answer.status != answer_status_before:
-            publish_event(str(answer.question_id), {
-                "type": "answer_status_changed",
-                "answer_id": str(answer.id),
-                "status": answer.status,
-                "previous_status": answer_status_before,
-            })
+        answer_status_after = answer.status
+
+    await db.commit()
+
+    # Publish SSE event if answer status changed from review resolution
+    if answer_status_after and answer_status_after != answer_status_before:
+        publish_event(str(answer.question_id), {
+            "type": "answer_status_changed",
+            "answer_id": str(answer.id),
+            "status": answer_status_after,
+            "previous_status": answer_status_before,
+        })
 
     # Slack notifications for review verdicts on answers
     if review.target_type == ReviewTargetType.ANSWER.value and answer:
-        await db.refresh(answer)
         question_result = await db.execute(select(Question).where(Question.id == answer.question_id))
         question = question_result.scalar_one_or_none()
         q_title = question.title if question else "Unknown"
@@ -341,8 +370,8 @@ async def update_review(
         )
 
         # Notify about answer status changes from review resolution
-        if answer.status != answer_status_before:
-            if answer.status == AnswerStatus.APPROVED.value:
+        if answer_status_after != answer_status_before:
+            if answer_status_after == AnswerStatus.APPROVED.value:
                 await slack.notify_answer_approved(
                     question_title=q_title,
                     answer_id=str(answer.id),
@@ -351,7 +380,7 @@ async def update_review(
                     slack_channel=question.slack_channel if question else None,
                     slack_thread_ts=question.slack_thread_ts if question else None,
                 )
-            elif answer.status == AnswerStatus.REVISION_REQUESTED.value:
+            elif answer_status_after == AnswerStatus.REVISION_REQUESTED.value:
                 await slack.notify_revision_requested(
                     question_title=q_title,
                     answer_id=str(answer.id),

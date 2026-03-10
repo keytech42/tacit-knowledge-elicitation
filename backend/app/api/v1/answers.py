@@ -204,6 +204,9 @@ async def submit_answer_endpoint(
         await db.flush()
         await db.refresh(answer)
 
+    # Commit before publishing SSE events so re-fetches see committed data
+    await db.commit()
+
     # Notify SSE subscribers about answer status change
     publish_event(str(answer.question_id), {
         "type": "answer_status_changed",
