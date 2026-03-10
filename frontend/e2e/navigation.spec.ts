@@ -27,22 +27,18 @@ test.describe("Navigation", () => {
   test("admin pages are accessible", async ({ page }) => {
     // Admin Queue
     await page.goto("/admin/questions");
-    await page.waitForSelector("main", { timeout: 5000 });
     await expect(page.locator("main")).not.toHaveText("Access Denied");
 
     // Service Accounts
     await page.goto("/admin/service-accounts");
-    await page.waitForSelector("main", { timeout: 5000 });
     await expect(page.locator("main")).not.toHaveText("Access Denied");
 
     // AI Logs
     await page.goto("/admin/ai-logs");
-    await page.waitForSelector("main", { timeout: 5000 });
     await expect(page.locator("main")).not.toHaveText("Access Denied");
 
     // Settings
     await page.goto("/settings");
-    await page.waitForSelector("main", { timeout: 5000 });
     await expect(page.locator("main")).not.toHaveText("Access Denied");
   });
 

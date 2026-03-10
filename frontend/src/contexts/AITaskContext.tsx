@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import { ai, type AITask } from "@/api/client";
-import { useAuth } from "@/auth/AuthContext";
 import { useToast } from "@/components/ToastContext";
 
 const TASK_TYPE_LABELS: Record<string, string> = {
@@ -40,44 +39,11 @@ const AITaskContext = createContext<AITaskContextValue | null>(null);
 const POLL_INTERVAL = 3000;
 
 export function AITaskProvider({ children }: { children: ReactNode }) {
-  const { user, hasRole } = useAuth();
-  const isAdmin = user && hasRole("admin");
   const toast = useToast();
   const [tasks, setTasks] = useState<Map<string, AITask>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track tasks we've already notified about to avoid duplicate toasts
   const notifiedRef = useRef<Set<string>>(new Set());
-
-  // Load active tasks on mount (only for admin users)
-  useEffect(() => {
-    if (!isAdmin) {
-      setTasks(new Map());
-      notifiedRef.current.clear();
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const [pending, running] = await Promise.all([
-          ai.listTasks("pending"),
-          ai.listTasks("running"),
-        ]);
-        if (cancelled) return;
-        const map = new Map<string, AITask>();
-        for (const t of [...pending.items, ...running.items]) {
-          map.set(t.id, t);
-          // Mark existing tasks as already notified so we don't toast on load
-          notifiedRef.current.add(t.id);
-        }
-        setTasks(map);
-      } catch {
-        // If API call fails (e.g., user is not admin), just start with empty map
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [isAdmin]);
 
   // Single interval that polls all active tasks
   useEffect(() => {
