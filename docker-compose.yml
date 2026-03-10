@@ -34,6 +34,8 @@ services:
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       SLACK_DEFAULT_CHANNEL: ${SLACK_DEFAULT_CHANNEL:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      RECOMMENDATION_STRATEGY: ${RECOMMENDATION_STRATEGY:-auto}
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     volumes:
@@ -60,6 +62,7 @@ services:
       PLATFORM_API_URL: http://api:8000
       PLATFORM_API_KEY: ${WORKER_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-anthropic/claude-sonnet-4-6}
+      RECOMMENDATION_MODEL: ${RECOMMENDATION_MODEL:-anthropic/claude-haiku-4-5-20251001}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
