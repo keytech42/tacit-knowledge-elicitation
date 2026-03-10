@@ -19,7 +19,7 @@ function ToastItem({ toast, onDismiss }: { toast: ToastType; onDismiss: () => vo
   }, [state, onDismiss]);
 
   useEffect(() => {
-    const duration = toast.type === "success" ? 3000 : 5000;
+    const duration = toast.type === "error" ? 5000 : 3000;
     const timer = setTimeout(startExit, duration);
     return () => clearTimeout(timer);
   }, [toast.type, startExit]);
@@ -28,8 +28,10 @@ function ToastItem({ toast, onDismiss }: { toast: ToastType; onDismiss: () => vo
     return () => clearTimeout(timerRef.current);
   }, []);
 
-  const isSuccess = toast.type === "success";
-  const accentClass = isSuccess ? "border-l-status-green" : "border-l-status-red";
+  const accentClass =
+    toast.type === "success" ? "border-l-status-green" :
+    toast.type === "info" ? "border-l-status-blue" :
+    "border-l-status-red";
 
   const transformClass =
     state === "entering"
@@ -43,7 +45,7 @@ function ToastItem({ toast, onDismiss }: { toast: ToastType; onDismiss: () => vo
       className={`flex items-start gap-3 bg-background border border-border shadow-lg rounded-lg px-4 py-3 min-w-[300px] border-l-4 ${accentClass} transition-all duration-300 ease-out ${transformClass}`}
     >
       <p className="text-sm text-foreground flex-1">{toast.message}</p>
-      {!isSuccess && (
+      {toast.type === "error" && (
         <button
           onClick={startExit}
           className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"

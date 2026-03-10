@@ -6,7 +6,7 @@ import { ActionButton } from "@/components/ActionButton";
 import { Admonition } from "@/components/Admonition";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { MarkdownContent } from "@/components/MarkdownContent";
-import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
+import { StatusBadge, statusLabel, WORKFLOW_HINTS } from "@/components/StatusBadge";
 import { useToast } from "@/components/ToastContext";
 import { UserPicker } from "@/components/UserPicker";
 
@@ -206,21 +206,28 @@ export function QuestionDetail() {
       toast.success("Answer submitted successfully");
 
       // Poll for background AI review — worker auto-reviews submitted answers
+      // Tracks through intermediate states (submitted → under_review → approved/changes_requested)
       if (pollRef.current) clearInterval(pollRef.current);
       let attempts = 0;
+      let lastStatus = "submitted";
+      const terminalStatuses = new Set(["approved", "revision_requested", "rejected", "draft"]);
       pollRef.current = setInterval(async () => {
         attempts++;
-        if (attempts > 10) {
+        if (attempts > 20) {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
           return;
         }
         try {
           const fresh = await api.get<Answer>(`/answers/${created.id}`);
-          if (fresh.status !== "submitted") {
+          if (fresh.status !== lastStatus) {
+            lastStatus = fresh.status;
             loadQuestion();
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
+            toast.info(`Answer status: ${statusLabel(fresh.status)}`);
+            if (terminalStatuses.has(fresh.status)) {
+              if (pollRef.current) clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
           }
         } catch {
           if (pollRef.current) clearInterval(pollRef.current);
