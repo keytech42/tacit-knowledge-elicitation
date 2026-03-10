@@ -1,12 +1,13 @@
 """Tests for multi-respondent pool with optimistic concurrency."""
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.question import Question, QuestionStatus
-from app.models.user import User
+from app.models.user import User, UserType
 from tests.conftest import auth_header
 
 
@@ -232,6 +233,43 @@ class TestRespondentPoolValidation:
         )
         assert r.status_code == 409
 
+    async def test_exact_max_respondents(
+        self, client: AsyncClient, admin_user: User, db: AsyncSession,
+    ):
+        """Assigning exactly MAX_RESPONDENTS (5) users should succeed."""
+        q = await _make_published_question(db, admin_user)
+        users = []
+        for i in range(5):
+            u = User(
+                user_type=UserType.HUMAN,
+                external_id=f"pool_user_{i}",
+                display_name=f"Pool User {i}",
+                email=f"pool{i}@test.com",
+            )
+            db.add(u)
+            users.append(u)
+        await db.flush()
+
+        user_ids = [str(u.id) for u in users]
+        r = await client.put(
+            f"/api/v1/questions/{q.id}/respondents",
+            json={"user_ids": user_ids, "expected_version": 0},
+            headers=auth_header(admin_user),
+        )
+        assert r.status_code == 200
+        assert len(r.json()["respondents"]) == 5
+
+    async def test_put_pool_question_not_found(
+        self, client: AsyncClient, admin_user: User,
+    ):
+        """PUT pool for non-existent question returns 404."""
+        r = await client.put(
+            f"/api/v1/questions/{uuid.uuid4()}/respondents",
+            json={"user_ids": [], "expected_version": 0},
+            headers=auth_header(admin_user),
+        )
+        assert r.status_code == 404
+
 
 class TestRespondentPoolPermissions:
 
@@ -263,6 +301,31 @@ class TestRespondentPoolPermissions:
             f"/api/v1/questions/{uuid.uuid4()}/respondents",
             json={"user_ids": [], "expected_version": 0},
         )
+        assert r.status_code in (401, 403)
+
+
+class TestGetPoolPermissions:
+
+    async def test_non_admin_can_read_pool(
+        self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
+    ):
+        """GET /questions/{id}/respondents is accessible to any authenticated user."""
+        q = await _make_published_question(db, admin_user)
+        await client.put(
+            f"/api/v1/questions/{q.id}/respondents",
+            json={"user_ids": [str(respondent_user.id)], "expected_version": 0},
+            headers=auth_header(admin_user),
+        )
+        r = await client.get(
+            f"/api/v1/questions/{q.id}/respondents",
+            headers=auth_header(respondent_user),
+        )
+        assert r.status_code == 200
+        assert len(r.json()["respondents"]) == 1
+
+    async def test_unauthenticated_cannot_read_pool(self, client: AsyncClient):
+        """GET /questions/{id}/respondents requires authentication."""
+        r = await client.get(f"/api/v1/questions/{uuid.uuid4()}/respondents")
         assert r.status_code in (401, 403)
 
 
@@ -342,3 +405,79 @@ class TestQuestionResponseSchema:
         assert "respondent_pool_version" in data
         assert data["assigned_respondents"] == []
         assert data["respondent_pool_version"] == 0
+
+    async def test_question_list_includes_pool_fields(
+        self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
+    ):
+        q = await _make_published_question(db, admin_user)
+        await client.put(
+            f"/api/v1/questions/{q.id}/respondents",
+            json={"user_ids": [str(respondent_user.id)], "expected_version": 0},
+            headers=auth_header(admin_user),
+        )
+        r = await client.get("/api/v1/questions", headers=auth_header(admin_user))
+        assert r.status_code == 200
+        matched = [item for item in r.json()["questions"] if item["id"] == str(q.id)]
+        assert len(matched) == 1
+        assert len(matched[0]["assigned_respondents"]) == 1
+        assert matched[0]["respondent_pool_version"] == 1
+
+
+class TestPoolSlackNotifications:
+
+    async def test_only_new_members_get_dms(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db: AsyncSession,
+    ):
+        """When updating pool, only newly added members should receive DM notifications."""
+        q = await _make_published_question(db, admin_user)
+        # First: add respondent_user
+        await client.put(
+            f"/api/v1/questions/{q.id}/respondents",
+            json={"user_ids": [str(respondent_user.id)], "expected_version": 0},
+            headers=auth_header(admin_user),
+        )
+        # Second: add reviewer_user while keeping respondent_user
+        with patch(
+            "app.api.v1.questions.slack.notify_respondent_assigned",
+            new_callable=AsyncMock,
+        ) as mock_notify:
+            r = await client.put(
+                f"/api/v1/questions/{q.id}/respondents",
+                json={
+                    "user_ids": [str(respondent_user.id), str(reviewer_user.id)],
+                    "expected_version": 1,
+                },
+                headers=auth_header(admin_user),
+            )
+            assert r.status_code == 200
+            # Only reviewer_user should get a DM (they're the new addition)
+            assert mock_notify.call_count == 1
+            call_kwargs = mock_notify.call_args.kwargs
+            assert call_kwargs["respondent_email"] == reviewer_user.email
+
+    async def test_no_dms_when_removing_members(
+        self, client: AsyncClient, admin_user: User, respondent_user: User,
+        reviewer_user: User, db: AsyncSession,
+    ):
+        """Removing members from the pool should not trigger any DMs."""
+        q = await _make_published_question(db, admin_user)
+        await client.put(
+            f"/api/v1/questions/{q.id}/respondents",
+            json={
+                "user_ids": [str(respondent_user.id), str(reviewer_user.id)],
+                "expected_version": 0,
+            },
+            headers=auth_header(admin_user),
+        )
+        with patch(
+            "app.api.v1.questions.slack.notify_respondent_assigned",
+            new_callable=AsyncMock,
+        ) as mock_notify:
+            r = await client.put(
+                f"/api/v1/questions/{q.id}/respondents",
+                json={"user_ids": [str(respondent_user.id)], "expected_version": 1},
+                headers=auth_header(admin_user),
+            )
+            assert r.status_code == 200
+            mock_notify.assert_not_called()

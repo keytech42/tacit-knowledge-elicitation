@@ -300,6 +300,53 @@ The optional field `auto_assign_count` (default: 1) controls how many reviewers 
 
 Returns 409 if the question is not in `published` status. Returns 404 if the question or user is not found. A Slack DM notification is sent to the assigned respondent (fire-and-forget).
 
+### Respondent Pool
+
+Manage a multi-respondent pool for a question. The pool supports optimistic concurrency via a version counter.
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `GET` | `/api/v1/questions/{question_id}/respondents` | Any authenticated user | Get the respondent pool | 200 |
+| `PUT` | `/api/v1/questions/{question_id}/respondents` | Admin | Replace the respondent pool | 200 |
+
+#### GET /api/v1/questions/{question_id}/respondents
+
+Returns the current respondent pool and version for a question. Any authenticated user can read.
+
+**Response (200):** `RespondentPoolResponse`
+```json
+{
+  "respondents": [
+    {"id": "<uuid>", "user": {UserResponse}, "created_at": "..."}
+  ],
+  "version": 2
+}
+```
+
+Returns 404 if the question is not found.
+
+#### PUT /api/v1/questions/{question_id}/respondents
+
+Replace the entire respondent pool. Uses optimistic concurrency: the request must include the expected version. Admin only.
+
+**Request body:**
+```json
+{
+  "user_ids": ["<uuid>", "<uuid>"],
+  "expected_version": 1
+}
+```
+
+- Maximum 5 respondents per question
+- Duplicate user IDs are rejected (400)
+- Non-existent user IDs are rejected (404)
+- Question must be in `published` status (409 otherwise)
+- Version mismatch returns 409
+
+**Response (200):** `RespondentPoolResponse`
+
+Slack DM notifications are sent only to newly added pool members (not existing ones). Closing a question clears the pool.
+
 ### Admin Queue
 
 `GET /api/v1/questions/admin-queue` — returns all actionable questions grouped by status bucket. Admin only.

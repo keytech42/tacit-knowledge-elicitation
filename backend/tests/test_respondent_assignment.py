@@ -51,12 +51,11 @@ class TestAssignRespondentEndpoint:
         assert data["assigned_respondent"] is not None
         assert data["assigned_respondent"]["id"] == str(respondent_user.id)
 
-    async def test_assign_replaces_previous(
+    async def test_assign_replaces_singular_fk_and_adds_to_pool(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, db: AsyncSession,
     ):
-        """Assigning a new respondent replaces the previous assignment."""
-        # Create a second respondent-like user (use reviewer as a different user)
+        """Assigning a new respondent replaces the singular FK but adds both to pool."""
         q = Question(
             title="Replace Test", body="B",
             created_by_id=admin_user.id,
@@ -73,6 +72,7 @@ class TestAssignRespondentEndpoint:
         )
         assert r1.status_code == 200
         assert r1.json()["assigned_respondent"]["id"] == str(respondent_user.id)
+        assert len(r1.json()["assigned_respondents"]) == 1
 
         # Second assignment with different user
         r2 = await client.post(
@@ -81,7 +81,12 @@ class TestAssignRespondentEndpoint:
             headers=auth_header(admin_user),
         )
         assert r2.status_code == 200
+        # Singular FK replaced
         assert r2.json()["assigned_respondent"]["id"] == str(reviewer_user.id)
+        # Both users in the pool
+        pool_ids = {m["user"]["id"] for m in r2.json()["assigned_respondents"]}
+        assert str(respondent_user.id) in pool_ids
+        assert str(reviewer_user.id) in pool_ids
 
     async def test_assign_same_respondent_idempotent(
         self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
@@ -109,6 +114,9 @@ class TestAssignRespondentEndpoint:
         )
         assert r2.status_code == 200
         assert r2.json()["assigned_respondent"]["id"] == str(respondent_user.id)
+        # Pool should still have only 1 member (not duplicated)
+        assert len(r2.json()["assigned_respondents"]) == 1
+        assert r2.json()["respondent_pool_version"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +281,7 @@ class TestAssignedRespondentInSchema:
     async def test_get_question_includes_assigned_respondent_null(
         self, client: AsyncClient, admin_user: User, db: AsyncSession,
     ):
-        """Unassigned question has assigned_respondent = null."""
+        """Unassigned question has assigned_respondent = null and empty pool."""
         q = Question(
             title="No Assignment", body="B",
             created_by_id=admin_user.id,
@@ -290,6 +298,8 @@ class TestAssignedRespondentInSchema:
         data = r.json()
         assert "assigned_respondent" in data
         assert data["assigned_respondent"] is None
+        assert data["assigned_respondents"] == []
+        assert data["respondent_pool_version"] == 0
 
     async def test_get_question_includes_assigned_respondent_populated(
         self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
@@ -321,6 +331,8 @@ class TestAssignedRespondentInSchema:
         assert data["assigned_respondent"] is not None
         assert data["assigned_respondent"]["id"] == str(respondent_user.id)
         assert data["assigned_respondent"]["display_name"] == respondent_user.display_name
+        assert len(data["assigned_respondents"]) == 1
+        assert data["respondent_pool_version"] == 1
 
     async def test_question_list_includes_assigned_respondent(
         self, client: AsyncClient, admin_user: User, respondent_user: User, db: AsyncSession,
@@ -358,7 +370,7 @@ class TestAssignedRespondentInSchema:
 # ---------------------------------------------------------------------------
 
 class TestAssignedRespondentColumn:
-    """The Question model should have an assigned_respondent_id FK column."""
+    """The Question model should have assigned_respondent_id FK and pool fields."""
 
     async def test_question_has_assigned_respondent_id(self, db: AsyncSession):
         """Questions should have a nullable assigned_respondent_id column."""
@@ -376,3 +388,21 @@ class TestAssignedRespondentColumn:
             created_by_id=uuid.uuid4(),
         )
         assert hasattr(q, "assigned_respondent")
+
+    async def test_question_has_pool_version(self, db: AsyncSession):
+        """Questions should have a respondent_pool_version column defaulting to 0."""
+        q = Question(
+            title="Pool Version Test", body="B",
+            created_by_id=uuid.uuid4(),
+        )
+        assert hasattr(q, "respondent_pool_version")
+        # Python-side default may be None before INSERT; server_default="0" applies on flush
+        assert q.respondent_pool_version in (0, None)
+
+    async def test_question_has_assigned_respondents_relationship(self, db: AsyncSession):
+        """Questions should have an assigned_respondents relationship (pool)."""
+        q = Question(
+            title="Pool Rel Test", body="B",
+            created_by_id=uuid.uuid4(),
+        )
+        assert hasattr(q, "assigned_respondents")
