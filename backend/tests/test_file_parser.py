@@ -222,7 +222,9 @@ class TestExtractFromFileEndpoint:
 
         assert r.status_code == 200
         data = r.json()
-        assert data["task_id"] == "upload-task-1"
+        assert data["task_type"] == "extract_questions"
+        assert data["worker_task_id"] == "upload-task-1"
+        assert data["status"] == "running"
 
     async def test_upload_uses_filename_as_title(self, client: AsyncClient, admin_user: User, db):
         mock_response = {"task_id": "upload-task-2", "status": "accepted"}
