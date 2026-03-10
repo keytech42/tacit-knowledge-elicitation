@@ -5,6 +5,7 @@ from app.models.question_respondent import QuestionRespondent
 from app.models.answer import Answer, AnswerRevision, AnswerCollaborator
 from app.models.review import Review, ReviewComment
 from app.models.ai_log import AIInteractionLog
+from app.models.ai_task import AITask, AITaskType, AITaskStatus
 from app.models.source_document import SourceDocument
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "QuestionRespondent",
     "Answer", "AnswerRevision", "AnswerCollaborator",
     "Review", "ReviewComment", "AIInteractionLog",
+    "AITask", "AITaskType", "AITaskStatus",
     "SourceDocument",
 ]

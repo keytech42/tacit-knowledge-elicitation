@@ -26,6 +26,7 @@ app = FastAPI(title="Knowledge Elicitation Worker", version="0.1.0")
 
 # In-memory task tracking
 _tasks: dict[str, dict] = {}
+_async_tasks: dict[str, asyncio.Task] = {}
 
 
 def _create_task(coro) -> str:
@@ -38,12 +39,17 @@ def _create_task(coro) -> str:
             result = await coro
             _tasks[task_id]["status"] = "completed"
             _tasks[task_id]["result"] = result
+        except asyncio.CancelledError:
+            _tasks[task_id]["status"] = "cancelled"
         except Exception as e:
             logger.exception(f"Task {task_id} failed")
             _tasks[task_id]["status"] = "failed"
             _tasks[task_id]["error"] = str(e)
+        finally:
+            _async_tasks.pop(task_id, None)
 
-    asyncio.create_task(_wrapper())
+    task = asyncio.create_task(_wrapper())
+    _async_tasks[task_id] = task
     return task_id
 
 
@@ -114,3 +120,20 @@ async def get_task_status(task_id: str):
         result=task["result"],
         error=task["error"],
     )
+
+
+@app.post("/tasks/{task_id}/cancel")
+async def cancel_task(task_id: str):
+    if task_id not in _tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    current_status = _tasks[task_id]["status"]
+    if current_status not in ("accepted", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot cancel task in '{current_status}' state",
+        )
+    async_task = _async_tasks.get(task_id)
+    if async_task:
+        async_task.cancel()
+    _tasks[task_id]["status"] = "cancelled"
+    return {"task_id": task_id, "status": "cancelled"}
