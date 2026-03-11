@@ -4,7 +4,7 @@ This guide covers deploying the Knowledge Elicitation Platform on a dedicated se
 
 ## Architecture Overview
 
-The platform runs as five Docker Compose services:
+The platform runs as six Docker Compose services:
 
 | Service | Image | Internal Port | Exposed | Profile |
 |---------|-------|---------------|---------|---------|
@@ -12,9 +12,10 @@ The platform runs as five Docker Compose services:
 | **api** | ./backend | 8000 | Via reverse proxy | default |
 | **web** | ./frontend (dev only) | 5173 | — | default |
 | **worker** | ./worker | 8001 | No | default |
+| **backup** | postgres:16 | — | No | `backup` |
 | **embedding** | ghcr.io/ggml-org/llama.cpp:server | 8090 | No | `embedding` |
 
-In production, the **web** service is replaced by static files served from a reverse proxy (nginx/caddy). The **worker** and **embedding** services are optional — the platform functions fully without them.
+In production, the **web** service is replaced by static files served from a reverse proxy (nginx/caddy). The **worker**, **backup**, and **embedding** services are optional — the platform functions fully without them. All services include built-in log rotation (10 MB × 3 files) and health checks.
 
 ## Quick Setup
 
@@ -26,7 +27,7 @@ cd tacit-knowledge-elicitation
 make setup
 ```
 
-This walks you through generating secrets, configuring optional services (AI, Slack, embeddings), creates the `.env` file, starts the stack, and sets up the worker service account — all interactively. Once done, proceed to [step 8 (reverse proxy)](#8-set-up-the-reverse-proxy) to expose the platform externally.
+This walks you through generating secrets, configuring optional services (AI, Slack, embeddings), creates the `.env` file, starts the stack, and sets up the worker service account — all interactively. Once done, proceed to [step 9 (reverse proxy)](#9-set-up-the-reverse-proxy) to expose the platform externally.
 
 For a manual step-by-step walkthrough, continue below.
 
@@ -59,7 +60,7 @@ sudo usermod -aG docker $USER
 Other requirements:
 
 - `git`, `make`, `curl` (pre-installed on most Linux distributions)
-- Node.js 18+ (for building the frontend static files in [step 8](#8-set-up-the-reverse-proxy))
+- Node.js 18+ (for building the frontend static files in [step 9](#9-set-up-the-reverse-proxy))
 - A domain name with DNS pointing to the server
 - (Optional) Google OAuth credentials for production auth
 - (Optional) Anthropic API key for AI features
@@ -92,7 +93,7 @@ DATABASE_URL=postgresql+asyncpg://app:<generated-password>@db:5432/knowledge_eli
 JWT_SECRET=<generated-secret>
 FRONTEND_URL=https://your-domain.com
 CORS_ORIGINS=["https://your-domain.com"]
-DEV_LOGIN_ENABLED=true   # Keep true for initial setup, disable in step 9
+DEV_LOGIN_ENABLED=true   # Keep true for initial setup, disable in step 11
 ```
 
 > [!WARNING]
@@ -104,7 +105,15 @@ DEV_LOGIN_ENABLED=true   # Keep true for initial setup, disable in step 9
 
 See [Environment Variables](#environment-variables) below for the full reference including optional services.
 
-### 3. Start core services
+### 3. Validate environment (recommended)
+
+```bash
+./scripts/check-env.sh
+```
+
+This validates that production secrets are set (not defaults), `DEV_LOGIN_ENABLED` is false, and warns about common misconfigurations like localhost in `CORS_ORIGINS`. Run this before every production deploy.
+
+### 4. Start core services
 
 ```bash
 make up-prod
@@ -131,7 +140,7 @@ curl http://localhost:8000/health
 # {"status": "ok"}
 ```
 
-### 4. Seed initial data (optional)
+### 5. Seed initial data (optional)
 
 ```bash
 make seed
@@ -139,7 +148,7 @@ make seed
 
 Creates 5 sample users and 5 questions in varied states — useful for verifying the deployment works end-to-end before configuring real accounts.
 
-### 5. Create a service account for the worker
+### 6. Create a service account for the worker
 
 The worker authenticates to the API as a service account. The simplest way is the management script, which operates directly on the database — no JWT or browser login required:
 
@@ -185,9 +194,9 @@ In production (dev-login disabled), get the admin JWT from the browser:
 > The management script works regardless of `DEV_LOGIN_ENABLED` — use it to create or rotate service accounts in production without needing a browser.
 
 > [!NOTE]
-> The dev-login endpoint (`POST /api/v1/auth/dev-login`) is only available when `DEV_LOGIN_ENABLED=true` (the default). It creates a test admin user (`dev@localhost`) with all roles. Use it during initial setup if you prefer the REST API path, then disable it in step 9. After that, admin access is via Google OAuth — the user whose email matches `BOOTSTRAP_ADMIN_EMAIL` auto-receives all roles on first login.
+> The dev-login endpoint (`POST /api/v1/auth/dev-login`) is only available when `DEV_LOGIN_ENABLED=true` (the default). It creates a test admin user (`dev@localhost`) with all roles. Use it during initial setup if you prefer the REST API path, then disable it in step 11. After that, admin access is via Google OAuth — the user whose email matches `BOOTSTRAP_ADMIN_EMAIL` auto-receives all roles on first login.
 
-### 6. Enable embeddings (optional)
+### 7. Enable embeddings (optional)
 
 > [!NOTE]
 > Embeddings are entirely optional. If you prefer LLM-based recommendations (no local inference needed), set `RECOMMENDATION_STRATEGY=llm` in `.env` and skip this step.
@@ -222,7 +231,7 @@ make embed-status
 
 See [Embeddings Setup](embeddings.md) for the full guide including GPU alternatives, cloud providers, and troubleshooting.
 
-### 7. Configure Slack notifications (optional)
+### 8. Configure Slack notifications (optional)
 
 1. Create a Slack app at https://api.slack.com/apps
 2. Add Bot Token Scopes: `chat:write`, `users:read`, `users:read.email`, `conversations:open`
@@ -249,14 +258,14 @@ Slack notifications are fire-and-forget — if the token is invalid or the servi
 | Review verdict | Question thread | Author (if changes requested) |
 | Respondent assigned | — | Assigned respondent |
 
-### 8. Set up the reverse proxy
+### 9. Set up the reverse proxy
 
 > [!TIP]
 > **Automated setup available:** Run `make setup-reverse-proxy` (or `bash scripts/setup-reverse-proxy.sh`) to interactively install and configure the reverse proxy. The script handles package installation, frontend build, TLS certificates, and `.env` updates. The manual steps below are for reference or custom setups.
 
 A reverse proxy sits between the internet and your Docker services. It handles TLS (HTTPS), serves the frontend static files, and forwards API requests to the backend. This platform uses SSE (Server-Sent Events) for real-time updates, which requires specific proxy configuration.
 
-#### 8a. Build the frontend
+#### 9a. Build the frontend
 
 The frontend is a React SPA (Single Page Application). Build it into static files:
 
@@ -268,7 +277,7 @@ npm run build
 
 This produces a `dist/` directory containing `index.html` and bundled JS/CSS assets. The reverse proxy will serve these directly.
 
-#### 8b. Prerequisites
+#### 9b. Prerequisites
 
 - Your server's domain name (e.g., `knowledge.yourcompany.com`) must have a DNS A record pointing to the server's IP address
 - Ports 80 and 443 must be open in your firewall
@@ -280,7 +289,7 @@ dig +short knowledge.yourcompany.com
 # Should return your server's IP address
 ```
 
-#### 8c. Choose a reverse proxy
+#### 9c. Choose a reverse proxy
 
 We provide configurations for two options. **Caddy is recommended for first-time setup** — it automatically obtains and renews TLS certificates from Let's Encrypt with zero configuration.
 
@@ -437,7 +446,7 @@ sudo systemctl status certbot.timer
 
 </details>
 
-#### 8d. Verify the deployment
+#### 9d. Verify the deployment
 
 After the reverse proxy is running:
 
@@ -457,7 +466,24 @@ curl -N https://knowledge.yourcompany.com/api/v1/questions/00000000-0000-0000-00
 
 Open `https://knowledge.yourcompany.com` in a browser. You should see the login page.
 
-### 9. Disable development mode
+### 10. Enable backups (recommended)
+
+The `backup` sidecar runs daily `pg_dump` with automatic rotation (7 daily + 4 weekly). WAL archiving is also enabled via the custom `postgresql.conf` for point-in-time recovery.
+
+```bash
+docker compose --profile backup up -d
+```
+
+Verify:
+
+```bash
+make backup          # trigger manual backup
+make backup-verify   # restore to temp DB, compare tables, cleanup
+```
+
+See [Database Management](database-management.md) for the full backup/restore guide, WAL archiving details, and external storage recommendations.
+
+### 11. Disable development mode
 
 In `.env`, ensure:
 
@@ -474,7 +500,7 @@ make restart-prod
 ```
 
 > [!NOTE]
-> If you used `make up-prod` (step 3), the `--reload` flags and source code mounts are already excluded (they live in `docker-compose.override.yml`, which production skips). No manual edits needed.
+> If you used `make up-prod` (step 4), the `--reload` flags and source code mounts are already excluded (they live in `docker-compose.override.yml`, which production skips). No manual edits needed.
 
 ## Environment Variables
 
@@ -502,7 +528,7 @@ make restart-prod
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `WORKER_URL` | `http://worker:8001` | Empty = AI features disabled |
-| `WORKER_API_KEY` | — | Service account API key (see step 5) |
+| `WORKER_API_KEY` | — | Service account API key (see step 6) |
 | `ANTHROPIC_API_KEY` | — | Required for Anthropic models |
 | `LLM_MODEL` | `anthropic/claude-sonnet-4-6` | Worker's primary LLM |
 | `RECOMMENDATION_STRATEGY` | `auto` | `auto`, `llm`, or `embedding` |
@@ -526,7 +552,23 @@ make restart-prod
 |----------|---------|-------|
 | `SLACK_BOT_TOKEN` | — (disabled) | `xoxb-...` from Slack app settings |
 | `SLACK_DEFAULT_CHANNEL` | — | Channel ID or `#name` for broadcast notifications |
+| `SLACK_WORKSPACE` | — | Workspace name (for deep-linking in notifications) |
 | `FRONTEND_URL` | `http://localhost:5173` | Used in Slack notification links |
+
+### Database tuning (optional)
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DB_USER` | `app` | PostgreSQL user (used by backup sidecar) |
+| `DB_NAME` | `knowledge_elicitation` | Database name (used by backup sidecar) |
+| `DB_HOST_PORT` | `5432` | Host-side port binding for `db` |
+| `API_HOST_PORT` | `8000` | Host-side port binding for `api` |
+| `API_WORKERS` | `2` | Uvicorn worker processes for `api` |
+| `WORKER_WORKERS` | `1` | Uvicorn worker processes for `worker` |
+| `DB_POOL_SIZE` | `10` | SQLAlchemy connection pool size |
+| `DB_MAX_OVERFLOW` | `20` | Extra connections allowed under burst |
+
+See [Database Management](database-management.md) for connection pool tuning, monitoring, and PostgreSQL configuration details.
 
 ## Database
 
@@ -550,18 +592,24 @@ When running multiple API replicas, run migrations as a **one-off task** before 
 
 ### Backups
 
-For production, use a managed PostgreSQL instance with automated backups. If using the Docker container:
+The platform includes a `backup` sidecar service (profile-gated) that runs daily `pg_dump` with automatic rotation (7 daily + 4 weekly). WAL archiving is enabled via a custom `postgresql.conf` for point-in-time recovery.
 
 ```bash
-docker compose exec db pg_dump -U app knowledge_elicitation > backup.sql
+docker compose --profile backup up -d   # start backup sidecar
+make backup                              # trigger manual backup
+make backup-verify                       # validate latest backup
+make restore                             # restore from latest backup
 ```
+
+For managed PostgreSQL instances, use the provider's backup solution instead. See [Database Management](database-management.md) for the full backup/restore guide, WAL archiving details, retention policy, and external storage recommendations.
 
 ## Monitoring
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /health` | Returns `{"status": "ok"}` — use for liveness probes |
-| `GET /admin/ai-logs` | AI operation logs (admin UI) |
+| Endpoint | Auth | Purpose |
+|----------|------|---------|
+| `GET /health` | None | Liveness probe — returns `{"status": "ok"}` |
+| `GET /health/db` | None | Extended check — connection pool stats, row counts, database size |
+| `GET /admin/ai-logs` | Admin | AI operation logs (admin UI) |
 
 The AI logging middleware records all write operations from service accounts with latency, request body, and response status.
 
@@ -572,6 +620,18 @@ make embed-status
 # or
 curl http://localhost:8090/health
 ```
+
+### Data export
+
+Three admin-only streaming JSONL endpoints for extracting training data:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/export/training-data` | Q&A pairs with review verdicts (for RAG, fine-tuning) |
+| `GET /api/v1/export/embeddings` | 1024-dim entity vectors (for clustering, similarity) |
+| `GET /api/v1/export/review-pairs` | Answer + review verdict pairs (for RLHF) |
+
+All support `date_from` and `date_to` filters. See [Database Management — Data Export](database-management.md#data-export) for full usage examples.
 
 ## Scaling
 
@@ -588,6 +648,7 @@ curl http://localhost:8090/health
 
 ## Production Checklist
 
+- [ ] `./scripts/check-env.sh` passes (validates secrets, rejects defaults)
 - [ ] Using `make up-prod` (not `make up`) — ports bound to 127.0.0.1, no `--reload`, restart policies
 - [ ] Strong random `JWT_SECRET` (at least 32 characters)
 - [ ] Strong `DB_PASSWORD`
@@ -597,7 +658,8 @@ curl http://localhost:8090/health
 - [ ] HTTPS with valid TLS certificate
 - [ ] Google OAuth configured (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`)
 - [ ] `BOOTSTRAP_ADMIN_EMAIL` set to first admin's Google email
-- [ ] PostgreSQL with automated backups
+- [ ] Backup sidecar enabled (`docker compose --profile backup up -d`)
+- [ ] Backup verified (`make backup-verify`)
 - [ ] Reverse proxy configured with SSE support (`proxy_buffering off` for nginx)
 - [ ] Service account created for worker with `WORKER_API_KEY` set
 - [ ] `ANTHROPIC_API_KEY` set (if using AI features)
