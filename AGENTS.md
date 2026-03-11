@@ -36,8 +36,18 @@ frontend/
   src/components/   Layout, route guards
   src/pages/        Feature pages
 
-docker-compose.yml  Four services: db, api, web, worker
-Makefile            Development shortcuts
+backup/
+  backup.sh           Automated pg_dump with rotation (7 daily, 4 weekly)
+  restore.sh          Restore from backup file with verification
+  verify.sh           Restore to temp DB and validate table counts
+  postgresql.conf     Tuned PostgreSQL config (WAL archiving, checkpoints)
+
+scripts/
+  check-env.sh        Production pre-flight checks (rejects default credentials)
+
+docker-compose.yml       Five services: db, api, web, worker, backup
+docker-compose.prod.yml  Production overrides (resource limits, no bind mounts, log rotation)
+Makefile                 Development shortcuts
 ```
 
 ## Running Commands
@@ -119,7 +129,7 @@ Python 3.12 is required. Tests cannot run outside Docker without it.
 ### Test Structure
 
 - `conftest.py`: Fixtures for db sessions, HTTP client, user/role factories. Enables the `vector` pgvector extension before creating tables.
-- Each test file covers one domain: `test_admin_queue.py`, `test_ai_integration.py`, `test_ai_logging.py`, `test_answer_options.py`, `test_answers.py`, `test_auth.py`, `test_config_integrity.py`, `test_e2e_workflows.py`, `test_event_bus.py`, `test_file_parser.py`, `test_fix_integration.py`, `test_permissions.py`, `test_questions.py`, `test_recommendation.py`, `test_respondent_assignment.py`, `test_reviews.py`, `test_slack_dm.py`, `test_slack_threads.py`, `test_slack.py`, `test_source_documents.py`, `test_sse.py`, `test_startup.py`, `test_state_consistency.py`
+- Each test file covers one domain: `test_admin_queue.py`, `test_ai_integration.py`, `test_ai_logging.py`, `test_ai_tasks.py`, `test_answer_options.py`, `test_answers.py`, `test_auth.py`, `test_config_integrity.py`, `test_e2e_workflows.py`, `test_event_bus.py`, `test_export.py`, `test_file_parser.py`, `test_fix_integration.py`, `test_permissions.py`, `test_questions.py`, `test_recommendation.py`, `test_respondent_assignment.py`, `test_respondent_pool.py`, `test_reviews.py`, `test_slack_dm.py`, `test_slack_threads.py`, `test_slack.py`, `test_source_documents.py`, `test_sse.py`, `test_startup.py`, `test_state_consistency.py`
 
 ### Writing Tests
 
@@ -251,6 +261,38 @@ return response
 This is especially dangerous with in-process pub/sub (like `asyncio.Queue`) because events are delivered instantly — there's zero network latency to mask the race. External brokers (Redis, RabbitMQ) may hide the bug with slight delivery delay, making it even harder to diagnose when it surfaces.
 
 The `get_db` dependency auto-commits after the handler returns. Calling `commit()` mid-handler is safe — the subsequent auto-commit is a no-op if no new changes were made.
+
+### Backup & Restore
+
+Automated backups run daily via a `backup` sidecar service (pg_dump to `/backups` volume). Scripts in `backup/`:
+
+```bash
+make backup        # trigger manual backup now
+make restore       # restore from latest (or specify file)
+make backup-verify # verify latest backup (restore to temp DB, check tables)
+```
+
+Backups rotate: 7 daily, 4 weekly (Sunday tagged). Weekly backups use hard-links to avoid doubling storage. WAL archiving is enabled in production via `backup/postgresql.conf` (mounted in `docker-compose.prod.yml`).
+
+### Production Deployment
+
+```bash
+./scripts/check-env.sh                                                    # validate env
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build  # start prod
+curl http://localhost:8000/health/db | jq .                               # verify
+```
+
+`docker-compose.prod.yml` overrides: removes `--reload` and bind mounts, adds `--workers 2`, resource limits, log rotation, and mounts `backup/postgresql.conf`. `scripts/check-env.sh` rejects default `DB_PASSWORD`, `JWT_SECRET`, and `DEV_LOGIN_ENABLED=true`.
+
+### Data Export
+
+Three admin-only streaming JSONL endpoints for ML consumption:
+
+- `GET /api/v1/export/training-data` — Q&A pairs with review verdicts (filters: date, status, category)
+- `GET /api/v1/export/embeddings` — 1024-dim entity embeddings (filters: entity_type, date)
+- `GET /api/v1/export/review-pairs` — answer-review pairs for RLHF (filters: verdict, date)
+
+Implementation: `backend/app/api/v1/export.py`, schemas: `backend/app/schemas/export.py`, tests: `backend/tests/test_export.py`.
 
 ## Gotchas
 
