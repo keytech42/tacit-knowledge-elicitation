@@ -249,6 +249,7 @@ The `get_db` dependency auto-commits after the handler returns. Calling `commit(
 
 ## Gotchas
 
+- **Environment variables must be forwarded in `docker-compose.yml`**. Adding a setting to `app/config.py` and `.env` is not enough — you must also add the `${VAR:-}` passthrough in the `environment:` block of the relevant service in `docker-compose.yml`. Without this, pydantic-settings inside the container sees an empty value. Always verify with `docker compose exec api python -c "from app.config import settings; print(settings.YOUR_VAR)"` after adding new env vars.
 - The Dockerfile copies `pyproject.toml` before source for layer caching. `PYTHONPATH=/app` is set so `alembic` can find the `app` module.
 - Docker Compose mounts `./backend:/app` as a volume, overriding the container's `/app`. Installed packages persist in the image layer.
 - The `async_session` from `database.py` auto-commits. In tests, the `db` fixture wraps everything in a transaction that rolls back.
