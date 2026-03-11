@@ -61,12 +61,16 @@ This starts all four services (db, api, web, worker) with hot-reload. Open http:
 
 | Command | Action |
 |---------|--------|
-| `make up` | Build and start all services |
-| `make down` | Stop all services |
+| `make up` | Build and start core services (db, api, web, worker) |
+| `make down` | Stop core services |
 | `make test` | Run backend tests in the running api container |
 | `make migrate` | Run Alembic migrations manually |
 | `make logs` | Tail container logs |
 | `make shell` | Open a bash shell in the api container |
+| `make embed-download` | Download bge-m3 Q8_0 GGUF model (~605MB) |
+| `make up-embed` | Start all services including the embedding server |
+| `make down-embed` | Stop all services including the embedding server |
+| `make embed-status` | Check if the embedding server is healthy |
 
 ## Running Tests
 
@@ -134,7 +138,7 @@ The worker service and AI features are optional. To enable:
 | `RECOMMENDATION_STRATEGY` | api | `auto` (default), `llm`, or `embedding`. Auto prefers embedding when available |
 | `RECOMMENDATION_MODEL` | worker | LLM model for recommendations (default: Haiku for cost efficiency) |
 
-See [Embeddings Setup](embeddings.md) for detailed instructions on running a local embedding model.
+See [Embeddings Setup](embeddings.md) for detailed instructions on running a local embedding model (Docker Compose, macOS Metal, GPU, and cloud options).
 
 ## CI
 

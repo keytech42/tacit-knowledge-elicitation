@@ -73,5 +73,24 @@ services:
     depends_on:
       - api
 
+  embedding:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    profiles: ["embedding"]
+    ports:
+      - "${EMBEDDING_HOST_PORT:-8090}:8090"
+    volumes:
+      - ${EMBEDDING_MODEL_DIR:-./models}:/models:ro
+    environment:
+      LLAMA_ARG_MODEL: /models/${EMBEDDING_MODEL_FILE:-bge-m3-q8_0.gguf}
+      LLAMA_ARG_EMBEDDINGS: 1
+      LLAMA_ARG_CTX_SIZE: 8192
+      LLAMA_ARG_PORT: 8090
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
 volumes:
   pgdata:

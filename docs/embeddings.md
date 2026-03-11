@@ -4,54 +4,59 @@ Embeddings power the respondent recommendation system, which uses pgvector cosin
 
 When enabled, embeddings are generated automatically whenever a question or answer is created or updated. When disabled (or `RECOMMENDATION_STRATEGY=llm`), recommendations use LLM-based scoring via the worker service instead. See `docs/architecture.md` for strategy comparison.
 
-## Quick Start (Local Development)
+> [!NOTE]
+> Embeddings are entirely optional. If you don't need embedding-based recommendations, set `RECOMMENDATION_STRATEGY=llm` and skip this guide entirely. LLM-based recommendation requires only an Anthropic API key — no local inference infrastructure.
 
-### 1. Install llama.cpp
+> [!WARNING]
+> **This guide's Docker Compose setup is for CPU-only servers.** The `embedding` service uses the `ghcr.io/ggml-org/llama.cpp:server` image which runs CPU inference only. This is well-suited for servers without a GPU (bge-m3 at Q8_0 runs comfortably on modern CPUs with 2GB+ free RAM), but is **not optimal if you have a GPU available**. See [GPU alternatives](#gpu-alternatives) below for CUDA and Metal setups.
 
-```bash
-# macOS (Homebrew)
-brew install llama.cpp
-```
+## Quick Start (Docker Compose)
 
-Verify it's installed:
+The embedding server runs as an optional Docker Compose service using [llama.cpp](https://github.com/ggerganov/llama.cpp).
 
-```bash
-llama-server --version
-```
-
-### 2. Download the model
-
-We use [bge-m3](https://huggingface.co/BAAI/bge-m3) — a multilingual embedding model (1024 dimensions, 8K token context, strong English + Korean support).
-
-Download the Q8_0 quantized GGUF from the official [ggml-org conversion](https://huggingface.co/ggml-org/bge-m3-Q8_0-GGUF):
+### 1. Download the model
 
 ```bash
-mkdir -p ~/models
-python3 -c "
-from huggingface_hub import hf_hub_download
-hf_hub_download(
-    repo_id='ggml-org/bge-m3-Q8_0-GGUF',
-    filename='bge-m3-q8_0.gguf',
-    local_dir='$HOME/models',
-)
-print('Done')
-"
+make embed-download
 ```
 
-If `huggingface_hub` isn't installed: `pip install huggingface_hub`.
+This downloads the [bge-m3](https://huggingface.co/BAAI/bge-m3) Q8_0 quantized GGUF (~605MB) into `./models/`. See [Why Q8_0?](#why-q8_0) for the rationale.
 
-### 3. Start the embedding server
+> [!TIP]
+> To use a custom model directory, set `EMBEDDING_MODEL_DIR` in your `.env` or pass it to Make: `make embed-download EMBEDDING_MODEL_DIR=~/models`
+
+### 2. Configure environment variables
+
+Add to your `.env`:
 
 ```bash
-llama-server --model ~/models/bge-m3-q8_0.gguf --embeddings --port 8090
+EMBEDDING_MODEL=openai/bge-m3
+EMBEDDING_API_BASE=http://embedding:8090/v1/
+EMBEDDING_API_KEY=no-key
 ```
 
-That's it. The server auto-detects GPU layers (Metal on macOS, CUDA on Linux) and loads the model's context size from metadata.
+- `EMBEDDING_MODEL` uses the `openai/` prefix because litellm routes to the OpenAI-compatible `/v1/embeddings` endpoint that llama-server exposes
+- `embedding` is the Docker Compose service name — containers reach it directly via the compose network
+- `EMBEDDING_API_KEY` is required by litellm but llama-server ignores it — any non-empty value works
+
+### 3. Start all services including embeddings
+
+```bash
+make up-embed
+```
+
+This starts the four core services plus the embedding server. The embedding service has a health check with a 30-second start period to allow model loading.
 
 Verify it's working:
 
 ```bash
-curl -s http://127.0.0.1:8090/v1/embeddings \
+make embed-status
+```
+
+Or test directly:
+
+```bash
+curl -s http://localhost:8090/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{"input": "test", "model": "bge-m3"}' | python3 -c "
 import sys, json
@@ -60,24 +65,60 @@ print(f'{len(emb)} dimensions')  # Should print: 1024 dimensions
 "
 ```
 
-### 4. Configure environment variables
+## GPU Alternatives
 
-Add to your `.env`:
+> [!IMPORTANT]
+> The Docker Compose `embedding` service runs **CPU-only inference**. If your deployment environment has a GPU, you should use a GPU-accelerated setup instead for significantly better throughput. The options below replace the `embedding` compose service — configure `EMBEDDING_API_BASE` to point to whichever server you choose.
+
+### macOS (Metal GPU)
+
+Docker on macOS cannot access Metal GPU. Run llama-server natively on the host:
 
 ```bash
-EMBEDDING_MODEL=openai/bge-m3
-EMBEDDING_API_BASE=http://host.docker.internal:8090/v1/
-EMBEDDING_API_KEY=no-key
+brew install llama.cpp
+llama-server --model ./models/bge-m3-q8_0.gguf --embeddings --port 8090
 ```
 
-- `EMBEDDING_MODEL` uses the `openai/` prefix because litellm routes to the OpenAI-compatible `/v1/embeddings` endpoint that llama-server exposes
-- `host.docker.internal` lets Docker containers reach the host machine where llama-server runs
-- `EMBEDDING_API_KEY` is required by litellm but llama-server ignores it — any non-empty value works
+Set `EMBEDDING_API_BASE=http://host.docker.internal:8090/v1/` in your `.env` so Docker containers reach the host. Do **not** enable the `embedding` compose profile — the host-side server replaces it.
 
-Restart the api service to pick up the changes:
+### Linux (NVIDIA CUDA)
+
+Use the CUDA-accelerated llama.cpp image:
+
+```yaml
+# docker-compose.override.yml
+services:
+  embedding:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+```
+
+Or use [HuggingFace Text Embeddings Inference (TEI)](https://github.com/huggingface/text-embeddings-inference) which is purpose-built for GPU embedding workloads:
 
 ```bash
-docker compose restart api
+docker run -d --gpus all -p 8090:80 \
+  ghcr.io/huggingface/text-embeddings-inference:latest \
+  --model-id BAAI/bge-m3
+```
+
+TEI exposes the same OpenAI-compatible API, so the `.env` configuration is identical.
+
+### Linux (AMD ROCm)
+
+```yaml
+# docker-compose.override.yml
+services:
+  embedding:
+    image: ghcr.io/ggml-org/llama.cpp:server-rocm
+    devices:
+      - /dev/kfd
+      - /dev/dri
 ```
 
 ## Why Q8_0?
@@ -106,9 +147,9 @@ The minimal command (`llama-server --model <path> --embeddings --port 8090`) is 
 | `--n-parallel` | auto | Concurrent request slots. Defaults to 4. Increase if you're bulk-generating embeddings |
 | `--host` | 127.0.0.1 | Bind address. Use `0.0.0.0` to expose on the network |
 
-## Cloud Provider Alternative
+### Cloud Provider Alternative
 
-For production without local GPU, use a cloud embedding API:
+For production without local infrastructure, use a cloud embedding API:
 
 ```bash
 # OpenAI
@@ -123,23 +164,11 @@ EMBEDDING_API_KEY=...
 
 Note: If switching models, the embedding dimensions must match the pgvector column (1024). OpenAI's `text-embedding-3-small` outputs 1536 by default but supports a `dimensions` parameter — configure litellm accordingly, or migrate the column.
 
-## Production (Linux with CUDA)
-
-For GPU-accelerated production servers, use HuggingFace Text Embeddings Inference (TEI) instead of llama.cpp:
-
-```bash
-docker run -d --gpus all -p 8090:80 \
-  ghcr.io/huggingface/text-embeddings-inference:latest \
-  --model-id BAAI/bge-m3
-```
-
-The `.env` configuration is the same — TEI exposes an OpenAI-compatible API.
-
 ## Troubleshooting
 
 **"Connection refused" from Docker containers**
-- Ensure llama-server is running on the host (not inside Docker)
-- Verify `host.docker.internal` resolves: `docker compose exec api curl http://host.docker.internal:8090/health`
+- If using the compose `embedding` service: check `make embed-status` and `docker compose --profile embedding logs embedding`
+- If using host-side llama-server (macOS): verify `host.docker.internal` resolves: `docker compose exec api curl http://host.docker.internal:8090/health`
 
 **Embeddings not being generated**
 - Check `EMBEDDING_MODEL` is set and non-empty in the api container: `docker compose exec api env | grep EMBEDDING`

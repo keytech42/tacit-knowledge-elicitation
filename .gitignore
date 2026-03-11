@@ -26,5 +26,8 @@ htmlcov/
 .pytest_cache/
 *.tsbuildinfo
 
+# GGUF model files
+models/
+
 # Git worktrees
 worktrees/
