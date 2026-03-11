@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.config import settings
 from app.database import async_session, engine
@@ -53,3 +53,39 @@ app.include_router(api_router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/health/db")
+async def health_db():
+    """Extended health check with DB pool stats and table counts."""
+    pool = engine.pool
+
+    pool_stats = {
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+    }
+
+    async with async_session() as session:
+        # Table row counts for key tables
+        tables = ["users", "questions", "answers", "reviews", "source_documents"]
+        row_counts = {}
+        for table in tables:
+            result = await session.execute(
+                text(f"SELECT COUNT(*) FROM {table}")  # noqa: S608 — table names are hardcoded
+            )
+            row_counts[table] = result.scalar()
+
+        # Database size on disk
+        result = await session.execute(
+            text("SELECT pg_database_size(current_database())")
+        )
+        db_size_bytes = result.scalar()
+
+    return {
+        "status": "ok",
+        "pool": pool_stats,
+        "row_counts": row_counts,
+        "database_size_bytes": db_size_bytes,
+    }

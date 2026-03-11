@@ -1,0 +1,21 @@
+{
+  "questions": [
+    {
+      "title": "What is the primary authentication method?",
+      "body": "Based on the document's description of the authentication layer, explain which method is used and why it was chosen over alternatives.",
+      "category": "Security",
+      "source_passage": "The system uses OAuth 2.0 with PKCE flow for all client applications, providing secure token exchange without exposing client secrets.",
+      "confidence": 0.92,
+      "suggested_options": []
+    },
+    {
+      "title": "How are database migrations handled?",
+      "body": "Describe the process for applying and rolling back database schema changes in the production environment.",
+      "category": "Infrastructure",
+      "source_passage": "Alembic manages all schema migrations with a linear revision history. Each migration includes both upgrade and downgrade functions.",
+      "confidence": 0.85,
+      "suggested_options": ["Alembic CLI", "CI/CD automation", "Manual DBA review"]
+    }
+  ],
+  "document_summary": "Technical architecture document covering authentication, database management, and deployment patterns for a microservices platform."
+}

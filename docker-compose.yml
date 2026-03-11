@@ -1,6 +1,8 @@
 services:
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     environment:
       POSTGRES_DB: knowledge_elicitation
       POSTGRES_USER: app
@@ -9,15 +11,21 @@ services:
       - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backup/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d knowledge_elicitation"]
       interval: 5s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   api:
     build: ./backend
+    restart: unless-stopped
     command: >-
       bash -c "alembic upgrade head &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -45,10 +53,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   web:
     build: ./frontend
+    restart: unless-stopped
     command: npm run dev -- --host 0.0.0.0
     ports:
       - "127.0.0.1:${WEB_HOST_PORT:-5173}:5173"
@@ -57,9 +76,21 @@ services:
       - /app/node_modules
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const h=require('http');h.get('http://localhost:5173/',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   worker:
     build: ./worker
+    restart: unless-stopped
     command: >-
       uvicorn worker.main:app --host 0.0.0.0 --port 8001
       --workers ${WORKER_WORKERS:-1}
@@ -74,10 +105,45 @@ services:
       - "127.0.0.1:${WORKER_HOST_PORT:-8001}:8001"
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backup:
+    image: postgres:16
     restart: unless-stopped
+    profiles: ["backup"]
+    volumes:
+      - ./backup:/scripts:ro
+      - backups:/backups
+      - pgdata:/var/lib/postgresql/data:ro
+    environment:
+      PGHOST: db
+      PGUSER: ${DB_USER:-app}
+      PGPASSWORD: ${DB_PASSWORD:-devpassword}
+      PGDATABASE: ${DB_NAME:-knowledge_elicitation}
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["while true; do /scripts/backup.sh /backups; sleep 86400; done"]
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   embedding:
     image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
     profiles: ["embedding"]
     ports:
       - "127.0.0.1:${EMBEDDING_HOST_PORT:-8090}:8090"
@@ -89,12 +155,17 @@ services:
       LLAMA_ARG_CTX_SIZE: 8192
       LLAMA_ARG_PORT: 8090
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8090/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
-    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:
+  backups:

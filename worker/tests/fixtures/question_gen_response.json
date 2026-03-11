@@ -1,0 +1,22 @@
+{
+  "questions": [
+    {
+      "title": "How do you handle deployment rollbacks?",
+      "body": "Describe your team's process for rolling back a failed deployment. Include details about decision criteria, communication protocols, and post-rollback analysis.",
+      "category": "DevOps",
+      "suggested_options": ["Blue-green deployment", "Feature flags", "Database migration reversal", "Container image rollback"]
+    },
+    {
+      "title": "What monitoring alerts are critical for production?",
+      "body": "Which alerts do you consider must-have for a production service? Explain the thresholds and escalation paths for each.",
+      "category": "Observability",
+      "suggested_options": []
+    },
+    {
+      "title": "How do you manage secrets in your CI/CD pipeline?",
+      "body": "Walk through how secrets (API keys, database credentials) are stored, rotated, and injected during the build and deploy process.",
+      "category": "Security",
+      "suggested_options": ["Vault", "AWS Secrets Manager", "Environment variables"]
+    }
+  ]
+}

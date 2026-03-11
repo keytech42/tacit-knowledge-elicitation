@@ -975,6 +975,95 @@ Deleting a source document nullifies the `source_document_id` on any linked ques
 
 ---
 
+## Data Export (Admin Only)
+
+Bulk export endpoints for downstream ML consumption (RAG, RLHF, PEFT). All endpoints stream JSONL (`application/x-ndjson`) and require the admin role.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/export/training-data` | Q&A pairs with review verdicts |
+| `GET` | `/api/v1/export/embeddings` | Entity embeddings (question/answer) |
+| `GET` | `/api/v1/export/review-pairs` | Answer-review pairs for reward modeling |
+
+### GET /api/v1/export/training-data
+
+Stream Q&A pairs as JSONL with full context for training.
+
+**Query parameters (all optional):**
+- `date_from` (datetime) — filter by answer creation date
+- `date_to` (datetime) — filter by answer creation date
+- `question_status` (string) — filter by question status
+- `category` (string) — filter by question category
+
+**JSONL row:**
+```json
+{"question_id": "...", "question_title": "...", "question_body": "...", "question_category": "...", "question_status": "published", "quality_score": 4.2, "source_type": "manual", "answer_id": "...", "answer_body": "...", "answer_status": "approved", "answer_version": 2, "selected_option": "...", "review_verdicts": ["approved"], "created_at": "..."}
+```
+
+### GET /api/v1/export/embeddings
+
+Stream entity embeddings as JSONL. Only returns rows where embedding is not null.
+
+**Query parameters (all optional):**
+- `entity_type` (string) — `"question"`, `"answer"`, or `"both"` (default: both)
+- `date_from` (datetime) — filter by entity creation date
+- `date_to` (datetime) — filter by entity creation date
+
+**JSONL row:**
+```json
+{"entity_type": "question", "entity_id": "...", "embedding": [0.123, -0.456, ...]}
+```
+
+### GET /api/v1/export/review-pairs
+
+Stream answer-review pairs as JSONL for reward modeling / RLHF. Excludes pending reviews.
+
+**Query parameters (all optional):**
+- `verdict` (string) — filter by specific verdict
+- `date_from` (datetime) — filter by review creation date
+- `date_to` (datetime) — filter by review creation date
+
+**JSONL row:**
+```json
+{"answer_id": "...", "question_id": "...", "question_title": "...", "answer_body": "...", "answer_version": 1, "review_verdict": "approved", "review_comment": "...", "reviewer_id": "...", "created_at": "..."}
+```
+
+---
+
+## Health Checks
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/health` | None | Basic liveness check |
+| `GET` | `/health/db` | None | Extended check with DB pool stats, table row counts, and database size |
+
+### GET /health/db
+
+Returns database pool statistics, row counts for key tables, and total database size.
+
+**Response (200):**
+```json
+{
+  "status": "ok",
+  "pool": {
+    "pool_size": 10,
+    "checked_in": 8,
+    "checked_out": 2,
+    "overflow": 0
+  },
+  "row_counts": {
+    "users": 5,
+    "questions": 12,
+    "answers": 8,
+    "reviews": 3,
+    "source_documents": 2
+  },
+  "database_size_bytes": 52428800
+}
+```
+
+---
+
 ## Real-Time Events (SSE)
 
 ### `GET /questions/{question_id}/events?token=<jwt>`

@@ -45,6 +45,11 @@ make seed           # seed database with sample data (5 users, 5 questions)
 make test-e2e       # run Playwright end-to-end tests
 make down           # stop everything
 
+# Backup & restore
+make backup        # trigger manual database backup
+make restore       # restore from latest backup
+make backup-verify # verify latest backup integrity
+
 # Embedding server (optional — for embedding-based recommendations)
 make embed-download # download bge-m3 model (~605MB)
 make up-embed       # start all services + embedding server
@@ -189,6 +194,18 @@ stateDiagram-v2
 
 Reviews follow a simpler flow: **Pending** → **Approved** / **Changes Requested** / **Rejected**. Only the assigned reviewer (or an admin) can set the verdict.
 
+## Data Export
+
+Admin-only streaming JSONL endpoints for downstream ML consumption:
+
+| Endpoint | Description | Use case |
+|----------|-------------|----------|
+| `GET /api/v1/export/training-data` | Q&A pairs with review verdicts | RAG, fine-tuning |
+| `GET /api/v1/export/embeddings` | Entity embeddings (1024-dim vectors) | UMAP, clustering |
+| `GET /api/v1/export/review-pairs` | Answer-review verdict pairs | RLHF, reward modeling |
+
+All endpoints support `date_from`, `date_to`, and entity-specific filters.
+
 ## Documentation
 
 See [`docs/`](docs/) for detailed documentation:
@@ -197,6 +214,7 @@ See [`docs/`](docs/) for detailed documentation:
 - [Data Model](docs/data-model.md) — entities, relationships, and state machines
 - [API Reference](docs/api-reference.md) — all endpoints with request/response details
 - [Authentication](docs/authentication.md) — auth flows, tokens, and permissions
+- [Database Management](docs/database-management.md) — backups, recovery, pool tuning, monitoring, migrations
 - [Development Guide](docs/development.md) — setup, testing, and workflow
 - [Deployment](docs/deployment.md) — production configuration and operations
 
