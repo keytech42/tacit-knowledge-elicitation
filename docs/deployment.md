@@ -188,17 +188,130 @@ Slack notifications are fire-and-forget — if the token is invalid or the servi
 
 ### 8. Set up the reverse proxy
 
-The API serves both the REST endpoints and SSE (Server-Sent Events) connections. Your reverse proxy must handle both.
+A reverse proxy sits between the internet and your Docker services. It handles TLS (HTTPS), serves the frontend static files, and forwards API requests to the backend. This platform uses SSE (Server-Sent Events) for real-time updates, which requires specific proxy configuration.
 
-Example nginx configuration:
+#### 8a. Build the frontend
+
+The frontend is a React SPA (Single Page Application). Build it into static files:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+This produces a `dist/` directory containing `index.html` and bundled JS/CSS assets. The reverse proxy will serve these directly.
+
+#### 8b. Prerequisites
+
+- Your server's domain name (e.g., `knowledge.yourcompany.com`) must have a DNS A record pointing to the server's IP address
+- Ports 80 and 443 must be open in your firewall
+
+Verify DNS is set up:
+
+```bash
+dig +short knowledge.yourcompany.com
+# Should return your server's IP address
+```
+
+#### 8c. Choose a reverse proxy
+
+We provide configurations for two options. **Caddy is recommended for first-time setup** — it automatically obtains and renews TLS certificates from Let's Encrypt with zero configuration.
+
+<details open>
+<summary><strong>Option A: Caddy (recommended — automatic TLS)</strong></summary>
+
+**Install Caddy:**
+
+```bash
+# Ubuntu/Debian
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install caddy
+```
+
+**Configure Caddy:**
+
+Create `/etc/caddy/Caddyfile`:
+
+```
+knowledge.yourcompany.com {
+    # Frontend static files
+    root * /path/to/frontend/dist
+    file_server
+
+    # API proxy (includes SSE — Caddy handles streaming automatically)
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    # Health check proxy
+    handle /health {
+        reverse_proxy localhost:8000
+    }
+
+    # SPA fallback — serve index.html for all non-file routes
+    try_files {path} /index.html
+}
+```
+
+Replace `knowledge.yourcompany.com` with your domain and `/path/to/frontend/dist` with the actual path to the built frontend.
+
+**Start Caddy:**
+
+```bash
+sudo systemctl enable caddy
+sudo systemctl restart caddy
+```
+
+Caddy automatically obtains a TLS certificate from Let's Encrypt on first request. No manual certificate management needed.
+
+**Verify:**
+
+```bash
+curl -I https://knowledge.yourcompany.com
+# Should return HTTP/2 200 with a valid TLS certificate
+```
+
+> [!NOTE]
+> Caddy handles SSE correctly out of the box — no additional buffering or timeout configuration needed. It automatically detects streaming responses and disables buffering.
+
+</details>
+
+<details>
+<summary><strong>Option B: nginx (manual TLS setup)</strong></summary>
+
+**Install nginx:**
+
+```bash
+# Ubuntu/Debian
+sudo apt install nginx
+```
+
+**Obtain a TLS certificate:**
+
+Use [Certbot](https://certbot.eff.org/) (free, from Let's Encrypt):
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d knowledge.yourcompany.com
+```
+
+Certbot will obtain the certificate and update the nginx config with the paths. Note the certificate paths it prints (typically `/etc/letsencrypt/live/knowledge.yourcompany.com/`).
+
+**Configure nginx:**
+
+Create `/etc/nginx/sites-available/knowledge-elicitation`:
 
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name your-domain.com;
+    server_name knowledge.yourcompany.com;
 
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
+    ssl_certificate /etc/letsencrypt/live/knowledge.yourcompany.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/knowledge.yourcompany.com/privkey.pem;
 
     # Frontend static files
     root /path/to/frontend/dist;
@@ -219,24 +332,64 @@ server {
         proxy_send_timeout 3600s;
     }
 
-    # SPA fallback — all non-file routes serve index.html
+    # Health check proxy
+    location = /health {
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    # SPA fallback — serve index.html for all non-file routes
     location / {
         try_files $uri $uri/ /index.html;
     }
 }
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name knowledge.yourcompany.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+**Enable the site and restart:**
+
+```bash
+sudo ln -s /etc/nginx/sites-available/knowledge-elicitation /etc/nginx/sites-enabled/
+sudo nginx -t          # test configuration — must show "syntax is ok"
+sudo systemctl restart nginx
+```
+
+**Set up automatic certificate renewal:**
+
+```bash
+# Certbot adds a systemd timer automatically. Verify it's active:
+sudo systemctl status certbot.timer
 ```
 
 > [!IMPORTANT]
 > **SSE requires `proxy_buffering off`** on the `/api/` location. Without it, nginx buffers the event stream and the client receives nothing until the connection closes. The `proxy_read_timeout` should be long (e.g., 3600s) because SSE connections are persistent.
 
-Build the frontend static files:
+</details>
+
+#### 8d. Verify the deployment
+
+After the reverse proxy is running:
 
 ```bash
-cd frontend
-npm install
-npm run build
-# Copy dist/ to the path configured in nginx
+# TLS and frontend
+curl -I https://knowledge.yourcompany.com
+# Should return HTTP/2 200
+
+# API through the proxy
+curl https://knowledge.yourcompany.com/api/v1/auth/config
+# Should return JSON with auth configuration
+
+# SSE connectivity (should hang with an open connection, receiving events)
+curl -N https://knowledge.yourcompany.com/api/v1/questions/00000000-0000-0000-0000-000000000000/events?token=test
+# Expected: HTTP 401 (auth error) — confirms the SSE endpoint is reachable
 ```
+
+Open `https://knowledge.yourcompany.com` in a browser. You should see the login page.
 
 ### 9. Disable development mode
 
