@@ -45,6 +45,17 @@ sudo usermod -aG docker $USER
 # Log out and back in for group change to take effect
 ```
 
+**Minimum server requirements:**
+
+| Resource | Minimum | Recommended | Notes |
+|----------|---------|-------------|-------|
+| CPU | 2 vCPU | 4 vCPU | Embedding service is CPU-intensive on first load |
+| RAM | 4 GB | 8 GB | Add ~1 GB if enabling the embedding service |
+| Disk | 20 GB | 40 GB | Add ~1 GB for the embedding model file |
+
+> [!WARNING]
+> Very small instances (e.g., AWS t2.micro with 1 GB RAM) will not work — the API, worker, and database together require at least 2-3 GB. A t3.medium (2 vCPU / 4 GB) is the practical minimum.
+
 Other requirements:
 
 - `git`, `make`, `curl` (pre-installed on most Linux distributions)
@@ -83,6 +94,13 @@ FRONTEND_URL=https://your-domain.com
 CORS_ORIGINS=["https://your-domain.com"]
 DEV_LOGIN_ENABLED=true   # Keep true for initial setup, disable in step 9
 ```
+
+> [!WARNING]
+> **`FRONTEND_URL` and `CORS_ORIGINS` both default to `http://localhost:5173`.** If you skip setting these, the platform will appear to work but:
+> - **CORS_ORIGINS**: The browser will block all API calls from your production domain (silent 403 errors)
+> - **FRONTEND_URL**: Slack notification links will point to `localhost:5173` instead of your domain
+>
+> Set both to your production URL (e.g., `https://knowledge.yourcompany.com`) before going live.
 
 See [Environment Variables](#environment-variables) below for the full reference including optional services.
 
@@ -575,7 +593,7 @@ curl http://localhost:8090/health
 - [ ] Strong `DB_PASSWORD`
 - [ ] `DEV_LOGIN_ENABLED=false`
 - [ ] `CORS_ORIGINS` restricted to production domain
-- [ ] `FRONTEND_URL` set to production domain (used in Slack links and OAuth)
+- [ ] `FRONTEND_URL` set to production domain (**defaults to localhost** — Slack links break silently if not set)
 - [ ] HTTPS with valid TLS certificate
 - [ ] Google OAuth configured (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`)
 - [ ] `BOOTSTRAP_ADMIN_EMAIL` set to first admin's Google email
