@@ -26,6 +26,24 @@ def fmt_review_verdict(
     return text
 
 
+def fmt_reviewer_assigned_dm(
+    first_name: str,
+    assigner_name: str,
+    question_title: str,
+    answer_link: str,
+    question_link: str,
+    thread_link: str | None = None,
+) -> str:
+    """DM to reviewer when they are assigned to review an answer."""
+    text = (
+        f":mag: Hi {first_name}! {assigner_name} has assigned you to review an answer to *{question_title}*\n"
+        f"{answer_link} · {question_link}"
+    )
+    if thread_link:
+        text += f" · <{thread_link}|Slack thread>"
+    return text
+
+
 def fmt_changes_requested_dm(
     reviewer_name: str,
     question_title: str,
