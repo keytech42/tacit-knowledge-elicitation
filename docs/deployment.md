@@ -16,6 +16,22 @@ The platform runs as five Docker Compose services:
 
 In production, the **web** service is replaced by static files served from a reverse proxy (nginx/caddy). The **worker** and **embedding** services are optional — the platform functions fully without them.
 
+## Quick Setup
+
+For a fire-and-go experience, use the interactive setup script:
+
+```bash
+git clone <repo-url>
+cd tacit-knowledge-elicitation
+make setup
+```
+
+This walks you through generating secrets, configuring optional services (AI, Slack, embeddings), creates the `.env` file, starts the stack, and sets up the worker service account — all interactively. Once done, proceed to [step 8 (reverse proxy)](#8-set-up-the-reverse-proxy) to expose the platform externally.
+
+For a manual step-by-step walkthrough, continue below.
+
+---
+
 ## Step-by-Step Deployment
 
 ### 1. Prerequisites
@@ -62,11 +78,19 @@ Creates 5 sample users and 5 questions in varied states — useful for verifying
 
 ### 5. Create a service account for the worker
 
-The worker authenticates to the API as a service account. Log in as admin, then:
+The worker authenticates to the API as a service account. First, get an admin JWT token:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/service-accounts \
-  -H "Authorization: Bearer <admin-jwt>" \
+# Dev login is enabled by default — use it for initial setup
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/dev-login \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+```
+
+Then create the service account:
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/service-accounts \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-6", "roles": ["author", "reviewer"]}'
 ```
@@ -82,6 +106,9 @@ Restart services to pick up the change:
 ```bash
 docker compose restart worker api
 ```
+
+> [!NOTE]
+> The dev-login endpoint creates a test admin user (`dev@localhost`) and is only available when `DEV_LOGIN_ENABLED=true` (the default). Use it for initial setup, then disable it in step 9. After that, admin access is via Google OAuth — the user whose email matches `BOOTSTRAP_ADMIN_EMAIL` auto-receives all roles on first login.
 
 ### 6. Enable embeddings (optional)
 

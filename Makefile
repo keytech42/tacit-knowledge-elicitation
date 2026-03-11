@@ -1,5 +1,10 @@
-.PHONY: up down test test-e2e migrate logs shell seed \
+.PHONY: up down test test-e2e migrate logs shell seed setup \
        up-embed down-embed embed-download embed-status
+
+# --- Setup ---
+
+setup:
+	@bash scripts/setup.sh
 
 # --- Core services ---
 

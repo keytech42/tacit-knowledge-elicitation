@@ -61,6 +61,7 @@ This starts all four services (db, api, web, worker) with hot-reload. Open http:
 
 | Command | Action |
 |---------|--------|
+| `make setup` | Interactive first-time setup (generates `.env`, starts stack, creates service account) |
 | `make up` | Build and start core services (db, api, web, worker) |
 | `make down` | Stop core services |
 | `make test` | Run backend tests in the running api container |
