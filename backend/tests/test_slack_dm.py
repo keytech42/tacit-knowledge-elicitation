@@ -498,3 +498,111 @@ class TestDmRouteIntegration:
             )
             assert r.status_code == 200
             mock_dm.assert_not_called()
+
+    async def test_assign_reviewer_triggers_dm(
+        self, client: AsyncClient, reviewer_user: User, respondent_user: User,
+        admin_user: User, db: AsyncSession,
+    ):
+        """POST /reviews/assign/{answer_id} triggers a DM to the assigned reviewer."""
+        q = Question(
+            title="Reviewer DM Q", body="B",
+            created_by_id=admin_user.id,
+            status=QuestionStatus.PUBLISHED.value,
+        )
+        db.add(q)
+        await db.flush()
+
+        a = Answer(
+            question_id=q.id, author_id=respondent_user.id,
+            body="My answer", status=AnswerStatus.SUBMITTED.value,
+            current_version=1,
+        )
+        db.add(a)
+        await db.flush()
+
+        with patch("app.api.v1.reviews.slack.notify_reviewer_assigned_dm", new_callable=AsyncMock) as mock_notify:
+            r = await client.post(
+                f"/api/v1/reviews/assign/{a.id}",
+                json={"reviewer_id": str(reviewer_user.id)},
+                headers=auth_header(admin_user),
+            )
+            assert r.status_code == 201
+            mock_notify.assert_called_once()
+            call_kwargs = mock_notify.call_args.kwargs
+            assert call_kwargs["reviewer_email"] == reviewer_user.email
+            assert call_kwargs["reviewer_name"] == reviewer_user.display_name
+            assert call_kwargs["assigner_name"] == admin_user.display_name
+            assert call_kwargs["question_title"] == "Reviewer DM Q"
+            assert call_kwargs["answer_id"] == str(a.id)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: notify_reviewer_assigned_dm
+# ---------------------------------------------------------------------------
+
+class TestNotifyReviewerAssignedDm:
+    """DM sent to the reviewer when they are assigned to review an answer."""
+
+    async def test_sends_dm_to_reviewer(self):
+        """DM is sent via _send_dm with question title, assigner name, and answer link."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_lookup_slack_user", new_callable=AsyncMock, return_value="U_REV"), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock) as mock_dm:
+            await slack.notify_reviewer_assigned_dm(
+                question_title="Important Question",
+                answer_id="a-123",
+                reviewer_email="reviewer@test.com",
+                reviewer_name="Reviewer User",
+                assigner_name="Admin User",
+            )
+
+        mock_dm.assert_called_once()
+        slack_user_id = mock_dm.call_args[0][0]
+        msg = mock_dm.call_args[0][1]
+        assert slack_user_id == "U_REV"
+        assert "Important Question" in msg
+        assert "Admin User" in msg
+        assert "a-123" in msg
+
+    async def test_no_dm_when_no_email(self):
+        """If reviewer has no email, DM is skipped."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock) as mock_dm:
+            await slack.notify_reviewer_assigned_dm(
+                question_title="Q",
+                answer_id="a-1",
+                reviewer_email=None,
+                reviewer_name="No Email User",
+                assigner_name="Admin",
+            )
+
+        mock_dm.assert_not_called()
+
+    async def test_no_dm_when_slack_user_not_found(self):
+        """If Slack user lookup returns None, DM is skipped."""
+        with patch.object(slack, "_is_enabled", return_value=True), \
+             patch.object(slack, "_lookup_slack_user", new_callable=AsyncMock, return_value=None), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock) as mock_dm:
+            await slack.notify_reviewer_assigned_dm(
+                question_title="Q",
+                answer_id="a-1",
+                reviewer_email="unknown@test.com",
+                reviewer_name="Unknown User",
+                assigner_name="Admin",
+            )
+
+        mock_dm.assert_not_called()
+
+    async def test_no_dm_when_disabled(self):
+        """When Slack is disabled, no DM attempt."""
+        with patch.object(slack, "_is_enabled", return_value=False), \
+             patch.object(slack, "_send_dm", new_callable=AsyncMock) as mock_dm:
+            await slack.notify_reviewer_assigned_dm(
+                question_title="Q",
+                answer_id="a-1",
+                reviewer_email="r@test.com",
+                reviewer_name="R",
+                assigner_name="Admin",
+            )
+
+        mock_dm.assert_not_called()

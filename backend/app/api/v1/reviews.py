@@ -233,6 +233,17 @@ async def assign_reviewer(
             "previous_status": AnswerStatus.SUBMITTED.value,
         })
 
+    # DM the reviewer about their assignment
+    question_result = await db.execute(select(Question).where(Question.id == answer.question_id))
+    question = question_result.scalar_one_or_none()
+    await slack.notify_reviewer_assigned_dm(
+        question_title=question.title if question else "Unknown",
+        answer_id=str(answer_id),
+        reviewer_email=reviewer_user.email,
+        reviewer_name=reviewer_user.display_name,
+        assigner_name=current_user.display_name,
+    )
+
     return review
 
 

@@ -23,6 +23,7 @@ from app.templates.slack import (
     fmt_respondent_assigned,
     fmt_respondent_assigned_thread,
     fmt_review_verdict,
+    fmt_reviewer_assigned_dm,
     fmt_revision_requested,
 )
 
@@ -231,6 +232,28 @@ async def notify_changes_requested_dm(
         question_title=question_title,
         answer_link=_answer_link(answer_id),
         comment=_md_to_mrkdwn(comment) if comment else None,
+    )
+    await _send_dm(slack_user_id, text)
+
+
+async def notify_reviewer_assigned_dm(
+    question_title: str,
+    answer_id: str,
+    reviewer_email: str | None,
+    reviewer_name: str,
+    assigner_name: str,
+) -> None:
+    """DM the reviewer when they are assigned to review an answer."""
+    if not _is_enabled() or not reviewer_email:
+        return
+    slack_user_id = await _lookup_slack_user(reviewer_email)
+    if not slack_user_id:
+        return
+    text = fmt_reviewer_assigned_dm(
+        reviewer_name=reviewer_name,
+        assigner_name=assigner_name,
+        question_title=question_title,
+        answer_link=_answer_link(answer_id),
     )
     await _send_dm(slack_user_id, text)
 

@@ -26,6 +26,19 @@ def fmt_review_verdict(
     return text
 
 
+def fmt_reviewer_assigned_dm(
+    reviewer_name: str,
+    assigner_name: str,
+    question_title: str,
+    answer_link: str,
+) -> str:
+    """DM to reviewer when they are assigned to review an answer."""
+    return (
+        f":mag: Hi {reviewer_name}! {assigner_name} has assigned you to review an answer to *{question_title}*\n"
+        f"{answer_link}"
+    )
+
+
 def fmt_changes_requested_dm(
     reviewer_name: str,
     question_title: str,

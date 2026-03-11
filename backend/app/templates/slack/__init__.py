@@ -21,6 +21,7 @@ from app.templates.slack.questions import (
 from app.templates.slack.reviews import (
     fmt_changes_requested_dm,
     fmt_review_verdict,
+    fmt_reviewer_assigned_dm,
 )
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "fmt_respondent_assigned",
     "fmt_respondent_assigned_thread",
     "fmt_review_verdict",
+    "fmt_reviewer_assigned_dm",
     "fmt_revision_requested",
 ]
