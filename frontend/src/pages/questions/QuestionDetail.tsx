@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { api, ai, Question, Answer, Recommendation, TaskStatus, User } from "@/api/client";
+import { api, ai, Question, Answer, Recommendation, TaskStatus, RespondentPool } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { Admonition } from "@/components/Admonition";
@@ -8,7 +8,7 @@ import { Breadcrumb } from "@/components/Breadcrumb";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, statusLabel, WORKFLOW_HINTS } from "@/components/StatusBadge";
 import { useToast } from "@/components/ToastContext";
-import { UserPicker } from "@/components/UserPicker";
+import { RespondentPoolEditor, RespondentPoolEditorHandle } from "@/components/RespondentPoolEditor";
 import { useQuestionEvents } from "@/hooks/useQuestionEvents";
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -129,8 +129,7 @@ export function QuestionDetail() {
   const [recReason, setRecReason] = useState<string | null>(null);
   const [recStrategy, setRecStrategy] = useState<string | null>(null);
   const [recLoading, setRecLoading] = useState(false);
-  const [assignLoading, setAssignLoading] = useState<string | null>(null);
-  const [pickerSelected, setPickerSelected] = useState<User | null>(null);
+  const poolEditorRef = useRef<RespondentPoolEditorHandle>(null);
 
   const loadQuestion = () => {
     if (!id) return;
@@ -153,11 +152,6 @@ export function QuestionDetail() {
       loadQuestion();
     }
   });
-
-  // Keep picker in sync with assigned respondent
-  useEffect(() => {
-    setPickerSelected(question?.assigned_respondent ?? null);
-  }, [question?.assigned_respondent]);
 
   const handleAction = async (action: string) => {
     if (!id) return;
@@ -292,17 +286,29 @@ export function QuestionDetail() {
     setRecLoading(false);
   };
 
-  const handleAssignRespondent = async (userId: string) => {
-    if (!id || assignLoading) return;
-    setAssignLoading(userId);
-    try {
-      const updated = await ai.assignRespondent(id, userId);
-      setQuestion(updated);
-      setError("");
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Assignment failed");
-    }
-    setAssignLoading(null);
+  const handleAddToPool = (rec: Recommendation) => {
+    if (!poolEditorRef.current) return;
+    // Build a minimal User from recommendation data
+    const user = {
+      id: rec.user_id,
+      display_name: rec.display_name,
+      user_type: "human",
+      email: null,
+      avatar_url: null,
+      is_active: true,
+      roles: [],
+      created_at: "",
+    };
+    poolEditorRef.current.addUser(user);
+  };
+
+  const handlePoolUpdated = (pool: RespondentPool) => {
+    if (!question) return;
+    setQuestion({
+      ...question,
+      assigned_respondents: pool.respondents,
+      respondent_pool_version: pool.version,
+    });
   };
 
   if (!question) return <p className="text-center py-8 text-muted-foreground">{error || "Loading..."}</p>;
@@ -322,8 +328,10 @@ export function QuestionDetail() {
         <div className="flex items-center gap-3 mb-1">
           <StatusBadge status={question.status} />
           {question.category && <span className="text-sm text-muted-foreground">{question.category}</span>}
-          {question.assigned_respondent && (
-            <span className="text-sm text-muted-foreground">Assigned: {question.assigned_respondent.display_name}</span>
+          {question.assigned_respondents && question.assigned_respondents.length > 0 && (
+            <span className="text-sm text-muted-foreground">
+              Pool: {question.assigned_respondents.map((m) => m.user.display_name).join(", ")}
+            </span>
           )}
           {question.quality_score != null && (
             <span className="text-sm text-muted-foreground ml-auto">Score: {question.quality_score.toFixed(1)}/5</span>
@@ -452,18 +460,13 @@ export function QuestionDetail() {
                 </button>
               </div>
               <div className="mt-4">
-                <UserPicker
-                  role="respondent"
-                  selected={pickerSelected}
-                  onSelect={(user) => {
-                    if (user) {
-                      handleAssignRespondent(user.id);
-                    } else {
-                      setPickerSelected(null);
-                    }
-                  }}
-                  label="Assign Respondent"
-                  placeholder="Search respondents by name or email..."
+                <RespondentPoolEditor
+                  ref={poolEditorRef}
+                  questionId={id!}
+                  questionStatus={question.status}
+                  initialPool={question.assigned_respondents ?? []}
+                  initialVersion={question.respondent_pool_version ?? 0}
+                  onPoolUpdated={handlePoolUpdated}
                 />
               </div>
               {scaffoldTask && (
@@ -501,22 +504,22 @@ export function QuestionDetail() {
                     </thead>
                     <tbody>
                       {recommendations.map((r) => {
-                        const isAssigned = question.assigned_respondent?.id === r.user_id;
+                        const inPool = poolEditorRef.current?.hasUser(r.user_id) ??
+                          question.assigned_respondents?.some((m) => m.user.id === r.user_id);
                         return (
                         <tr key={r.user_id} className="border-t border-border">
                           <td className="px-3 py-1.5 text-xs">{r.display_name}</td>
                           <td className="px-3 py-1.5 text-xs">{(r.score * 100).toFixed(0)}%</td>
                           <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.reasoning}</td>
                           <td className="px-3 py-1.5 text-xs text-right">
-                            {isAssigned ? (
-                              <span className="text-xs text-primary font-medium">Assigned</span>
+                            {inPool ? (
+                              <span className="text-xs text-primary font-medium">In Pool</span>
                             ) : (
                               <button
-                                onClick={() => handleAssignRespondent(r.user_id)}
-                                disabled={assignLoading === r.user_id}
-                                className="text-xs text-primary hover:underline disabled:opacity-50 active:scale-[0.97] transition-all duration-150"
+                                onClick={() => handleAddToPool(r)}
+                                className="text-xs text-primary hover:underline active:scale-[0.97] transition-all duration-150"
                               >
-                                {assignLoading === r.user_id ? "Assigning..." : "Assign"}
+                                Add to Pool
                               </button>
                             )}
                           </td>

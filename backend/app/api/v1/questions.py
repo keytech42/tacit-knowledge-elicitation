@@ -11,14 +11,17 @@ from app.models.answer import Answer, AnswerCollaborator, AnswerRevision, Answer
 from app.models.question import AnswerOption, Question, QuestionQualityFeedback, QuestionStatus
 from app.models.review import Review, ReviewComment, ReviewTargetType
 from app.models.user import RoleName, User, UserType
+from app.models.question_respondent import QuestionRespondent
 from app.schemas.question import (
     AdminQueueItem, AdminQueueResponse, AnswerOptionBatchCreate, AnswerOptionResponse,
     AssignRespondentRequest, QualityFeedbackCreate, QualityFeedbackResponse,
     QuestionCreate, QuestionListResponse, QuestionRejectRequest, QuestionResponse, QuestionUpdate,
+    RespondentPoolRequest, RespondentPoolResponse,
 )
 from app.services.question import (
     apply_archive, apply_close, apply_publish, apply_reject,
     apply_start_review, apply_submit, can_edit_question,
+    update_respondent_pool,
 )
 from app.services import slack, worker_client
 from app.services.embeddings import update_question_embedding
@@ -361,6 +364,17 @@ async def assign_respondent(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
     question.assigned_respondent_id = request.user_id
+
+    # Also add the user to the respondent pool for backward compat
+    existing = [ar.user_id for ar in question.assigned_respondents]
+    if request.user_id not in existing:
+        db.add(QuestionRespondent(
+            question_id=question.id,
+            user_id=request.user_id,
+            assigned_by_id=current_user.id,
+        ))
+        question.respondent_pool_version += 1
+
     await db.flush()
     await db.refresh(question)
     await slack.notify_respondent_assigned(
@@ -373,6 +387,59 @@ async def assign_respondent(
         slack_thread_ts=question.slack_thread_ts,
     )
     return question
+
+
+@router.get("/{question_id}/respondents", response_model=RespondentPoolResponse)
+async def get_respondent_pool(
+    question_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Question).where(Question.id == question_id))
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return RespondentPoolResponse(
+        respondents=question.assigned_respondents,
+        version=question.respondent_pool_version,
+    )
+
+
+@router.put("/{question_id}/respondents", response_model=RespondentPoolResponse)
+async def set_respondent_pool(
+    question_id: uuid.UUID,
+    request: RespondentPoolRequest,
+    current_user: User = require_role(RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Question).where(Question.id == question_id))
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    if question.status != QuestionStatus.PUBLISHED.value:
+        raise HTTPException(status_code=409, detail="Can only assign respondents to published questions")
+    existing_user_ids = {ar.user_id for ar in question.assigned_respondents}
+    question = await update_respondent_pool(
+        db, question, request.user_ids, request.expected_version, current_user,
+    )
+    new_user_ids = set(request.user_ids) - existing_user_ids
+    if new_user_ids:
+        new_result = await db.execute(select(User).where(User.id.in_(new_user_ids)))
+        new_users = new_result.scalars().all()
+        for u in new_users:
+            await slack.notify_respondent_assigned(
+                question_title=question.title,
+                question_id=str(question.id),
+                respondent_email=u.email,
+                respondent_name=u.display_name,
+                assigner_name=current_user.display_name,
+                slack_channel=question.slack_channel,
+                slack_thread_ts=question.slack_thread_ts,
+            )
+    return RespondentPoolResponse(
+        respondents=question.assigned_respondents,
+        version=question.respondent_pool_version,
+    )
 
 
 # Answer Options

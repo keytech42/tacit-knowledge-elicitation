@@ -13,6 +13,16 @@ function clearToken() {
   localStorage.removeItem("user");
 }
 
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+  constructor(status: number, detail: string, body: unknown) {
+    super(detail);
+    this.status = status;
+    this.body = body;
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
@@ -41,7 +51,7 @@ async function request<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Request failed" }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    throw new ApiError(response.status, error.detail || `HTTP ${response.status}`, error);
   }
 
   if (response.status === 204) {
@@ -55,6 +65,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
@@ -74,6 +86,17 @@ export interface User {
   created_at: string;
 }
 
+export interface RespondentPoolMember {
+  id: string;
+  user: User;
+  created_at: string;
+}
+
+export interface RespondentPool {
+  respondents: RespondentPoolMember[];
+  version: number;
+}
+
 export interface Question {
   id: string;
   title: string;
@@ -87,6 +110,8 @@ export interface Question {
   created_by: User;
   confirmed_by: User | null;
   assigned_respondent: User | null;
+  assigned_respondents: RespondentPoolMember[];
+  respondent_pool_version: number;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -265,6 +290,18 @@ export const ai = {
     if (limit !== 20) params.set("limit", String(limit));
     return api.get<{ users: User[]; total: number }>(`/users/search?${params}`);
   },
+};
+
+// Respondent pool API functions
+
+export const respondentPool = {
+  get: (questionId: string) =>
+    api.get<RespondentPool>(`/questions/${questionId}/respondents`),
+  update: (questionId: string, userIds: string[], expectedVersion: number) =>
+    api.put<RespondentPool>(`/questions/${questionId}/respondents`, {
+      user_ids: userIds,
+      expected_version: expectedVersion,
+    }),
 };
 
 // Source document API functions

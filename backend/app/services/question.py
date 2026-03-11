@@ -1,13 +1,17 @@
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer, AnswerStatus
 from app.models.question import Confirmation, Question, QuestionStatus
+from app.models.question_respondent import QuestionRespondent
 from app.models.review import Review, ReviewTargetType, ReviewVerdict
 from app.models.user import RoleName, User
+
+MAX_RESPONDENTS = 5
 
 QUESTION_TRANSITIONS = {
     QuestionStatus.DRAFT: {QuestionStatus.PROPOSED: {RoleName.AUTHOR, RoleName.ADMIN}},
@@ -81,11 +85,61 @@ def apply_reject(question: Question, user: User, comment: str | None = None) -> 
     question.confirmation = Confirmation.REJECTED.value
 
 
+
+async def update_respondent_pool(
+    db: AsyncSession,
+    question: Question,
+    user_ids: list[uuid.UUID],
+    expected_version: int,
+    assigned_by: User,
+) -> Question:
+    if len(user_ids) > MAX_RESPONDENTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot assign more than {MAX_RESPONDENTS} respondents",
+        )
+    if len(user_ids) != len(set(user_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Duplicate user IDs in request",
+        )
+    if question.respondent_pool_version != expected_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Version mismatch \u2014 pool was modified by another user",
+        )
+    if user_ids:
+        result = await db.execute(select(User.id).where(User.id.in_(user_ids)))
+        found_ids = {row[0] for row in result.all()}
+        missing = set(user_ids) - found_ids
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Users not found: {[str(uid) for uid in missing]}",
+            )
+    await db.execute(
+        delete(QuestionRespondent).where(QuestionRespondent.question_id == question.id)
+    )
+    for uid in user_ids:
+        db.add(QuestionRespondent(
+            question_id=question.id, user_id=uid, assigned_by_id=assigned_by.id,
+        ))
+    question.respondent_pool_version += 1
+    await db.flush()
+    await db.refresh(question)
+    return question
+
+
 async def apply_close(question: Question, user: User, db: AsyncSession) -> None:
     validate_transition(question, QuestionStatus.CLOSED, user)
     question.status = QuestionStatus.CLOSED.value
     question.closed_at = datetime.now(timezone.utc)
     question.assigned_respondent_id = None
+
+    # Clear the respondent pool
+    await db.execute(
+        delete(QuestionRespondent).where(QuestionRespondent.question_id == question.id)
+    )
 
     # Cascade: reject all in-flight and draft answers
     in_flight = [
