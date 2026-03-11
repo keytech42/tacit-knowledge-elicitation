@@ -10,6 +10,7 @@ from app.api.v1.ai_logs import router as ai_logs_router
 from app.api.v1.worker_triggers import router as worker_triggers_router
 from app.api.v1.source_documents import router as source_documents_router
 from app.api.v1.events import router as events_router
+from app.api.v1.export import router as export_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -24,3 +25,4 @@ api_router.include_router(ai_logs_router)
 api_router.include_router(worker_triggers_router)
 api_router.include_router(source_documents_router)
 api_router.include_router(events_router)
+api_router.include_router(export_router)

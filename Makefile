@@ -1,5 +1,6 @@
 .PHONY: up down test test-e2e migrate logs shell seed setup create-service-account \
        setup-reverse-proxy up-prod down-prod logs-prod restart-prod \
+       backup restore backup-verify \
        up-embed down-embed embed-download embed-status
 
 # --- Setup ---
@@ -55,6 +56,17 @@ logs-prod:
 
 restart-prod:
 	$(COMPOSE_PROD) restart
+
+# --- Backup & restore ---
+
+backup:
+	docker compose --profile backup exec backup /scripts/backup.sh /backups
+
+restore:
+	docker compose --profile backup exec backup /scripts/restore.sh
+
+backup-verify:
+	docker compose --profile backup exec backup /scripts/verify.sh /backups
 
 # --- Embedding service ---
 

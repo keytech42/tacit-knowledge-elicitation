@@ -1,0 +1,86 @@
+# Production overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and set production values
+#   2. Run: ./scripts/check-env.sh
+#   3. Build images: docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+#
+# Notes on port security:
+#   Docker Compose merges port lists, so override files cannot remove base ports.
+#   To restrict access, set these in your .env:
+#     DB_HOST_PORT=127.0.0.1:5432    (bind to localhost only)
+#     WORKER_HOST_PORT=127.0.0.1:8001 (bind to localhost only)
+#   Or use a reverse proxy (nginx/caddy) and firewall rules.
+
+services:
+  db:
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backup/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  api:
+    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+    volumes: []
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  web:
+    command: npm run dev -- --host 0.0.0.0
+    volumes:
+      - /app/node_modules
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    command: uvicorn worker.main:app --host 0.0.0.0 --port 8001 --workers 1
+    volumes: []
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  backup:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
