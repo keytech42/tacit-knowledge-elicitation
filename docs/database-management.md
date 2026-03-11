@@ -384,17 +384,20 @@ Understanding what's in the database and how much space it uses:
 | Table | Rows Growth | Large Fields | Notes |
 |-------|------------|--------------|-------|
 | `users` | Slow | — | Hundreds, not thousands |
+| `roles` | Static | — | Fixed set (admin, author, respondent, reviewer) |
+| `user_roles` | Slow | — | Association table, grows with users |
 | `questions` | Moderate | `body` (text), `embedding` (4KB) | Core entity |
 | `answers` | Moderate | `body` (text), `embedding` (4KB) | 1-5 per question |
 | `answer_revisions` | Moderate | `body` (text) | Immutable history, grows with edits |
 | `answer_options` | Low | `body` (text) | Up to 4 per question |
+| `answer_collaborators` | Low | — | Grows with shared answer access grants |
 | `reviews` | Moderate | `comment` (text) | 1-3 per answer |
 | `review_comments` | Low | `body` (text) | Threaded discussion |
+| `question_respondents` | Low | — | Grows with respondent assignments |
+| `question_quality_feedback` | Low | — | One per user per question |
 | `source_documents` | Low | `body` (text, 10K-100K+) | Largest individual records |
 | `ai_interaction_logs` | High | `request_body` (JSONB) | Grows with every AI operation |
 | `ai_tasks` | High | `result` (JSONB) | One per AI operation |
-| `question_respondents` | Low | — | Junction table |
-| `question_quality_feedback` | Low | — | One per user per question |
 
 ### Embedding Storage
 

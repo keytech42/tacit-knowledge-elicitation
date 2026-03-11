@@ -45,9 +45,8 @@ services:
         max-file: "5"
 
   web:
-    command: npm run dev -- --host 0.0.0.0
-    volumes:
-      - /app/node_modules
+    command: sh -c "npm run build && npx vite preview --host 0.0.0.0 --port 5173"
+    volumes: []
     deploy:
       resources:
         limits:

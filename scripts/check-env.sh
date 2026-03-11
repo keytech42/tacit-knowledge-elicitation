@@ -4,10 +4,12 @@
 set -euo pipefail
 
 RED='\033[0;31m'
+YELLOW='\033[0;33m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
 errors=0
+warnings=0
 
 # Load .env if present
 if [ -f .env ]; then
@@ -53,10 +55,42 @@ else
   echo -e "${GREEN}OK${NC}:   DEV_LOGIN_ENABLED is not 'true'"
 fi
 
+# === Warnings (non-blocking) ===
+echo ""
+echo "Optional production checks..."
+echo ""
+
+# --- CORS_ORIGINS ---
+if [ -z "${CORS_ORIGINS:-}" ] || echo "${CORS_ORIGINS:-}" | grep -q "localhost"; then
+  echo -e "${YELLOW}WARN${NC}: CORS_ORIGINS contains 'localhost' or is unset — set to your production domain(s)"
+  warnings=$((warnings + 1))
+else
+  echo -e "${GREEN}OK${NC}:   CORS_ORIGINS is set"
+fi
+
+# --- FRONTEND_URL ---
+if [ -z "${FRONTEND_URL:-}" ] || echo "${FRONTEND_URL:-}" | grep -q "localhost"; then
+  echo -e "${YELLOW}WARN${NC}: FRONTEND_URL contains 'localhost' or is unset — Slack links will point to localhost"
+  warnings=$((warnings + 1))
+else
+  echo -e "${GREEN}OK${NC}:   FRONTEND_URL is set"
+fi
+
+# --- Google OAuth ---
+if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_CLIENT_SECRET:-}" ]; then
+  echo -e "${YELLOW}WARN${NC}: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is empty — Google OAuth will not work"
+  warnings=$((warnings + 1))
+else
+  echo -e "${GREEN}OK${NC}:   Google OAuth credentials are set"
+fi
+
+# === Summary ===
 echo ""
 if [ $errors -gt 0 ]; then
   echo -e "${RED}$errors check(s) failed. Fix the issues above before starting production.${NC}"
+  [ $warnings -gt 0 ] && echo -e "${YELLOW}$warnings warning(s) — review recommended but not required.${NC}"
   exit 1
 else
-  echo -e "${GREEN}All checks passed.${NC}"
+  echo -e "${GREEN}All required checks passed.${NC}"
+  [ $warnings -gt 0 ] && echo -e "${YELLOW}$warnings warning(s) — review recommended but not required.${NC}"
 fi
