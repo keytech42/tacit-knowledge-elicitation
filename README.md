@@ -5,6 +5,12 @@ A collaborative platform for capturing, reviewing, and refining organizational t
 ## Quick Start
 
 ```bash
+make setup   # interactive — generates .env, starts services, creates service account
+```
+
+Or manually:
+
+```bash
 cp .env.example .env
 docker compose up --build
 ```
@@ -29,6 +35,7 @@ Migrations run automatically on container start via Alembic. The worker and embe
 ## Development
 
 ```bash
+make setup          # interactive first-time setup (generates .env, starts stack)
 make up             # start core services (db, api, web, worker)
 make test           # run backend tests
 make migrate        # run database migrations manually

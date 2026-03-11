@@ -154,10 +154,10 @@ class TestMakefile:
             r"up-embed:.*?-f.*?EMBEDDING_MODEL", makefile_text, re.DOTALL
         ), "up-embed target should check if model file exists"
 
-    def test_embed_download_uses_huggingface_hub(self):
+    def test_embed_download_uses_curl(self):
         makefile_text = MAKEFILE.read_text()
-        assert "huggingface_hub" in makefile_text
-        assert "hf_hub_download" in makefile_text
+        assert "curl" in makefile_text
+        assert "huggingface.co" in makefile_text
 
     def test_embed_download_targets_correct_model(self):
         makefile_text = MAKEFILE.read_text()

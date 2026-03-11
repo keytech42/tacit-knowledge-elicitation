@@ -18,7 +18,7 @@ dist/
 .idea/
 *.swp
 *.swo
-docker-compose.override.yml
+docker-compose.override.local.yml
 .DS_Store
 Thumbs.db
 .coverage
