@@ -101,6 +101,18 @@ jobs:
           npm install -g @mermaid-js/mermaid-cli
           ./scripts/validate-mermaid.sh ${{ steps.changed.outputs.all_changed_files }}
 
+  infra-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run infrastructure tests
+        run: uv run --with pytest --with pyyaml pytest tests/test_embedding_infra.py -xvs
+
   e2e-test:
     runs-on: ubuntu-latest
 
