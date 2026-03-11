@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     RECOMMENDATION_STRATEGY: str = "auto"  # "auto", "llm", or "embedding"
     SLACK_BOT_TOKEN: str = ""  # xoxb-... Bot User OAuth Token
     SLACK_DEFAULT_CHANNEL: str = ""  # e.g. "#knowledge-elicitation" or channel ID
+    SLACK_WORKSPACE: str = ""  # e.g. "mycompany" for https://mycompany.slack.com thread links
     FRONTEND_URL: str = "http://localhost:5173"
 
     model_config = {"env_file": ".env", "extra": "ignore"}

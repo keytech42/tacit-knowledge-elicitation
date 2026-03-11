@@ -164,6 +164,21 @@ def _answer_link(answer_id: str, text: str = "View answer") -> str:
     return f"<{settings.FRONTEND_URL}/answers/{answer_id}|{text}>"
 
 
+def _thread_link(slack_channel: str | None, slack_thread_ts: str | None) -> str | None:
+    """Build a Slack thread permalink, or None if missing info.
+
+    Requires SLACK_WORKSPACE config and a channel ID (starts with 'C').
+    """
+    workspace = settings.SLACK_WORKSPACE
+    if not workspace or not slack_channel or not slack_thread_ts:
+        return None
+    # Channel IDs start with 'C'; channel names (e.g. '#general') won't work
+    if not slack_channel.startswith("C"):
+        return None
+    ts_no_dot = slack_thread_ts.replace(".", "")
+    return f"https://{workspace}.slack.com/archives/{slack_channel}/p{ts_no_dot}"
+
+
 # --- Public notification functions ---
 # Each runs in a fire-and-forget task so the caller never waits.
 
@@ -238,10 +253,13 @@ async def notify_changes_requested_dm(
 
 async def notify_reviewer_assigned_dm(
     question_title: str,
+    question_id: str,
     answer_id: str,
     reviewer_email: str | None,
     reviewer_name: str,
     assigner_name: str,
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> None:
     """DM the reviewer when they are assigned to review an answer."""
     if not _is_enabled() or not reviewer_email:
@@ -249,11 +267,14 @@ async def notify_reviewer_assigned_dm(
     slack_user_id = await _lookup_slack_user(reviewer_email)
     if not slack_user_id:
         return
+    first_name = reviewer_name.split()[0] if reviewer_name else reviewer_name
     text = fmt_reviewer_assigned_dm(
-        reviewer_name=reviewer_name,
+        first_name=first_name,
         assigner_name=assigner_name,
         question_title=question_title,
         answer_link=_answer_link(answer_id),
+        question_link=_question_link(question_id),
+        thread_link=_thread_link(slack_channel, slack_thread_ts),
     )
     await _send_dm(slack_user_id, text)
 
