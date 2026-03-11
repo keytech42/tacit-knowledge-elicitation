@@ -1,0 +1,20 @@
+{
+  "options": [
+    {
+      "body": "Use a microservices architecture with event-driven communication between bounded contexts",
+      "display_order": 1
+    },
+    {
+      "body": "Adopt a modular monolith with clear domain boundaries and internal message passing",
+      "display_order": 2
+    },
+    {
+      "body": "Implement a serverless architecture using cloud functions with API Gateway routing",
+      "display_order": 3
+    },
+    {
+      "body": "Build a traditional layered monolith with REST APIs and shared database",
+      "display_order": 4
+    }
+  ]
+}

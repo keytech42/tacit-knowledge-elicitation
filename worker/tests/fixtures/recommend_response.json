@@ -1,0 +1,14 @@
+{
+  "respondents": [
+    {
+      "user_id": "user-abc-123",
+      "score": 0.95,
+      "reasoning": "Strong background in infrastructure and previous high-quality answers on deployment and rollback topics"
+    },
+    {
+      "user_id": "user-def-456",
+      "score": 0.73,
+      "reasoning": "Experience with monitoring systems and observability, though less direct deployment focus"
+    }
+  ]
+}
