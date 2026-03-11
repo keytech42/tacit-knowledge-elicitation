@@ -78,27 +78,16 @@ Creates 5 sample users and 5 questions in varied states — useful for verifying
 
 ### 5. Create a service account for the worker
 
-The worker authenticates to the API as a service account. First, get an admin JWT token:
+The worker authenticates to the API as a service account. The simplest way is the management script, which operates directly on the database — no JWT or browser login required:
 
 ```bash
-# Dev login is enabled by default — use it for initial setup
-TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/dev-login \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+docker compose exec api python scripts/create_service_account.py
 ```
 
-Then create the service account:
+This creates a service account with `author` and `reviewer` roles and prints the API key. Set it in `.env`:
 
 ```bash
-curl -s -X POST http://localhost:8000/api/v1/service-accounts \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-6", "roles": ["author", "reviewer"]}'
-```
-
-Copy the returned `api_key` and set it in `.env`:
-
-```bash
-WORKER_API_KEY=<the-returned-api-key>
+WORKER_API_KEY=<the-printed-api-key>
 ```
 
 Restart services to pick up the change:
@@ -107,8 +96,33 @@ Restart services to pick up the change:
 docker compose restart worker api
 ```
 
+<details>
+<summary>Alternative: create via the REST API (requires admin JWT)</summary>
+
+During initial setup, dev-login is enabled by default. Use it to get an admin token:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/dev-login \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -s -X POST http://localhost:8000/api/v1/service-accounts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-6", "roles": ["author", "reviewer"]}'
+```
+
+In production (dev-login disabled), get the admin JWT from the browser:
+1. Log in via Google OAuth
+2. Open browser DevTools → Application → Local Storage
+3. Copy the `access_token` value
+
+</details>
+
+> [!TIP]
+> The management script works regardless of `DEV_LOGIN_ENABLED` — use it to create or rotate service accounts in production without needing a browser.
+
 > [!NOTE]
-> The dev-login endpoint creates a test admin user (`dev@localhost`) and is only available when `DEV_LOGIN_ENABLED=true` (the default). Use it for initial setup, then disable it in step 9. After that, admin access is via Google OAuth — the user whose email matches `BOOTSTRAP_ADMIN_EMAIL` auto-receives all roles on first login.
+> The dev-login endpoint (`POST /api/v1/auth/dev-login`) is only available when `DEV_LOGIN_ENABLED=true` (the default). It creates a test admin user (`dev@localhost`) with all roles. Use it during initial setup if you prefer the REST API path, then disable it in step 9. After that, admin access is via Google OAuth — the user whose email matches `BOOTSTRAP_ADMIN_EMAIL` auto-receives all roles on first login.
 
 ### 6. Enable embeddings (optional)
 

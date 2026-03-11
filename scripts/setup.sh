@@ -225,15 +225,8 @@ ok "API is healthy"
 
 echo
 info "Creating worker service account..."
-TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/dev-login \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/service-accounts \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: application/json" \
-    -d '{"display_name": "LLM Worker", "model_id": "claude-sonnet-4-6", "roles": ["author", "reviewer"]}')
-
-API_KEY=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['api_key'])" 2>/dev/null) || true
+API_KEY=$(docker compose exec -T api python scripts/create_service_account.py 2>/dev/null \
+    | grep "API Key:" | awk '{print $NF}') || true
 
 if [ -n "$API_KEY" ]; then
     # Update .env with the service account key
@@ -246,8 +239,8 @@ if [ -n "$API_KEY" ]; then
     docker compose restart worker api >/dev/null 2>&1
     ok "Restarted api and worker with service account key"
 else
-    warn "Could not create service account. Response: $RESPONSE"
-    warn "You can create one manually — see docs/deployment.md step 5"
+    warn "Could not create service account automatically"
+    warn "Run manually: docker compose exec api python scripts/create_service_account.py"
 fi
 
 # --- Seed data (optional) ---

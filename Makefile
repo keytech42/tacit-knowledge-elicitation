@@ -1,4 +1,4 @@
-.PHONY: up down test test-e2e migrate logs shell seed setup \
+.PHONY: up down test test-e2e migrate logs shell seed setup create-service-account \
        up-embed down-embed embed-download embed-status
 
 # --- Setup ---
@@ -32,6 +32,9 @@ shell:
 
 seed:
 	docker compose exec api python scripts/seed.py
+
+create-service-account:
+	docker compose exec api python scripts/create_service_account.py
 
 # --- Embedding service ---
 
