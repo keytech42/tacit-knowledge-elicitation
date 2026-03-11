@@ -298,17 +298,25 @@ async def notify_question_published(
         question_title=question_title,
         question_link=_question_link(question_id),
     )
-    thread_ts = await _post_message(channel, text)
+    # Post directly to capture the resolved channel ID from the response
+    try:
+        client = _get_client()
+        resp = await client.chat_postMessage(channel=channel, text=text)
+        thread_ts = resp.get("ts")
+        channel_id = resp.get("channel") or channel
+    except Exception:
+        logger.exception("Failed to create Slack thread for question %s", question_id)
+        return (None, None)
     if not thread_ts:
         logger.warning("Failed to create Slack thread for question %s — no thread_ts returned", question_id)
         return (None, None)
-    logger.info("Created Slack thread %s in %s for question %s", thread_ts, channel, question_id)
+    logger.info("Created Slack thread %s in %s for question %s", thread_ts, channel_id, question_id)
 
     # Post the question body as the first reply in the thread
     body_preview = _md_to_mrkdwn(question_body)
-    await _post_message(channel, body_preview, thread_ts=thread_ts)
+    await _post_message(channel_id, body_preview, thread_ts=thread_ts)
 
-    return (thread_ts, channel)
+    return (thread_ts, channel_id)
 
 
 async def notify_thread_update(

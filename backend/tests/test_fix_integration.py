@@ -606,8 +606,9 @@ class TestSlackSDKThreading:
         mock_client = AsyncMock()
         mock_response = MagicMock()
         # Simulate Slack returning a thread_ts for the first message
-        mock_response.__getitem__ = lambda self, key: {"ts": "1709900000.000001", "ok": True}[key]
-        mock_response.get = lambda key, default=None: {"ts": "1709900000.000001", "ok": True}.get(key, default)
+        resp_data = {"ts": "1709900000.000001", "ok": True, "channel": "C_TESTING_K"}
+        mock_response.__getitem__ = lambda self, key: resp_data[key]
+        mock_response.get = lambda key, default=None: resp_data.get(key, default)
         mock_client.chat_postMessage.return_value = mock_response
 
         with patch.object(slack, "_is_enabled", return_value=True), \
@@ -624,7 +625,7 @@ class TestSlackSDKThreading:
             )
 
         assert thread_ts == "1709900000.000001"
-        assert channel == "#testing-k"
+        assert channel == "C_TESTING_K"  # resolved channel ID from API response
         # Publish makes 2 calls: parent message + body reply
         assert mock_client.chat_postMessage.call_count == 2
         parent_call = mock_client.chat_postMessage.call_args_list[0].kwargs
@@ -657,5 +658,5 @@ class TestSlackSDKThreading:
         submit_call = mock_client.chat_postMessage.call_args.kwargs
         assert submit_call["thread_ts"] == "1709900000.000001", \
             f"Expected thread_ts from publish, got {submit_call.get('thread_ts')}"
-        assert submit_call["channel"] == "#testing-k"
+        assert submit_call["channel"] == "C_TESTING_K"  # uses resolved channel ID from publish
         assert "Answer submitted" in submit_call["text"]

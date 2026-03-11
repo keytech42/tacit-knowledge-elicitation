@@ -87,12 +87,13 @@ class TestThreadCreation:
         msg = second_call.kwargs.get("text", "")
         assert "test-driven development" in msg
 
-    async def test_notify_published_returns_thread_ts(self):
-        """notify_question_published should return the thread_ts for storage."""
+    async def test_notify_published_returns_thread_ts_and_channel_id(self):
+        """notify_question_published should return (thread_ts, channel_id) from API response."""
         mock_client = AsyncMock()
         mock_client.chat_postMessage.return_value = _mock_slack_response({
             "ts": "1234567890.999",
             "ok": True,
+            "channel": "C_RESOLVED",
         })
 
         with patch.object(slack, "_is_enabled", return_value=True), \
@@ -105,8 +106,8 @@ class TestThreadCreation:
                 question_body="Body text",
             )
 
-        # The function should return (thread_ts, channel) tuple
-        assert result == ("1234567890.999", "#test")
+        # Returns the resolved channel ID from the Slack API response
+        assert result == ("1234567890.999", "C_RESOLVED")
 
     async def test_notify_published_no_op_when_disabled(self):
         """When Slack is disabled, no messages sent, returns None."""

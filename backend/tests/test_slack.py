@@ -258,10 +258,14 @@ class TestPostMessage:
 # ---------------------------------------------------------------------------
 
 class TestNotifyQuestionPublished:
-    async def test_creates_thread_and_returns_ts(self):
+    async def test_creates_thread_and_returns_channel_id(self):
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.return_value = _mock_slack_response({
+            "ts": "1234.5678", "ok": True, "channel": "C_RESOLVED",
+        })
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack, "_channel", return_value="#test"), \
-             patch.object(slack, "_post_message", new_callable=AsyncMock, side_effect=["1234.5678", "reply.ts"]):
+             patch.object(slack, "_get_client", return_value=mock_client):
             thread_ts, channel = await slack.notify_question_published(
                 question_title="What is TDD?",
                 question_id="q-123",
@@ -269,64 +273,76 @@ class TestNotifyQuestionPublished:
                 publisher_name="Admin User",
             )
         assert thread_ts == "1234.5678"
-        assert channel == "#test"
+        assert channel == "C_RESOLVED"
 
     async def test_posts_body_as_thread_reply(self):
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.return_value = _mock_slack_response({
+            "ts": "1234.5678", "ok": True, "channel": "C_RESOLVED",
+        })
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack, "_channel", return_value="#test"), \
-             patch.object(slack, "_post_message", new_callable=AsyncMock, side_effect=["1234.5678", "reply.ts"]) as mock_post:
+             patch.object(slack, "_get_client", return_value=mock_client):
             await slack.notify_question_published(
                 question_title="Q",
                 question_id="q-1",
                 question_body="Body text here",
                 publisher_name="Admin",
             )
-        # First call: main message (no thread_ts)
-        assert mock_post.call_count == 2
-        first_call = mock_post.call_args_list[0]
-        assert first_call[0][0] == "#test"
-        assert "Q" in first_call[0][1]
-        # Second call: body as thread reply
-        second_call = mock_post.call_args_list[1]
-        assert second_call[0][0] == "#test"
-        assert second_call[0][1] == "Body text here"
-        assert second_call[1]["thread_ts"] == "1234.5678"
+        # Two calls: main message + thread reply
+        assert mock_client.chat_postMessage.call_count == 2
+        first_call = mock_client.chat_postMessage.call_args_list[0]
+        assert first_call.kwargs["channel"] == "#test"
+        assert "Q" in first_call.kwargs["text"]
+        # Second call: body as thread reply (uses resolved channel ID)
+        second_call = mock_client.chat_postMessage.call_args_list[1]
+        assert second_call.kwargs["channel"] == "C_RESOLVED"
+        assert second_call.kwargs["text"] == "Body text here"
+        assert second_call.kwargs["thread_ts"] == "1234.5678"
 
     async def test_includes_link(self):
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.return_value = _mock_slack_response({
+            "ts": "1234.5678", "ok": True, "channel": "C_RESOLVED",
+        })
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack, "_channel", return_value="#test"), \
              patch.object(slack.settings, "FRONTEND_URL", "http://localhost:5173"), \
-             patch.object(slack, "_post_message", new_callable=AsyncMock, side_effect=["1234.5678", "reply.ts"]) as mock_post:
+             patch.object(slack, "_get_client", return_value=mock_client):
             await slack.notify_question_published(
                 question_title="Q",
                 question_id="q-123",
                 question_body="Body",
                 publisher_name="Admin",
             )
-        msg = mock_post.call_args_list[0][0][1]
+        msg = mock_client.chat_postMessage.call_args_list[0].kwargs["text"]
         assert "http://localhost:5173/questions/q-123" in msg
 
     async def test_no_op_when_disabled(self):
+        mock_client = AsyncMock()
         with patch.object(slack, "_is_enabled", return_value=False), \
-             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+             patch.object(slack, "_get_client", return_value=mock_client):
             thread_ts, channel = await slack.notify_question_published("T", "id", "body", "N")
         assert thread_ts is None
         assert channel is None
-        mock_post.assert_not_called()
+        mock_client.chat_postMessage.assert_not_called()
 
     async def test_no_op_when_no_channel(self):
+        mock_client = AsyncMock()
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack, "_channel", return_value=""), \
-             patch.object(slack, "_post_message", new_callable=AsyncMock) as mock_post:
+             patch.object(slack, "_get_client", return_value=mock_client):
             thread_ts, channel = await slack.notify_question_published("T", "id", "body", "N")
         assert thread_ts is None
         assert channel is None
-        mock_post.assert_not_called()
+        mock_client.chat_postMessage.assert_not_called()
 
     async def test_returns_none_when_post_fails(self):
+        mock_client = AsyncMock()
+        mock_client.chat_postMessage.side_effect = ConnectionError("network down")
         with patch.object(slack, "_is_enabled", return_value=True), \
              patch.object(slack, "_channel", return_value="#test"), \
-             patch.object(slack, "_post_message", new_callable=AsyncMock, return_value=None):
+             patch.object(slack, "_get_client", return_value=mock_client):
             thread_ts, channel = await slack.notify_question_published("T", "id", "body", "N")
         assert thread_ts is None
         assert channel is None
