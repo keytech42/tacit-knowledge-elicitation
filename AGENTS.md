@@ -45,9 +45,9 @@ backup/
 scripts/
   check-env.sh        Production pre-flight checks (rejects default credentials)
 
-docker-compose.yml       Five services: db, api, web, worker, backup
-docker-compose.prod.yml  Production overrides (resource limits, no bind mounts, log rotation)
-Makefile                 Development shortcuts
+docker-compose.yml           Six services: db, api, web, worker, backup, embedding
+docker-compose.override.yml  Dev overrides (hot-reload, source mounts) — auto-loaded
+Makefile                     Development shortcuts
 ```
 
 ## Running Commands
@@ -272,17 +272,18 @@ make restore       # restore from latest (or specify file)
 make backup-verify # verify latest backup (restore to temp DB, check tables)
 ```
 
-Backups rotate: 7 daily, 4 weekly (Sunday tagged). Weekly backups use hard-links to avoid doubling storage. WAL archiving is enabled in production via `backup/postgresql.conf` (mounted in `docker-compose.prod.yml`).
+Backups rotate: 7 daily, 4 weekly (Sunday tagged). Weekly backups use hard-links to avoid doubling storage. WAL archiving is enabled via `backup/postgresql.conf` (mounted in the base `docker-compose.yml`).
 
 ### Production Deployment
 
 ```bash
-./scripts/check-env.sh                                                    # validate env
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build  # start prod
-curl http://localhost:8000/health/db | jq .                               # verify
+./scripts/check-env.sh                    # validate env
+docker compose up -d --build              # start prod (base compose is production-safe)
+docker compose --profile backup up -d     # optional: start backup sidecar
+curl http://localhost:8000/health/db | jq .  # verify
 ```
 
-`docker-compose.prod.yml` overrides: removes `--reload` and bind mounts, adds `--workers 2`, resource limits, log rotation, and mounts `backup/postgresql.conf`. `scripts/check-env.sh` rejects default `DB_PASSWORD`, `JWT_SECRET`, and `DEV_LOGIN_ENABLED=true`.
+The base `docker-compose.yml` is production-safe: log rotation, `postgresql.conf` mount, restart policies. In dev, `docker-compose.override.yml` auto-loads to add `--reload` and source mounts. `scripts/check-env.sh` rejects default `DB_PASSWORD`, `JWT_SECRET`, and `DEV_LOGIN_ENABLED=true`.
 
 ### Data Export
 

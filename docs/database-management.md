@@ -116,7 +116,7 @@ This restores the latest backup into a temporary database, compares table counts
 
 ### WAL Archiving (Production)
 
-In production (`docker-compose.prod.yml`), PostgreSQL mounts `backup/postgresql.conf` which enables WAL (Write-Ahead Log) archiving:
+The base `docker-compose.yml` mounts `backup/postgresql.conf` which enables WAL (Write-Ahead Log) archiving:
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
@@ -125,7 +125,7 @@ In production (`docker-compose.prod.yml`), PostgreSQL mounts `backup/postgresql.
 | `archive_command` | `cp %p /backups/wal/%f` | Stores WAL files in the backups volume |
 | `max_wal_senders` | 3 | Allows streaming replication connections |
 
-**WAL archiving is not enabled in development** — the base `docker-compose.yml` does not mount the custom postgresql.conf. In dev mode, you get daily pg_dump backups only.
+WAL archiving is always enabled (the custom `postgresql.conf` is mounted in the base compose). WAL segments are archived to `/backups/wal/` on the backup volume.
 
 With WAL archiving enabled, you can perform **point-in-time recovery (PITR)**: restore a base backup, then replay WAL files up to a specific timestamp. This allows recovering to any point between daily backups.
 
@@ -147,7 +147,7 @@ The `backups` Docker volume stores all backup files locally. For disaster recove
 
 Example with host mount:
 ```yaml
-# docker-compose.prod.yml override
+# docker-compose.override.yml or custom overlay
 services:
   backup:
     volumes:
@@ -337,7 +337,7 @@ The `backup/postgresql.conf` contains production-tuned settings:
 | `checkpoint_timeout` | 10min | Time between automatic checkpoints |
 | `checkpoint_completion_target` | 0.9 | Spread writes over 90% of checkpoint interval |
 
-Mounted in production via `docker-compose.prod.yml`:
+Mounted in the base `docker-compose.yml`:
 ```yaml
 db:
   volumes:
@@ -347,13 +347,12 @@ db:
 
 ### Resource Limits
 
-Set in `docker-compose.prod.yml`:
+Recommended per-service limits for production (set via `deploy.resources.limits` in an overlay or orchestrator):
 
 | Service | Memory | CPU |
 |---------|--------|-----|
 | db | 1G | 1 |
 | api | 512M | 0.5 |
-| web | 256M | 0.25 |
 | worker | 512M | 0.5 |
 | backup | 256M | 0.25 |
 
@@ -363,13 +362,16 @@ Set in `docker-compose.prod.yml`:
 # 1. Validate environment
 ./scripts/check-env.sh
 
-# 2. Build and start with production overrides
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# 2. Build and start
+docker compose up -d --build
 
-# 3. Verify health
+# 3. Start backup sidecar
+docker compose --profile backup up -d
+
+# 4. Verify health
 curl http://localhost:8000/health/db | jq .
 
-# 4. Verify backup service
+# 5. Verify backup service
 docker compose logs backup --tail 5
 ```
 
@@ -549,8 +551,9 @@ Everything an admin can do, at a glance.
 # Start services (dev)
 make up
 
-# Start services (production)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Start services (production — base compose is already production-safe)
+docker compose up -d --build
+docker compose --profile backup up -d  # start backup sidecar
 
 # Stop everything
 make down
@@ -758,12 +761,11 @@ docker compose exec worker python -m pytest tests/ -xvs
 # Validate environment variables (rejects defaults)
 ./scripts/check-env.sh
 
-# Dry-run: preview production config merge
-docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+# Dry-run: preview resolved config
+docker compose config
 
-# Check resource limits are applied
-docker compose -f docker-compose.yml -f docker-compose.prod.yml config \
-  | grep -A3 "limits:"
+# Check log rotation is set on all services
+docker compose config | grep -A3 "logging:"
 ```
 
 ### Configuration Reference

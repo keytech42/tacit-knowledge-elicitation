@@ -1,17 +1,5 @@
 # Deployment
 
-## Server Requirements
-
-| Resource | Minimum | Notes |
-|----------|---------|-------|
-| **CPU** | 2 vCPU | `docker-compose.prod.yml` resource limits sum to 2.5 CPU across all services |
-| **RAM** | 4 GB | Resource limits sum to ~2.5 GB; 4 GB provides headroom for the OS and spikes |
-| **Disk** | 20 GB SSD | PostgreSQL data + Docker images + backups. 20 GB gives comfortable headroom |
-
-If you enable the optional embedding service (for local model inference), add ~1 GB RAM for model loading.
-
-A `t2.micro` (1 vCPU / 1 GB) or equivalent **will not work** — the combined services exceed its capacity. A `t3.medium` (2 vCPU / 4 GB) or equivalent is the practical minimum.
-
 ## Production Checklist
 
 Before deploying to production, ensure the following:
@@ -41,12 +29,6 @@ Before deploying to production, ensure the following:
 - [ ] Update `DATABASE_URL` to point to the production database
 
 ### Environment Variables
-
-> **CORS and Frontend URL:** Two settings default to `http://localhost:5173` and **must** be updated for production:
-> - `CORS_ORIGINS` — controls which origins can call the API. Default: `["http://localhost:5173"]`. Set to your production frontend domain(s), e.g. `CORS_ORIGINS=["https://knowledge.example.com"]`
-> - `FRONTEND_URL` — used to generate links in Slack notifications. Default: `http://localhost:5173`. Set to your production URL, e.g. `FRONTEND_URL=https://knowledge.example.com`
->
-> If these are not updated, Slack links will point to localhost and browser requests from your real domain will be blocked by CORS.
 
 ```bash
 # Core

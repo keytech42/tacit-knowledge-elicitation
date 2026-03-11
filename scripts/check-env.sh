@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pre-flight checks for production deployment.
-# Run before starting services with docker-compose.prod.yml.
+# Run before deploying to production.
 set -euo pipefail
 
 RED='\033[0;31m'
