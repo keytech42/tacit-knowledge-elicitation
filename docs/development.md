@@ -63,8 +63,12 @@ This starts all four services (db, api, web, worker) with hot-reload. Open http:
 |---------|--------|
 | `make setup` | Interactive first-time setup (generates `.env`, starts stack, creates service account, optional reverse proxy) |
 | `make setup-reverse-proxy` | Set up Caddy or nginx reverse proxy with TLS (standalone) |
-| `make up` | Build and start core services (db, api, web, worker) |
-| `make down` | Stop core services |
+| `make up` | Build and start dev services (db, api, web, worker) with hot-reload |
+| `make down` | Stop services |
+| `make up-prod` | Start production services (detached, 127.0.0.1-bound ports, no reload, no web) |
+| `make down-prod` | Stop production services |
+| `make logs-prod` | Tail production service logs |
+| `make restart-prod` | Restart production services |
 | `make test` | Run backend tests in the running api container |
 | `make migrate` | Run Alembic migrations manually |
 | `make logs` | Tail container logs |

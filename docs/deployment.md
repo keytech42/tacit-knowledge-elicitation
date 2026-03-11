@@ -36,12 +36,26 @@ For a manual step-by-step walkthrough, continue below.
 
 ### 1. Prerequisites
 
-- Docker and Docker Compose v2
+Install Docker and Docker Compose v2:
+
+```bash
+# Ubuntu/Debian
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# Log out and back in for group change to take effect
+```
+
+Other requirements:
+
+- `git`, `make`, `curl` (pre-installed on most Linux distributions)
+- Node.js 18+ (for building the frontend static files in [step 8](#8-set-up-the-reverse-proxy))
 - A domain name with DNS pointing to the server
-- A reverse proxy with TLS termination (nginx, caddy, or similar)
 - (Optional) Google OAuth credentials for production auth
 - (Optional) Anthropic API key for AI features
 - (Optional) Slack app for notifications
+
+> [!NOTE]
+> Node.js is only needed to build the frontend. If you don't have it, the `setup-reverse-proxy` script can build via Docker instead.
 
 ### 2. Clone and configure
 
@@ -51,15 +65,46 @@ cd tacit-knowledge-elicitation
 cp .env.example .env
 ```
 
-Edit `.env` with production values. See [Environment Variables](#environment-variables) below for the full reference.
+Generate production secrets and set the minimum required values in `.env`:
+
+```bash
+# Generate strong secrets (copy these into .env)
+openssl rand -hex 32   # → JWT_SECRET
+openssl rand -hex 16   # → DB_PASSWORD
+```
+
+Update `.env`:
+
+```bash
+DB_PASSWORD=<generated-password>
+DATABASE_URL=postgresql+asyncpg://app:<generated-password>@db:5432/knowledge_elicitation
+JWT_SECRET=<generated-secret>
+FRONTEND_URL=https://your-domain.com
+CORS_ORIGINS=["https://your-domain.com"]
+DEV_LOGIN_ENABLED=true   # Keep true for initial setup, disable in step 9
+```
+
+See [Environment Variables](#environment-variables) below for the full reference including optional services.
 
 ### 3. Start core services
 
 ```bash
-make up
+make up-prod
 ```
 
-This starts `db`, `api`, `web`, and `worker`. On first run, migrations execute automatically before the API starts.
+This skips the `docker-compose.override.yml` (which adds dev-only features) and starts only the production services. Compared to `make up`:
+
+- Runs in **detached mode** (`-d`)
+- Removes `--reload` from API and worker (uses `--workers` instead)
+- Binds all ports to **127.0.0.1** (only accessible from the server itself, not the internet)
+- Removes source code volume mounts (uses code baked into the Docker image)
+- Disables the `web` dev server (the reverse proxy serves static frontend files)
+- Adds `restart: unless-stopped` so services survive reboots
+
+On first run, database migrations execute automatically before the API starts.
+
+> [!WARNING]
+> **Do not use `make up` for production.** The dev compose exposes ports on all interfaces (0.0.0.0), which means the database, API, and worker are directly accessible from the internet — even if you have a firewall like UFW. Docker port mappings bypass iptables rules on Linux.
 
 Verify the API is running:
 
@@ -93,7 +138,7 @@ WORKER_API_KEY=<the-printed-api-key>
 Restart services to pick up the change:
 
 ```bash
-docker compose restart worker api
+make restart-prod
 ```
 
 <details>
@@ -144,10 +189,10 @@ EMBEDDING_API_BASE=http://embedding:8090/v1/
 EMBEDDING_API_KEY=no-key
 ```
 
-Start all services including embeddings:
+Restart with embeddings enabled:
 
 ```bash
-make up-embed
+docker compose -f docker-compose.yml --profile embedding up -d --build db api worker embedding
 ```
 
 Verify:
@@ -172,7 +217,7 @@ SLACK_DEFAULT_CHANNEL=#knowledge-elicitation
 FRONTEND_URL=https://your-domain.com
 ```
 
-5. Restart the API: `docker compose restart api`
+5. Restart the API: `make restart-prod`
 
 Slack notifications are fire-and-forget — if the token is invalid or the service is unreachable, the API continues normally without blocking.
 
@@ -401,9 +446,17 @@ In `.env`, ensure:
 ```bash
 DEV_LOGIN_ENABLED=false
 CORS_ORIGINS=["https://your-domain.com"]
+FRONTEND_URL=https://your-domain.com
 ```
 
-Remove `--reload` from the API and worker commands if you're overriding the default entrypoint.
+Then restart:
+
+```bash
+make restart-prod
+```
+
+> [!NOTE]
+> If you used `make up-prod` (step 3), the `--reload` flags and source code mounts are already excluded (they live in `docker-compose.override.yml`, which production skips). No manual edits needed.
 
 ## Environment Variables
 
@@ -517,18 +570,18 @@ curl http://localhost:8090/health
 
 ## Production Checklist
 
+- [ ] Using `make up-prod` (not `make up`) — ports bound to 127.0.0.1, no `--reload`, restart policies
 - [ ] Strong random `JWT_SECRET` (at least 32 characters)
 - [ ] Strong `DB_PASSWORD`
 - [ ] `DEV_LOGIN_ENABLED=false`
 - [ ] `CORS_ORIGINS` restricted to production domain
+- [ ] `FRONTEND_URL` set to production domain (used in Slack links and OAuth)
 - [ ] HTTPS with valid TLS certificate
 - [ ] Google OAuth configured (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`)
 - [ ] `BOOTSTRAP_ADMIN_EMAIL` set to first admin's Google email
-- [ ] PostgreSQL with TLS and automated backups
-- [ ] Reverse proxy configured with SSE support (`proxy_buffering off`)
+- [ ] PostgreSQL with automated backups
+- [ ] Reverse proxy configured with SSE support (`proxy_buffering off` for nginx)
 - [ ] Service account created for worker with `WORKER_API_KEY` set
 - [ ] `ANTHROPIC_API_KEY` set (if using AI features)
-- [ ] `--reload` removed from API and worker commands
 - [ ] Slack app created and tokens set (if using notifications)
 - [ ] Embedding model downloaded and service started (if using embedding strategy)
-- [ ] `FRONTEND_URL` set to production domain (used in Slack links and emails)

@@ -1,0 +1,16 @@
+# Development overrides — auto-loaded by `docker compose up`.
+#
+# Adds hot-reload and source code mounts for live editing.
+# Production (`make up-prod`) skips this file by specifying -f explicitly.
+
+services:
+  api:
+    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend:/app
+      - .:/repo:ro
+
+  worker:
+    command: uvicorn worker.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./worker:/app

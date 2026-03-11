@@ -203,14 +203,31 @@ if [ "${ENABLE_EMBEDDING:-false}" = "true" ]; then
     make embed-download
 fi
 
+# --- Determine dev vs production mode ---
+
+if [ "${FRONTEND_URL:-http://localhost:5173}" != "http://localhost:5173" ]; then
+    PRODUCTION=true
+    info "Production mode detected (FRONTEND_URL=$FRONTEND_URL)"
+else
+    PRODUCTION=false
+fi
+
 # --- Start services ---
 
 echo
 info "Starting services..."
-if [ "${ENABLE_EMBEDDING:-false}" = "true" ]; then
-    make up-embed &
+if [ "$PRODUCTION" = "true" ]; then
+    if [ "${ENABLE_EMBEDDING:-false}" = "true" ]; then
+        docker compose -f docker-compose.yml --profile embedding up -d --build db api worker embedding &
+    else
+        make up-prod &
+    fi
 else
-    make up &
+    if [ "${ENABLE_EMBEDDING:-false}" = "true" ]; then
+        make up-embed &
+    else
+        make up &
+    fi
 fi
 COMPOSE_PID=$!
 

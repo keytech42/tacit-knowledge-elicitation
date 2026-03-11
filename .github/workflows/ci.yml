@@ -132,15 +132,10 @@ jobs:
       - name: Download embedding model
         if: steps.model-cache.outputs.cache-hit != 'true'
         run: |
-          uv run --with huggingface-hub python3 -c "
-          from huggingface_hub import hf_hub_download
-          hf_hub_download(
-              repo_id='ggml-org/bge-m3-Q8_0-GGUF',
-              filename='bge-m3-q8_0.gguf',
-              local_dir='models',
-          )
-          print('Done')
-          "
+          mkdir -p models
+          curl -L --progress-bar \
+            -o models/bge-m3-q8_0.gguf \
+            "https://huggingface.co/ggml-org/bge-m3-Q8_0-GGUF/resolve/main/bge-m3-q8_0.gguf"
 
       - name: Start embedding service
         run: docker compose --profile embedding up -d embedding

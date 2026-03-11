@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: ${DB_PASSWORD:-devpassword}
     ports:
-      - "${DB_HOST_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -14,10 +14,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   api:
     build: ./backend
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: >-
+      bash -c "alembic upgrade head &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --workers ${API_WORKERS:-2}"
     environment:
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD:-devpassword}@db:5432/knowledge_elicitation
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-at-least-32b}
@@ -26,7 +30,7 @@ services:
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       DEV_LOGIN_ENABLED: ${DEV_LOGIN_ENABLED:-true}
-      CORS_ORIGINS: '["http://localhost:5173"]'
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173"]}
       WORKER_URL: http://worker:8001
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
@@ -37,19 +41,17 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       RECOMMENDATION_STRATEGY: ${RECOMMENDATION_STRATEGY:-auto}
     ports:
-      - "${API_HOST_PORT:-8000}:8000"
-    volumes:
-      - ./backend:/app
-      - .:/repo:ro
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
 
   web:
     build: ./frontend
     command: npm run dev -- --host 0.0.0.0
     ports:
-      - "${WEB_HOST_PORT:-5173}:5173"
+      - "127.0.0.1:${WEB_HOST_PORT:-5173}:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -58,7 +60,9 @@ services:
 
   worker:
     build: ./worker
-    command: uvicorn worker.main:app --host 0.0.0.0 --port 8001 --reload
+    command: >-
+      uvicorn worker.main:app --host 0.0.0.0 --port 8001
+      --workers ${WORKER_WORKERS:-1}
     environment:
       PLATFORM_API_URL: http://api:8000
       PLATFORM_API_KEY: ${WORKER_API_KEY:-}
@@ -67,17 +71,16 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
-      - "${WORKER_HOST_PORT:-8001}:8001"
-    volumes:
-      - ./worker:/app
+      - "127.0.0.1:${WORKER_HOST_PORT:-8001}:8001"
     depends_on:
       - api
+    restart: unless-stopped
 
   embedding:
     image: ghcr.io/ggml-org/llama.cpp:server
     profiles: ["embedding"]
     ports:
-      - "${EMBEDDING_HOST_PORT:-8090}:8090"
+      - "127.0.0.1:${EMBEDDING_HOST_PORT:-8090}:8090"
     volumes:
       - ${EMBEDDING_MODEL_DIR:-./models}:/models:ro
     environment:
@@ -91,6 +94,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    restart: unless-stopped
 
 volumes:
   pgdata:
