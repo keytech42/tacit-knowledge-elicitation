@@ -198,6 +198,17 @@ export interface SourceDocumentDetail extends SourceDocument {
 
 // AI-related types
 
+export interface AITask {
+  id: string;
+  task_type: string;
+  status: string;
+  worker_task_id: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TaskAccepted {
   task_id: string;
   status: string;
@@ -227,16 +238,16 @@ export interface RecommendationResponse {
 
 export const ai = {
   generateQuestions: (topic: string, domain = "", count = 3, context?: string) =>
-    api.post<TaskAccepted>("/ai/generate-questions", { topic, domain, count, context }),
+    api.post<AITask>("/ai/generate-questions", { topic, domain, count, context }),
 
   scaffoldOptions: (questionId: string, numOptions = 4) =>
-    api.post<TaskAccepted>("/ai/scaffold-options", {
+    api.post<AITask>("/ai/scaffold-options", {
       question_id: questionId,
       num_options: numOptions,
     }),
 
   reviewAssist: (answerId: string) =>
-    api.post<TaskAccepted>("/ai/review-assist", { answer_id: answerId }),
+    api.post<AITask>("/ai/review-assist", { answer_id: answerId }),
 
   recommend: (questionId: string, topK = 5) =>
     api.post<RecommendationResponse>("/ai/recommend", {
@@ -245,10 +256,10 @@ export const ai = {
     }),
 
   getTaskStatus: (taskId: string) =>
-    api.get<TaskStatus>(`/ai/tasks/${taskId}`),
+    api.get<AITask>(`/ai/tasks/${taskId}`),
 
   extractQuestions: (sourceText: string, documentTitle = "", domain = "", maxQuestions = 10) =>
-    api.post<TaskAccepted>("/ai/extract-questions", {
+    api.post<AITask>("/ai/extract-questions", {
       source_text: sourceText,
       document_title: documentTitle,
       domain: domain,
@@ -274,7 +285,7 @@ export const ai = {
       const err = await resp.json().catch(() => ({ detail: resp.statusText }));
       throw new Error(err.detail || resp.statusText);
     }
-    return resp.json() as Promise<TaskAccepted>;
+    return resp.json() as Promise<AITask>;
   },
 
   assignRespondent: (questionId: string, userId: string) =>
@@ -290,6 +301,15 @@ export const ai = {
     if (limit !== 20) params.set("limit", String(limit));
     return api.get<{ users: User[]; total: number }>(`/users/search?${params}`);
   },
+
+  listTasks: (status?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    return api.get<{ items: AITask[]; total: number }>(`/ai/tasks?${params}`);
+  },
+
+  cancelTask: (taskId: string) =>
+    api.post<AITask>(`/ai/tasks/${taskId}/cancel`),
 };
 
 // Respondent pool API functions

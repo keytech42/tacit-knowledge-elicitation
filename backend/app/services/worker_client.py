@@ -107,3 +107,8 @@ async def trigger_recommend(
 
 async def get_task_status(task_id: str) -> dict | None:
     return await _get(f"/tasks/{task_id}")
+
+
+async def cancel_task(task_id: str) -> dict | None:
+    """Cancel a running task on the worker."""
+    return await _post(f"/tasks/{task_id}/cancel", {})

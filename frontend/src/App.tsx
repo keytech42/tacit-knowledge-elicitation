@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ToastProvider } from "@/components/ToastContext";
+import { AITaskProvider } from "@/contexts/AITaskContext";
 import { LoginPage } from "@/auth/LoginPage";
 import { QuestionList } from "@/pages/questions/QuestionList";
 import { QuestionCreate } from "@/pages/questions/QuestionCreate";
@@ -19,6 +20,7 @@ import { Settings } from "@/pages/settings/Settings";
 function App() {
   return (
     <ToastProvider>
+    <AITaskProvider>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
 
@@ -41,6 +43,7 @@ function App() {
         <Route path="/admin/source-documents" element={<ProtectedRoute requiredRole="admin"><SourceDocuments /></ProtectedRoute>} />
       </Route>
     </Routes>
+    </AITaskProvider>
     </ToastProvider>
   );
 }

@@ -14,6 +14,7 @@ from app.models.user import RoleName, UserType
 from app.models.answer import AnswerStatus, RevisionTrigger
 from app.models.question import QuestionStatus, Confirmation, SourceType
 from app.models.review import ReviewTargetType, ReviewVerdict
+from app.models.ai_task import AITaskType, AITaskStatus
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +42,8 @@ _ENUM_MAP = {
     "reviewtargettype": ReviewTargetType,
     "reviewverdict": ReviewVerdict,
     "sourcetype": SourceType,
+    "aitasktype": AITaskType,
+    "aitaskstatus": AITaskStatus,
 }
 
 

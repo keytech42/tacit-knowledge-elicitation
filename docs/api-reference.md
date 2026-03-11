@@ -875,9 +875,11 @@ These endpoints proxy requests to the LLM worker service. They return 503 if `WO
 | `POST /api/v1/ai/extract-questions` | Extract questions from source text (creates a SourceDocument) | `{source_text, document_title?, domain?, max_questions?}` |
 | `POST /api/v1/ai/extract-from-file` | Extract questions from an uploaded file (multipart form) | `file` (upload), `document_title?`, `domain?`, `max_questions?` |
 | `POST /api/v1/ai/recommend` | Get respondent recommendations (runs in backend, no worker needed) | `{question_id, top_k?}` |
-| `GET /api/v1/ai/tasks/{task_id}` | Check task status (proxied to worker) | -- |
+| `GET /api/v1/ai/tasks` | List AI tasks for current user (filterable by `?status=`) | -- |
+| `GET /api/v1/ai/tasks/{task_id}` | Get task status (syncs with worker if still running) | -- |
+| `POST /api/v1/ai/tasks/{task_id}/cancel` | Cancel a pending or running task | -- |
 
-Worker-proxied endpoints (`generate-questions`, `scaffold-options`, `review-assist`, `extract-questions`, `extract-from-file`) return `{task_id, status}` on acceptance (HTTP 200). Poll `GET /api/v1/ai/tasks/{task_id}` for completion. They return 503 if `WORKER_URL` is not configured, or 502 if the worker does not respond.
+Worker-proxied endpoints (`generate-questions`, `scaffold-options`, `review-assist`, `extract-questions`, `extract-from-file`) create a persistent `AITask` row and return `AITaskResponse` on acceptance (HTTP 200). Use `GET /api/v1/ai/tasks` to list or `GET /api/v1/ai/tasks/{task_id}` to poll individual tasks. Cancel with `POST /api/v1/ai/tasks/{task_id}/cancel` (returns 409 if already completed/failed/cancelled). They return 503 if `WORKER_URL` is not configured.
 
 ### Auto-Triggers
 

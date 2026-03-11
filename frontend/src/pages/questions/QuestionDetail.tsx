@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { api, ai, Question, Answer, Recommendation, TaskStatus, RespondentPool } from "@/api/client";
+import { api, ai, Question, Answer, Recommendation, RespondentPool } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { Admonition } from "@/components/Admonition";
@@ -10,6 +10,7 @@ import { StatusBadge, statusLabel, WORKFLOW_HINTS } from "@/components/StatusBad
 import { useToast } from "@/components/ToastContext";
 import { RespondentPoolEditor, RespondentPoolEditorHandle } from "@/components/RespondentPoolEditor";
 import { useQuestionEvents } from "@/hooks/useQuestionEvents";
+import { useAITasks } from "@/contexts/AITaskContext";
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
@@ -123,7 +124,9 @@ export function QuestionDetail() {
   const [ratingOpen, setRatingOpen] = useState(true);
 
   // AI features
-  const [scaffoldTask, setScaffoldTask] = useState<TaskStatus | null>(null);
+  const { addTask, cancelTask, getTask } = useAITasks();
+  const [scaffoldTaskId, setScaffoldTaskId] = useState<string | null>(null);
+  const scaffoldTask = scaffoldTaskId ? getTask(scaffoldTaskId) : null;
   const [scaffoldLoading, setScaffoldLoading] = useState(false);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recReason, setRecReason] = useState<string | null>(null);
@@ -249,25 +252,27 @@ export function QuestionDetail() {
     if (!id || scaffoldLoading) return;
     setScaffoldLoading(true);
     try {
-      const result = await ai.scaffoldOptions(id);
-      setScaffoldTask({ task_id: result.task_id, status: result.status });
-      const poll = async () => {
-        try {
-          const status = await ai.getTaskStatus(result.task_id);
-          setScaffoldTask(status);
-          if (status.status === "accepted" || status.status === "running") {
-            setTimeout(poll, 2000);
-          } else if (status.status === "completed") {
-            loadQuestion(); // Reload to show new options
-          }
-        } catch { /* stop polling */ }
-      };
-      poll();
-    } catch (e: unknown) {
-      setScaffoldTask({ task_id: "", status: "failed", error: e instanceof Error ? e.message : "Failed" });
+      const task = await ai.scaffoldOptions(id);
+      setScaffoldTaskId(task.id);
+      addTask(task);
+    } catch {
+      setScaffoldTaskId(null);
     }
     setScaffoldLoading(false);
   };
+
+  // Reload question when scaffold task completes (to show new options)
+  const prevScaffoldStatus = useRef(scaffoldTask?.status);
+  useEffect(() => {
+    if (
+      prevScaffoldStatus.current &&
+      (prevScaffoldStatus.current === "pending" || prevScaffoldStatus.current === "running") &&
+      scaffoldTask?.status === "completed"
+    ) {
+      loadQuestion();
+    }
+    prevScaffoldStatus.current = scaffoldTask?.status;
+  }, [scaffoldTask?.status]);
 
   const handleGetRecommendations = async () => {
     if (!id || recLoading) return;
@@ -470,13 +475,18 @@ export function QuestionDetail() {
                 />
               </div>
               {scaffoldTask && (
-                <div className="mt-2 text-xs">
+                <div className="mt-2 text-xs flex items-center gap-2">
                   <span className={`inline-block px-2 py-0.5 rounded-full ${
                     scaffoldTask.status === "completed" ? "bg-muted text-foreground" :
                     scaffoldTask.status === "failed" ? "bg-destructive/10 text-destructive" :
                     "bg-muted text-muted-foreground"
                   }`}>{scaffoldTask.status}</span>
-                  {scaffoldTask.error && <span className="text-destructive ml-2">{scaffoldTask.error}</span>}
+                  {scaffoldTask.error && <span className="text-destructive">{scaffoldTask.error}</span>}
+                  {(scaffoldTask.status === "pending" || scaffoldTask.status === "running") && (
+                    <button onClick={() => cancelTask(scaffoldTask.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Cancel">
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                    </button>
+                  )}
                 </div>
               )}
               {recReason && recommendations.length === 0 && (
