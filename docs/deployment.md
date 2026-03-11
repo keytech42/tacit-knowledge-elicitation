@@ -188,6 +188,9 @@ Slack notifications are fire-and-forget — if the token is invalid or the servi
 
 ### 8. Set up the reverse proxy
 
+> [!TIP]
+> **Automated setup available:** Run `make setup-reverse-proxy` (or `bash scripts/setup-reverse-proxy.sh`) to interactively install and configure the reverse proxy. The script handles package installation, frontend build, TLS certificates, and `.env` updates. The manual steps below are for reference or custom setups.
+
 A reverse proxy sits between the internet and your Docker services. It handles TLS (HTTPS), serves the frontend static files, and forwards API requests to the backend. This platform uses SSE (Server-Sent Events) for real-time updates, which requires specific proxy configuration.
 
 #### 8a. Build the frontend

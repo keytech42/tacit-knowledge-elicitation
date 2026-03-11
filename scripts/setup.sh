@@ -7,6 +7,12 @@
 #
 set -euo pipefail
 
+# --- Resolve paths (works regardless of CWD) ---
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 # --- Colors and helpers ---
 
 BOLD='\033[1m'
@@ -251,6 +257,23 @@ if confirm "Seed sample data? (5 users, 5 questions — useful for testing)"; th
     ok "Sample data seeded"
 fi
 
+# --- Reverse proxy (optional) ---
+
+echo
+if confirm "Set up a reverse proxy with TLS? (requires a domain pointed at this server)"; then
+    # Extract domain hint from FRONTEND_URL if it's not localhost
+    RP_ARGS=()
+    if [ "${FRONTEND_URL:-}" != "http://localhost:5173" ] && [ -n "${FRONTEND_URL:-}" ]; then
+        RP_DOMAIN=$(echo "$FRONTEND_URL" | sed 's|^https\?://||; s|/.*||; s|:.*||')
+        RP_ARGS=(--domain "$RP_DOMAIN")
+    fi
+    "$SCRIPT_DIR/setup-reverse-proxy.sh" "${RP_ARGS[@]}"
+    REVERSE_PROXY_DONE=true
+else
+    info "Skipping reverse proxy — see docs/deployment.md step 8, or run later:"
+    echo "  make setup-reverse-proxy"
+fi
+
 # --- Summary ---
 
 echo
@@ -264,13 +287,19 @@ if [ "${ENABLE_EMBEDDING:-false}" = "true" ]; then
 echo "  Embedding: http://localhost:8090/health"
 fi
 echo
-echo "Next steps:"
-echo "  1. Open http://localhost:5173 and sign in"
-if [ -z "$GOOGLE_CLIENT_ID" ]; then
-echo "     (Dev login is enabled — click 'Sign in as Test User')"
+if [ "${REVERSE_PROXY_DONE:-}" = "true" ]; then
+    echo "Next steps:"
+    echo "  1. Open your domain in a browser and sign in"
+    echo "  2. Verify all features work over HTTPS"
+else
+    echo "Next steps:"
+    echo "  1. Open http://localhost:5173 and sign in"
+    if [ -z "${GOOGLE_CLIENT_ID:-}" ]; then
+    echo "     (Dev login is enabled — click 'Sign in as Test User')"
+    fi
+    echo "  2. Set up a reverse proxy: make setup-reverse-proxy"
+    echo "  3. Disable dev login: set DEV_LOGIN_ENABLED=false in .env"
 fi
-echo "  2. Set up a reverse proxy with TLS (see docs/deployment.md step 8)"
-echo "  3. Disable dev login: set DEV_LOGIN_ENABLED=false in .env"
 echo
 echo "Logs: make logs"
 echo "Stop: make down"

@@ -1,5 +1,5 @@
 .PHONY: up down test test-e2e migrate logs shell seed setup create-service-account \
-       up-embed down-embed embed-download embed-status
+       setup-reverse-proxy up-embed down-embed embed-download embed-status
 
 # --- Setup ---
 
@@ -35,6 +35,9 @@ seed:
 
 create-service-account:
 	docker compose exec api python scripts/create_service_account.py
+
+setup-reverse-proxy:
+	@bash scripts/setup-reverse-proxy.sh
 
 # --- Embedding service ---
 
