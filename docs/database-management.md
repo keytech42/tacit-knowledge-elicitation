@@ -2,6 +2,8 @@
 
 Comprehensive guide to PostgreSQL operations: backups, recovery, connection management, monitoring, migrations, and production tuning.
 
+> **Quick reference:** Jump to the [Administrator Cheatsheet](#administrator-cheatsheet) for a single-page command and config reference.
+
 ## Overview
 
 | Component | Technology | Notes |
@@ -531,3 +533,281 @@ docker compose exec db psql -U app -d knowledge_elicitation \
 
 **Dimension mismatch:**
 - The column expects 1024 dimensions. If your model outputs different dimensions, alter the column and rebuild indexes.
+
+---
+
+## Administrator Cheatsheet
+
+Everything an admin can do, at a glance.
+
+### Daily Operations
+
+```bash
+# Start services (dev)
+make up
+
+# Start services (production)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# Stop everything
+make down
+
+# View logs (all services)
+make logs
+
+# View logs (specific service)
+docker compose logs api --tail 50 -f
+docker compose logs backup --tail 50 -f
+
+# Open a shell in the API container
+make shell
+
+# Seed demo data (5 users, 5 questions)
+make seed
+```
+
+### Health & Status
+
+```bash
+# Quick liveness check
+curl http://localhost:8000/health
+
+# Full database health (pool, row counts, DB size)
+curl http://localhost:8000/health/db | jq .
+
+# Check pool is not exhausted (checked_out < pool_size)
+curl -s http://localhost:8000/health/db | jq '.pool'
+
+# Check database size
+curl -s http://localhost:8000/health/db | jq '.database_size_bytes / 1048576 | floor | tostring + " MB"'
+
+# Check row counts
+curl -s http://localhost:8000/health/db | jq '.row_counts'
+
+# Check all containers are running and healthy
+docker compose ps
+```
+
+### Backup & Restore
+
+```bash
+# Trigger a backup now
+make backup
+
+# List all backups (newest first)
+docker compose exec backup ls -lht /backups/*.sql.gz
+
+# Check latest backup age and size
+docker compose exec backup stat /backups/$(docker compose exec backup ls -t /backups/backup_*.sql.gz | head -1)
+
+# Verify latest backup (restore to temp DB, compare tables, cleanup)
+make backup-verify
+
+# Restore from latest backup (interactive confirmation)
+make restore
+
+# Restore from a specific backup file
+docker compose exec backup /scripts/restore.sh /backups/backup_20260311_030000.sql.gz
+
+# Restore without confirmation prompt
+docker compose exec backup /scripts/restore.sh --yes /backups/backup_20260311_030000.sql.gz
+
+# Check backup service logs
+docker compose logs backup --tail 20
+```
+
+### Migrations
+
+```bash
+# Apply all pending migrations
+make migrate
+
+# Check current migration version
+docker compose exec api alembic current
+
+# View full migration history
+docker compose exec api alembic history
+
+# Create a new auto-generated migration
+docker compose exec api alembic revision --autogenerate -m "add_new_table"
+
+# Downgrade one step (caution: may lose data)
+docker compose exec api alembic downgrade -1
+
+# Check for stuck migration lock
+docker compose exec db psql -U app -d knowledge_elicitation \
+  -c "SELECT * FROM alembic_version;"
+```
+
+### Database Shell
+
+```bash
+# Open psql in the database container
+docker compose exec db psql -U app -d knowledge_elicitation
+
+# Run a one-off SQL query
+docker compose exec db psql -U app -d knowledge_elicitation \
+  -c "SELECT count(*) FROM questions WHERE status = 'published';"
+
+# Table sizes
+docker compose exec db psql -U app -d knowledge_elicitation \
+  -c "SELECT relname, pg_size_pretty(pg_total_relation_size(relid))
+      FROM pg_catalog.pg_statio_user_tables
+      ORDER BY pg_total_relation_size(relid) DESC;"
+
+# Active connections
+docker compose exec db psql -U app -d knowledge_elicitation \
+  -c "SELECT count(*) AS connections FROM pg_stat_activity
+      WHERE datname = 'knowledge_elicitation';"
+
+# Long-running queries (> 5 seconds)
+docker compose exec db psql -U app -d knowledge_elicitation \
+  -c "SELECT pid, now() - query_start AS duration, left(query, 80)
+      FROM pg_stat_activity
+      WHERE state != 'idle' AND now() - query_start > interval '5 seconds'
+      ORDER BY duration DESC;"
+
+# Kill a stuck query by PID
+docker compose exec db psql -U app -d knowledge_elicitation \
+  -c "SELECT pg_terminate_backend(<pid>);"
+
+# Embedding stats
+docker compose exec db psql -U app -d knowledge_elicitation \
+  -c "SELECT 'questions' AS t, count(*) AS total, count(embedding) AS with_emb
+      FROM questions UNION ALL
+      SELECT 'answers', count(*), count(embedding) FROM answers;"
+```
+
+### Data Export
+
+```bash
+# Export Q&A training data (all published questions)
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/export/training-data?question_status=published" \
+  > training_data.jsonl
+
+# Export Q&A training data (date range)
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/export/training-data?date_from=2026-01-01&date_to=2026-03-31" \
+  > q1_training.jsonl
+
+# Export Q&A training data (specific category)
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/export/training-data?category=Security" \
+  > security_qa.jsonl
+
+# Export all embeddings
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/export/embeddings" \
+  > all_embeddings.jsonl
+
+# Export only question embeddings
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/export/embeddings?entity_type=question" \
+  > question_embeddings.jsonl
+
+# Export approved review pairs (for RLHF)
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/export/review-pairs?verdict=approved" \
+  > approved_pairs.jsonl
+
+# Export rejected review pairs (negative examples)
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/export/review-pairs?verdict=rejected" \
+  > rejected_pairs.jsonl
+
+# Export AI interaction logs (JSON)
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/ai-logs/export?format=json" \
+  > ai_logs.json
+
+# Export AI interaction logs (CSV)
+curl -H "Authorization: Bearer <jwt>" \
+  "http://localhost:8000/api/v1/ai-logs/export?format=csv" \
+  > ai_logs.csv
+
+# Count lines in an export (= number of records)
+wc -l < training_data.jsonl
+```
+
+### Testing
+
+```bash
+# Run all backend tests
+make test
+
+# Run specific test file
+docker compose exec api pytest tests/test_export.py -xvs
+
+# Run tests matching a keyword
+docker compose exec api pytest -k "backup or export" -xvs
+
+# Frontend type check
+docker compose exec web npx tsc -b --noEmit
+
+# Run worker tests
+docker compose exec worker python -m pytest tests/ -xvs
+```
+
+### Production Pre-Flight
+
+```bash
+# Validate environment variables (rejects defaults)
+./scripts/check-env.sh
+
+# Dry-run: preview production config merge
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+
+# Check resource limits are applied
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config \
+  | grep -A3 "limits:"
+```
+
+### Configuration Reference
+
+All database-related environment variables:
+
+| Variable | Default | Where | What it controls |
+|----------|---------|-------|-----------------|
+| `DATABASE_URL` | `postgresql+asyncpg://app:devpassword@db:5432/knowledge_elicitation` | API | Full connection string |
+| `DB_PASSWORD` | `devpassword` | DB, Backup | PostgreSQL password |
+| `DB_POOL_SIZE` | `10` | API | Persistent connection count |
+| `DB_MAX_OVERFLOW` | `20` | API | Extra connections under burst |
+| `DB_POOL_PRE_PING` | `true` | API | Test connections before use |
+| `DB_POOL_RECYCLE` | `3600` | API | Recycle connections after N seconds |
+| `DB_HOST_PORT` | `5432` | Docker | Host-side port binding |
+| `DB_USER` | `app` | Backup | PostgreSQL user (for backup sidecar) |
+| `DB_NAME` | `knowledge_elicitation` | Backup | Database name (for backup sidecar) |
+| `EMBEDDING_MODEL` | `` (disabled) | API | Embedding provider (empty = disabled) |
+| `EMBEDDING_API_BASE` | `` | API | Embedding server URL |
+| `EMBEDDING_API_KEY` | `` | API | Embedding API auth |
+| `RECOMMENDATION_STRATEGY` | `auto` | API | `auto`, `llm`, or `embedding` |
+
+### Quick Recipes
+
+```bash
+# "How big is my database?"
+curl -s localhost:8000/health/db | jq '.database_size_bytes / 1048576 | round | tostring + " MB"'
+
+# "When was my last backup?"
+docker compose exec backup ls -lt /backups/backup_*.sql.gz | head -1
+
+# "Is the backup sidecar running?"
+docker compose ps backup
+
+# "How many questions/answers do I have?"
+curl -s localhost:8000/health/db | jq '.row_counts'
+
+# "Is the connection pool healthy?"
+curl -s localhost:8000/health/db | jq '.pool | "in:\(.checked_in) out:\(.checked_out) overflow:\(.overflow)"'
+
+# "Export everything for ML training"
+JWT="<admin-jwt>"
+curl -H "Authorization: Bearer $JWT" localhost:8000/api/v1/export/training-data > training.jsonl
+curl -H "Authorization: Bearer $JWT" localhost:8000/api/v1/export/embeddings > embeddings.jsonl
+curl -H "Authorization: Bearer $JWT" localhost:8000/api/v1/export/review-pairs > reviews.jsonl
+echo "Exported: $(wc -l < training.jsonl) Q&A pairs, $(wc -l < embeddings.jsonl) embeddings, $(wc -l < reviews.jsonl) review pairs"
+
+# "Full database dump for offline analysis"
+docker compose exec backup pg_dump -h db -U app -d knowledge_elicitation | gzip > full_dump_$(date +%Y%m%d).sql.gz
+```
