@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { api, ai, Question, Answer, Recommendation, RespondentPool, User } from "@/api/client";
+import { api, ai, Question, Answer, Recommendation, RespondentPool } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
 import { Admonition } from "@/components/Admonition";
