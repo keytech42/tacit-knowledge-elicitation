@@ -110,8 +110,55 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Run infrastructure tests
+      - name: Run infrastructure config tests
         run: uv run --with pytest --with pyyaml pytest tests/test_embedding_infra.py -xvs
+
+  embedding-integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Cache embedding model
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: models/bge-m3-q8_0.gguf
+          key: embedding-model-bge-m3-q8_0
+
+      - name: Download embedding model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          uv run --with huggingface-hub python3 -c "
+          from huggingface_hub import hf_hub_download
+          hf_hub_download(
+              repo_id='ggml-org/bge-m3-Q8_0-GGUF',
+              filename='bge-m3-q8_0.gguf',
+              local_dir='models',
+          )
+          print('Done')
+          "
+
+      - name: Start embedding service
+        run: docker compose --profile embedding up -d embedding
+        env:
+          EMBEDDING_MODEL_DIR: ./models
+
+      - name: Wait for embedding service to be healthy
+        run: |
+          echo "Waiting for embedding service..."
+          timeout 120 bash -c 'until curl -sf http://localhost:8090/health; do sleep 3; done'
+          echo "Embedding service is healthy"
+
+      - name: Run integration tests
+        run: uv run --with pytest --with httpx pytest tests/test_embedding_integration.py -xvs
+
+      - name: Stop services
+        if: always()
+        run: docker compose --profile embedding down
 
   e2e-test:
     runs-on: ubuntu-latest
