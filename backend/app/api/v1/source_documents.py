@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,7 @@ from app.models.source_document import SourceDocument
 from app.models.user import RoleName, User
 from app.schemas.source_document import (
     SourceDocumentCreate,
+    SourceDocumentDetailResponse,
     SourceDocumentListResponse,
     SourceDocumentResponse,
     SourceDocumentUpdate,
@@ -49,7 +51,7 @@ async def list_source_documents(
     return SourceDocumentListResponse(items=items, total=len(items))
 
 
-@router.get("/{doc_id}", response_model=SourceDocumentResponse)
+@router.get("/{doc_id}", response_model=SourceDocumentDetailResponse)
 async def get_source_document(
     doc_id: uuid.UUID,
     current_user: User = require_role(RoleName.ADMIN),
@@ -62,6 +64,26 @@ async def get_source_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Source document not found")
     return doc
+
+
+@router.get("/{doc_id}/download")
+async def download_source_document(
+    doc_id: uuid.UUID,
+    current_user: User = require_role(RoleName.ADMIN),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(SourceDocument).where(SourceDocument.id == doc_id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Source document not found")
+    filename = doc.title.replace('"', "'") + ".txt"
+    return Response(
+        content=doc.body,
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/{doc_id}", response_model=SourceDocumentResponse)

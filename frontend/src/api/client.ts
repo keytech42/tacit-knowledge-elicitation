@@ -167,6 +167,10 @@ export interface SourceDocument {
   updated_at: string;
 }
 
+export interface SourceDocumentDetail extends SourceDocument {
+  body: string;
+}
+
 // AI-related types
 
 export interface TaskAccepted {
@@ -267,5 +271,6 @@ export const ai = {
 
 export const sourceDocuments = {
   list: () => api.get<{ items: SourceDocument[]; total: number }>("/source-documents"),
-  get: (id: string) => api.get<SourceDocument>(`/source-documents/${id}`),
+  get: (id: string) => api.get<SourceDocumentDetail>(`/source-documents/${id}`),
+  delete: (id: string) => api.delete(`/source-documents/${id}`),
 };
