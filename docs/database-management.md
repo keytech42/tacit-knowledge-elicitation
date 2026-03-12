@@ -61,13 +61,15 @@ A `backup` sidecar service runs alongside PostgreSQL in Docker Compose:
 │    db    │ ◄─────────────── │  backup  │
 │ (pg16)   │                  │ (pg16)   │
 └──────────┘                  └──────────┘
-      │                             │
-      ▼                             ▼
-  pgdata volume              backups volume
-  (live data)              (backup files + WAL)
+      │              │              │
+      ▼              ▼              │
+  pgdata volume   host directory ◄──┘
+  (live data)     ./backups/ (backup files + WAL)
 ```
 
-The backup container connects to `db` over Docker networking (not volume-level access) and runs `pg_dump` on a daily loop.
+Both the `db` and `backup` containers mount the same host directory (`${BACKUP_DIR:-./backups}`) at `/backups`. This is a **bind mount**, not a Docker named volume — backup files survive `docker compose down -v`.
+
+The backup container connects to `db` over Docker networking (not volume-level access) and runs `pg_dump` on a daily loop. The `db` container writes WAL archive segments to the same directory.
 
 ### Daily Backups
 
@@ -137,21 +139,26 @@ With WAL archiving enabled, you can perform **point-in-time recovery (PITR)**: r
 | Weekly backups | 4 weeks | `weekly_YYYYMMDD_HHMMSS.sql.gz` (hard-link) |
 | WAL segments | Until next daily backup | `/backups/wal/` (production only) |
 
-### External Backup Storage
+### Host-Persistent Storage
 
-The `backups` Docker volume stores all backup files locally. For disaster recovery (host failure), you should also:
+Backups are stored on the host filesystem at `${BACKUP_DIR:-./backups}` via a bind mount (not a Docker named volume). This means backup files **survive `docker compose down -v`** — only the live database volume (`pgdata`) is destroyed.
 
-1. **Mount to host storage:** Map the `backups` volume to a host directory
-2. **Sync externally:** Use `rsync`, `rclone`, or cloud provider CLI to copy backups to S3/GCS/Azure Blob
-3. **Monitor:** Alert if the latest backup is older than 25 hours
+Configure the backup directory via the `BACKUP_DIR` environment variable:
+```bash
+# Default (relative to project root)
+BACKUP_DIR=./backups
 
-Example with host mount:
-```yaml
-# docker-compose.override.yml or custom overlay
-services:
-  backup:
-    volumes:
-      - /mnt/backups:/backups  # host directory instead of Docker volume
+# Production (absolute path recommended)
+BACKUP_DIR=/opt/backups/knowledge-elicitation
+```
+
+For disaster recovery (host failure), you can sync the host-side backup directory externally:
+```bash
+# rsync to another server
+rsync -az ./backups/ backupserver:/backups/knowledge-elicitation/
+
+# rclone to S3
+rclone sync ./backups/ s3:my-bucket/knowledge-elicitation-backups/
 ```
 
 ---

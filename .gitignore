@@ -29,5 +29,8 @@ htmlcov/
 # GGUF model files
 models/
 
+# Database backups (host-persistent, outside Docker volumes)
+backups/
+
 # Git worktrees
 worktrees/
