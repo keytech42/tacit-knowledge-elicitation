@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Any
 
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.platform_setting import PlatformSetting
 
+logger = logging.getLogger(__name__)
+
 DEFAULTS: dict[str, Any] = {
     "auto_review_enabled": True,
     "auto_scaffold_enabled": True,
@@ -14,13 +17,17 @@ DEFAULTS: dict[str, Any] = {
 
 
 async def get_setting(db: AsyncSession, key: str) -> Any:
-    """Get a single setting value. Returns the default if no row exists."""
+    """Get a single setting value. Returns the default if no row exists or on DB error."""
     if key not in DEFAULTS:
         raise KeyError(f"Unknown setting: {key}")
-    result = await db.execute(
-        select(PlatformSetting).where(PlatformSetting.key == key)
-    )
-    row = result.scalar_one_or_none()
+    try:
+        result = await db.execute(
+            select(PlatformSetting).where(PlatformSetting.key == key)
+        )
+        row = result.scalar_one_or_none()
+    except Exception:
+        logger.warning("Failed to read setting %s, using default", key, exc_info=True)
+        return DEFAULTS[key]
     if row is None:
         return DEFAULTS[key]
     return row.value

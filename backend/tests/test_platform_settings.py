@@ -194,7 +194,8 @@ async def test_auto_review_gated_by_setting(client, db, admin_user, author_user,
     await set_setting(db, "auto_review_enabled", False, admin_user.id)
     await db.commit()
 
-    with patch("app.api.v1.answers.worker_client.trigger_review_assist", new_callable=AsyncMock) as mock_trigger:
+    with patch("app.api.v1.answers.worker_client.trigger_review_assist", new_callable=AsyncMock) as mock_trigger, \
+         patch("app.api.v1.answers.slack.notify_answer_submitted", new_callable=AsyncMock):
         resp = await client.post(
             f"/api/v1/answers/{answer.id}/submit",
             headers=auth_header(respondent_user),
@@ -223,7 +224,8 @@ async def test_auto_review_fires_when_enabled(client, db, admin_user, respondent
     await db.refresh(answer)
     await db.commit()
 
-    with patch("app.api.v1.answers.worker_client.trigger_review_assist", new_callable=AsyncMock) as mock_trigger:
+    with patch("app.api.v1.answers.worker_client.trigger_review_assist", new_callable=AsyncMock) as mock_trigger, \
+         patch("app.api.v1.answers.slack.notify_answer_submitted", new_callable=AsyncMock):
         resp = await client.post(
             f"/api/v1/answers/{answer.id}/submit",
             headers=auth_header(respondent_user),
@@ -244,7 +246,8 @@ async def test_auto_scaffold_fires_when_enabled(client, db, admin_user, author_u
     await db.refresh(question)
     await db.commit()
 
-    with patch("app.api.v1.questions.worker_client.trigger_scaffold_options", new_callable=AsyncMock) as mock_trigger:
+    with patch("app.api.v1.questions.worker_client.trigger_scaffold_options", new_callable=AsyncMock) as mock_trigger, \
+         patch("app.api.v1.questions.slack.notify_question_published", new_callable=AsyncMock, return_value=(None, None)):
         resp = await client.post(
             f"/api/v1/questions/{question.id}/publish",
             headers=auth_header(admin_user),
@@ -269,7 +272,8 @@ async def test_auto_scaffold_gated_by_setting(client, db, admin_user, author_use
     await set_setting(db, "auto_scaffold_enabled", False, admin_user.id)
     await db.commit()
 
-    with patch("app.api.v1.questions.worker_client.trigger_scaffold_options", new_callable=AsyncMock) as mock_trigger:
+    with patch("app.api.v1.questions.worker_client.trigger_scaffold_options", new_callable=AsyncMock) as mock_trigger, \
+         patch("app.api.v1.questions.slack.notify_question_published", new_callable=AsyncMock, return_value=(None, None)):
         resp = await client.post(
             f"/api/v1/questions/{question.id}/publish",
             headers=auth_header(admin_user),

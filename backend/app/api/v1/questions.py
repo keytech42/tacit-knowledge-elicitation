@@ -398,6 +398,7 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
     await update_question_embedding(db, question)
     await db.flush()
     await db.refresh(question)
+    await db.commit()  # Commit before external calls (worker, Slack)
     # Fire-and-forget: scaffold answer options + recommendation (if enabled)
     if await get_setting(db, "auto_scaffold_enabled"):
         await worker_client.trigger_scaffold_options(question_id)
