@@ -39,6 +39,7 @@ from app.services.answer import (
 from app.services import slack, worker_client
 from app.services.embeddings import update_answer_embedding
 from app.services.event_bus import publish as publish_event
+from app.services.platform_settings import get_setting
 
 router = APIRouter(tags=["answers"])
 
@@ -214,8 +215,9 @@ async def submit_answer_endpoint(
         "status": answer.status,
     })
 
-    # Fire-and-forget: trigger AI review assist
-    await worker_client.trigger_review_assist(answer.id)
+    # Fire-and-forget: trigger AI review assist (if enabled)
+    if await get_setting(db, "auto_review_enabled"):
+        await worker_client.trigger_review_assist(answer.id)
 
     # Notify Slack
     question_result = await db.execute(select(Question).where(Question.id == answer.question_id))
