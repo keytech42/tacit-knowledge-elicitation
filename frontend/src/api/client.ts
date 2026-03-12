@@ -371,6 +371,29 @@ export const questionTransfer = {
   },
 };
 
+// Platform settings types and API functions
+
+export interface PlatformSettings {
+  [key: string]: unknown;
+}
+
+export interface PlatformSettingsResponse {
+  settings: PlatformSettings;
+}
+
+export interface PlatformSettingResponse {
+  key: string;
+  value: unknown;
+  updated_by_id: string | null;
+  updated_at: string | null;
+}
+
+export const platformSettings = {
+  getAll: () => api.get<PlatformSettingsResponse>("/settings"),
+  update: (key: string, value: unknown) =>
+    api.put<PlatformSettingResponse>(`/settings/${key}`, { value }),
+};
+
 // Source document API functions
 
 export const sourceDocuments = {

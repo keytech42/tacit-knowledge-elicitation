@@ -545,7 +545,7 @@ DRAFT ──[submit]──▶ SUBMITTED ──[review starts]──▶ UNDER_REV
 
 #### POST /api/v1/answers/{answer_id}/submit
 
-Submit an answer (transitions from `draft` to `submitted`). Creates an `AnswerRevision` with trigger `initial_submit` (version 1) or `revision_after_review` (subsequent versions). Also generates an embedding and triggers the review-assist auto-trigger when `WORKER_URL` is configured.
+Submit an answer (transitions from `draft` to `submitted`). Creates an `AnswerRevision` with trigger `initial_submit` (version 1) or `revision_after_review` (subsequent versions). Also generates an embedding and triggers the review-assist auto-trigger when `WORKER_URL` is configured and `auto_review_enabled` is true (see [Platform Settings](#platform-settings-admin-only)).
 
 **Request body:** none.
 
@@ -960,10 +960,10 @@ Worker-proxied endpoints (`generate-questions`, `scaffold-options`, `review-assi
 
 ### Auto-Triggers
 
-These fire automatically when `WORKER_URL` is configured (fire-and-forget, failures don't block the main operation):
+These fire automatically when `WORKER_URL` is configured **and** the corresponding [platform setting](#platform-settings-admin-only) is enabled (fire-and-forget, failures don't block the main operation):
 
-- **Question published** → triggers `scaffold-options`
-- **Answer submitted** → triggers `review-assist`
+- **Question published** → triggers `scaffold-options` (gated by `auto_scaffold_enabled`)
+- **Answer submitted** → triggers `review-assist` (gated by `auto_review_enabled`)
 
 ### Answer Option Scaffolding Behavior
 
@@ -1104,6 +1104,59 @@ Stream answer-review pairs as JSONL for reward modeling / RLHF. Excludes pending
 ```json
 {"answer_id": "...", "question_id": "...", "question_title": "...", "answer_body": "...", "answer_version": 1, "review_verdict": "approved", "review_comment": "...", "reviewer_id": "...", "created_at": "..."}
 ```
+
+---
+
+## Platform Settings (Admin Only)
+
+Runtime configuration toggles for platform features. Settings use a key-value model with JSONB values. Defaults are applied in the application layer, so the platform works with an empty table.
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `GET` | `/api/v1/settings` | Admin | Get all platform settings (with defaults applied) | 200 |
+| `PUT` | `/api/v1/settings/{key}` | Admin | Update a single platform setting | 200 |
+
+### GET /api/v1/settings
+
+Returns all known settings with their current values. DB overrides are merged onto application defaults.
+
+**Response (200):**
+```json
+{
+  "settings": {
+    "auto_review_enabled": true,
+    "auto_scaffold_enabled": true
+  }
+}
+```
+
+### PUT /api/v1/settings/{key}
+
+Update a single setting. The value type must match the default (e.g., boolean for toggle settings).
+
+**Request body:**
+```json
+{"value": false}
+```
+
+**Response (200):**
+```json
+{
+  "key": "auto_review_enabled",
+  "value": false,
+  "updated_by_id": "<uuid>",
+  "updated_at": "..."
+}
+```
+
+Returns 400 if the key is unknown. Returns 422 if the value type doesn't match the expected type.
+
+### Available Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `auto_review_enabled` | boolean | `true` | Trigger AI review assist on answer submission |
+| `auto_scaffold_enabled` | boolean | `true` | Trigger answer option scaffolding on question publish |
 
 ---
 

@@ -29,6 +29,7 @@ from app.services.question import (
 )
 from app.services import slack, worker_client
 from app.services.embeddings import update_question_embedding
+from app.services.platform_settings import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -397,8 +398,10 @@ async def publish_question(question_id: uuid.UUID, current_user: User = require_
     await update_question_embedding(db, question)
     await db.flush()
     await db.refresh(question)
-    # Fire-and-forget: scaffold answer options + recommendation
-    await worker_client.trigger_scaffold_options(question_id)
+    await db.commit()  # Commit before external calls (worker, Slack)
+    # Fire-and-forget: scaffold answer options + recommendation (if enabled)
+    if await get_setting(db, "auto_scaffold_enabled"):
+        await worker_client.trigger_scaffold_options(question_id)
     thread_ts, slack_ch = await slack.notify_question_published(
         question_title=question.title,
         question_id=str(question.id),

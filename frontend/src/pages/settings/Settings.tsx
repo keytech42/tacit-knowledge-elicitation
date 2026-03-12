@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, User } from "@/api/client";
+import { api, User, platformSettings, PlatformSettings } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 
 const ALL_ROLES = ["admin", "author", "reviewer", "respondent"];
@@ -23,6 +23,17 @@ interface UsersResponse {
   total: number;
 }
 
+const SETTING_LABELS: Record<string, { label: string; description: string }> = {
+  auto_review_enabled: {
+    label: "Auto Review",
+    description: "Automatically trigger AI review when an answer is submitted",
+  },
+  auto_scaffold_enabled: {
+    label: "Auto Scaffold",
+    description: "Automatically generate answer options when a question is published",
+  },
+};
+
 export function Settings() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -32,6 +43,10 @@ export function Settings() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [settings, setSettings] = useState<PlatformSettings>({});
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [pendingSetting, setPendingSetting] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     try {
@@ -46,8 +61,35 @@ export function Settings() {
     }
   };
 
+  const fetchSettings = async () => {
+    try {
+      setSettingsLoading(true);
+      const data = await platformSettings.getAll();
+      setSettings(data.settings);
+    } catch (e: unknown) {
+      setSettingsError(e instanceof Error ? e.message : "Failed to load settings");
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const toggleSetting = async (key: string) => {
+    const current = settings[key] as boolean;
+    setPendingSetting(key);
+    setSettingsError(null);
+    try {
+      await platformSettings.update(key, !current);
+      setSettings((prev) => ({ ...prev, [key]: !current }));
+    } catch (e: unknown) {
+      setSettingsError(e instanceof Error ? e.message : "Failed to update setting");
+    } finally {
+      setPendingSetting(null);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchSettings();
   }, []);
 
   const toggleRole = async (userId: string, roleName: string, hasIt: boolean) => {
@@ -102,6 +144,57 @@ export function Settings() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Settings</h1>
+
+      {/* Platform Settings Section */}
+      <div className="bg-background border border-border rounded-lg mb-6">
+        <div className="px-6 py-4 border-b border-border">
+          <h2 className="text-lg font-semibold">Platform Settings</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Control automated AI features. Changes take effect immediately.
+          </p>
+        </div>
+
+        {settingsError && (
+          <div className="mx-6 mt-3 px-3 py-2 bg-destructive/10 text-destructive text-sm rounded-md">
+            {settingsError}
+          </div>
+        )}
+
+        <div className="divide-y divide-border">
+          {settingsLoading ? (
+            <div className="px-6 py-4 text-sm text-muted-foreground">Loading settings...</div>
+          ) : (
+            Object.keys(SETTING_LABELS).map((key) => {
+              const meta = SETTING_LABELS[key];
+              const value = settings[key] as boolean;
+              const isPending = pendingSetting === key;
+              return (
+                <div key={key} className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">{meta.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleSetting(key)}
+                    disabled={isPending}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/30 ${
+                      value ? "bg-primary" : "bg-muted"
+                    } ${isPending ? "opacity-50 cursor-wait" : ""}`}
+                    role="switch"
+                    aria-checked={value}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition duration-200 ease-in-out ${
+                        value ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
 
       {/* Member Management Section */}
       <div className="bg-background border border-border rounded-lg">

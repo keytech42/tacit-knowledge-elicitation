@@ -196,7 +196,7 @@ The worker is a separate FastAPI service that calls the platform REST API as a s
 - **Answer option scaffolding**: `POST /tasks/scaffold-options` — generates up to 4 maximally distinct answer options for a question. Each run replaces all existing options (delete + recreate). The question's `show_suggestions` flag is auto-enabled after scaffolding.
 - **Review assistance**: `POST /tasks/review-assist` — AI-assisted preliminary review with confidence threshold (only submits if confidence >= 0.6)
 
-The backend proxies trigger requests via `POST /api/v1/ai/*` endpoints (admin-only). Auto-triggers fire on question publish (scaffold options) and answer submit (review assist) when `WORKER_URL` is configured.
+The backend proxies trigger requests via `POST /api/v1/ai/*` endpoints (admin-only). Auto-triggers fire on question publish (scaffold options) and answer submit (review assist) when `WORKER_URL` is configured and the corresponding platform setting is enabled (`auto_scaffold_enabled`, `auto_review_enabled`). Admins can toggle these at runtime via `GET/PUT /api/v1/settings` without restarting containers.
 
 Backend services for the worker integration:
 - `app/services/worker_client.py` — fire-and-forget HTTP calls to worker (wrapped in try/except)

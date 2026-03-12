@@ -7,6 +7,7 @@ from app.models.review import Review, ReviewComment
 from app.models.ai_log import AIInteractionLog
 from app.models.ai_task import AITask, AITaskType, AITaskStatus
 from app.models.source_document import SourceDocument
+from app.models.platform_setting import PlatformSetting
 
 __all__ = [
     "Base", "User", "Role", "user_roles",
@@ -16,4 +17,5 @@ __all__ = [
     "Review", "ReviewComment", "AIInteractionLog",
     "AITask", "AITaskType", "AITaskStatus",
     "SourceDocument",
+    "PlatformSetting",
 ]
