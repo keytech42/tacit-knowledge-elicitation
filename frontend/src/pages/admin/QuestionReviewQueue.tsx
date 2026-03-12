@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api, Question } from "@/api/client";
 import { StatusBadge } from "@/components/StatusBadge";
+import { QuestionImportExport } from "./QuestionImportExport";
 
 interface AdminQueueItem {
   id: string;
@@ -127,9 +128,12 @@ export function QuestionReviewQueue() {
           <h1 className="text-2xl font-bold">Admin Queue</h1>
           <p className="text-sm text-muted-foreground mt-1">{totalCount} questions need attention</p>
         </div>
-        <button onClick={loadQueue} className="text-sm px-3 py-1.5 border border-border rounded-md hover:bg-muted active:scale-[0.97] transition-all duration-150">
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <QuestionImportExport onRefresh={loadQueue} />
+          <button onClick={loadQueue} className="text-sm px-3 py-1.5 border border-border rounded-md hover:bg-muted active:scale-[0.97] transition-all duration-150">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-destructive text-sm mb-4 p-3 bg-destructive/5 rounded-md border border-destructive/20">{error}</p>}
