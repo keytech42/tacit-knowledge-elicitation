@@ -444,6 +444,8 @@ Returns 404 if the question is not found. Returns 409 if the user has already su
 
 ### Question Import / Export
 
+The JSON format is formally defined in [`docs/import-schema.json`](import-schema.json) (JSON Schema draft 2020-12). Use it to validate files before import or to generate import files from external tools.
+
 #### GET /api/v1/questions/export
 
 Export questions as a downloadable JSON file. Admin only.
