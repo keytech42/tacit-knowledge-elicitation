@@ -324,6 +324,53 @@ export const respondentPool = {
     }),
 };
 
+// Question import/export API functions
+
+export interface QuestionExportParams {
+  status?: string;
+  category?: string;
+}
+
+export interface QuestionImportResponse {
+  created: number;
+  question_ids: string[];
+}
+
+export const questionTransfer = {
+  exportBlob: async (params: QuestionExportParams): Promise<Blob> => {
+    const query = new URLSearchParams();
+    if (params.status) query.set("status", params.status);
+    if (params.category) query.set("category", params.category);
+    const token = getToken();
+    const resp = await fetch(`${API_BASE}/questions/export?${query}`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (resp.status === 401) {
+      clearToken();
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    return resp.blob();
+  },
+
+  import: (data: { version: string; questions: unknown[] }): Promise<QuestionImportResponse> =>
+    api.post<QuestionImportResponse>("/questions/import", data),
+
+  count: async (params: QuestionExportParams): Promise<number> => {
+    const query = new URLSearchParams();
+    if (params.status) query.set("status", params.status);
+    if (params.category) query.set("category", params.category);
+    const data = await api.get<{ questions: unknown[]; total: number }>(`/questions?${query}`);
+    return data.total;
+  },
+};
+
 // Source document API functions
 
 export const sourceDocuments = {

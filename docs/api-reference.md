@@ -442,6 +442,83 @@ Returns 404 if the question is not found. Returns 409 if the user has already su
 
 `backfilled` is the number of questions that received a new Slack thread. `total` is the number of questions that were eligible (published or closed with no existing thread).
 
+### Question Import / Export
+
+The JSON format is formally defined in [`docs/import-schema.json`](import-schema.json) (JSON Schema draft 2020-12). Use it to validate files before import or to generate import files from external tools.
+
+#### GET /api/v1/questions/export
+
+Export questions as a downloadable JSON file. Admin only.
+
+**Query parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string (optional) | Filter by question status (`draft`, `published`, etc.) |
+| `category` | string (optional) | Filter by category |
+
+**Response:** JSON file with `Content-Disposition: attachment` header.
+
+```json
+{
+  "version": "1.0",
+  "exported_at": "2026-03-12T10:30:00Z",
+  "questions": [
+    {
+      "title": "...",
+      "body": "...",
+      "category": "...",
+      "review_policy": {"min_approvals": 2},
+      "show_suggestions": true,
+      "answer_options": [{"body": "...", "display_order": 1}],
+      "_metadata": {
+        "id": "uuid",
+        "status": "published",
+        "source_type": "manual",
+        "created_by": "Admin User",
+        "created_at": "2026-01-15T09:00:00Z",
+        "quality_score": 4.2,
+        "answer_count": 3,
+        "approved_answer_count": 1
+      }
+    }
+  ]
+}
+```
+
+The `_metadata` block is informational and is ignored on import.
+
+#### POST /api/v1/questions/import
+
+Bulk-create questions from a JSON payload. Admin only. All questions are created in `draft` status, owned by the importing user.
+
+**Request body:** Same schema as the export envelope. The `_metadata` and `exported_at` fields are silently ignored, so an exported file can be directly re-imported.
+
+```json
+{
+  "version": "1.0",
+  "questions": [
+    {
+      "title": "...",
+      "body": "...",
+      "category": "...",
+      "review_policy": {"min_approvals": 2},
+      "show_suggestions": false,
+      "answer_options": [{"body": "...", "display_order": 1}]
+    }
+  ]
+}
+```
+
+**Validation rules:** `title` required (max 500 chars), `body` required (non-empty), `version` must be `"1.0"`, 1–500 questions per request, `answer_options.display_order` must be unique within each question, `review_policy.min_approvals` must be 1–10 if provided.
+
+**Response (201):**
+```json
+{"created": 2, "question_ids": ["uuid1", "uuid2"]}
+```
+
+Returns 422 if any question fails validation (atomic — nothing is created).
+
 ---
 
 ## Answer State Machine and Versioning

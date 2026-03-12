@@ -1,7 +1,9 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import case, delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,8 +16,10 @@ from app.models.user import RoleName, User, UserType
 from app.models.question_respondent import QuestionRespondent
 from app.schemas.question import (
     AdminQueueItem, AdminQueueResponse, AnswerOptionBatchCreate, AnswerOptionResponse,
-    AssignRespondentRequest, QualityFeedbackCreate, QualityFeedbackResponse,
-    QuestionCreate, QuestionListResponse, QuestionRejectRequest, QuestionResponse, QuestionUpdate,
+    AnswerOptionExport, AssignRespondentRequest, QualityFeedbackCreate, QualityFeedbackResponse,
+    QuestionCreate, QuestionExportEnvelope, QuestionExportItem, QuestionExportMetadata,
+    QuestionImportRequest, QuestionImportResponse,
+    QuestionListResponse, QuestionRejectRequest, QuestionResponse, QuestionUpdate,
     RespondentPoolRequest, RespondentPoolResponse,
 )
 from app.services.question import (
@@ -166,6 +170,126 @@ async def backfill_slack_threads(
             created += 1
     await db.flush()
     return {"backfilled": created, "total": len(questions)}
+
+
+@router.get("/export")
+async def export_questions(
+    status_filter: QuestionStatus | None = Query(None, alias="status"),
+    category: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = require_role(RoleName.ADMIN),
+):
+    """Export questions as a JSON file with optional status/category filters."""
+    query = select(Question)
+    if status_filter:
+        query = query.where(Question.status == status_filter.value)
+    if category:
+        query = query.where(Question.category == category)
+    query = query.order_by(Question.created_at.desc())
+
+    result = await db.execute(query)
+    questions = result.scalars().all()
+
+    # Fetch answer counts in bulk
+    question_ids = [q.id for q in questions]
+    answer_counts: dict[uuid.UUID, tuple[int, int]] = {}
+    if question_ids:
+        count_stmt = (
+            select(
+                Answer.question_id,
+                func.count(Answer.id).label("total"),
+                func.count(case((Answer.status == AnswerStatus.APPROVED.value, 1))).label("approved"),
+            )
+            .where(Answer.question_id.in_(question_ids))
+            .group_by(Answer.question_id)
+        )
+        count_rows = (await db.execute(count_stmt)).all()
+        for qid, total, approved in count_rows:
+            answer_counts[qid] = (total, approved)
+
+    export_items: list[QuestionExportItem] = []
+    for q in questions:
+        total, approved = answer_counts.get(q.id, (0, 0))
+        options = [
+            AnswerOptionExport(body=opt.body, display_order=opt.display_order)
+            for opt in (q.answer_options or [])
+        ]
+        created_by_name = None
+        if q.created_by:
+            created_by_name = q.created_by.display_name or q.created_by.email
+
+        metadata = QuestionExportMetadata(
+            id=str(q.id),
+            status=q.status,
+            source_type=q.source_type or "manual",
+            created_by=created_by_name,
+            created_at=q.created_at.isoformat() if q.created_at else None,
+            quality_score=q.quality_score,
+            answer_count=total,
+            approved_answer_count=approved,
+        )
+        export_items.append(QuestionExportItem(
+            title=q.title,
+            body=q.body,
+            category=q.category,
+            review_policy=q.review_policy,
+            show_suggestions=q.show_suggestions,
+            answer_options=options,
+            **{"_metadata": metadata},
+        ))
+
+    envelope = QuestionExportEnvelope(
+        exported_at=datetime.now(timezone.utc).isoformat(),
+        questions=export_items,
+    )
+
+    json_str = envelope.model_dump_json(indent=2, by_alias=True)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        content=json_str,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="questions-{today}.json"'},
+    )
+
+
+@router.post("/import", response_model=QuestionImportResponse, status_code=201)
+async def import_questions(
+    payload: QuestionImportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = require_role(RoleName.ADMIN),
+):
+    """Import questions from a JSON payload. All questions are created as drafts."""
+    # Phase 1: create all questions in one flush
+    questions_with_options: list[tuple[Question, list[AnswerOptionExport]]] = []
+    for item in payload.questions:
+        question = Question(
+            title=item.title,
+            body=item.body,
+            category=item.category,
+            review_policy=item.review_policy,
+            show_suggestions=item.show_suggestions,
+            source_type="manual",
+            created_by_id=current_user.id,
+        )
+        db.add(question)
+        questions_with_options.append((question, item.answer_options))
+
+    await db.flush()  # all questions get IDs
+
+    # Phase 2: create all answer options in one flush
+    for question, options in questions_with_options:
+        for opt in options:
+            db.add(AnswerOption(
+                question_id=question.id,
+                body=opt.body,
+                display_order=opt.display_order,
+                created_by_id=current_user.id,
+            ))
+
+    await db.flush()
+
+    created_ids = [str(q.id) for q, _ in questions_with_options]
+    return QuestionImportResponse(created=len(created_ids), question_ids=created_ids)
 
 
 @router.get("/{question_id}", response_model=QuestionResponse)
