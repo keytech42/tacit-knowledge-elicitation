@@ -73,7 +73,7 @@ test.describe("Question Import/Export", () => {
 
     // Preview table should appear
     await expect(page.getByText("1 question found")).toBeVisible();
-    await expect(page.getByText("Valid")).toBeVisible();
+    await expect(page.getByText("Valid", { exact: true })).toBeVisible();
     await expect(page.getByText(importData.questions[0].title.slice(0, 30))).toBeVisible();
 
     // Import
