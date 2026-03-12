@@ -8,8 +8,8 @@ set -euo pipefail
 BACKUP_DIR="${1:-/backups}"
 DAILY_KEEP=7
 WEEKLY_KEEP=4
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-DAY_OF_WEEK="${DAY_OF_WEEK:-$(date +%u)}"  # 1=Monday ... 7=Sunday (overridable for testing)
+TIMESTAMP=$(date -u +%Y%m%d_%H%M%SZ)
+DAY_OF_WEEK="${DAY_OF_WEEK:-$(date -u +%u)}"  # 1=Monday ... 7=Sunday (overridable for testing)
 BACKUP_FILE="${BACKUP_DIR}/backup_${TIMESTAMP}.sql.gz"
 
 mkdir -p "${BACKUP_DIR}"
@@ -18,24 +18,24 @@ mkdir -p "${BACKUP_DIR}"
 TABLE_COUNT=$(psql -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
 if [ "${TABLE_COUNT:-0}" -eq 0 ]; then
-  echo "[$(date -Iseconds)] Skipping backup — database has no tables (migrations may not have run yet)"
+  echo "[$(date -u -Iseconds)] Skipping backup — database has no tables (migrations may not have run yet)"
   exit 0
 fi
 
-echo "[$(date -Iseconds)] Starting backup of ${PGDATABASE}@${PGHOST} (${TABLE_COUNT} tables)..."
+echo "[$(date -u -Iseconds)] Starting backup of ${PGDATABASE}@${PGHOST} (${TABLE_COUNT} tables)..."
 
 pg_dump -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" \
   --no-owner --no-acl --clean --if-exists \
   | gzip > "${BACKUP_FILE}"
 
 FILESIZE=$(stat -c%s "${BACKUP_FILE}" 2>/dev/null || stat -f%z "${BACKUP_FILE}")
-echo "[$(date -Iseconds)] Backup complete: ${BACKUP_FILE} (${FILESIZE} bytes)"
+echo "[$(date -u -Iseconds)] Backup complete: ${BACKUP_FILE} (${FILESIZE} bytes)"
 
 # Tag weekly backups (Sunday = day 7) by creating a symlink
 if [ "${DAY_OF_WEEK}" -eq 7 ]; then
   WEEKLY_LINK="${BACKUP_DIR}/weekly_${TIMESTAMP}.sql.gz"
   ln -f "${BACKUP_FILE}" "${WEEKLY_LINK}"
-  echo "[$(date -Iseconds)] Weekly backup tagged: ${WEEKLY_LINK}"
+  echo "[$(date -u -Iseconds)] Weekly backup tagged: ${WEEKLY_LINK}"
 fi
 
 # --- Rotation ---
@@ -58,16 +58,16 @@ _rotate() {
         continue
       fi
     fi
-    echo "[$(date -Iseconds)] Removing old backup: ${old}"
+    echo "[$(date -u -Iseconds)] Removing old backup: ${old}"
     rm -f "${old}"
   done
 }
 
-echo "[$(date -Iseconds)] Rotating daily backups (keeping last ${DAILY_KEEP})..."
+echo "[$(date -u -Iseconds)] Rotating daily backups (keeping last ${DAILY_KEEP})..."
 _rotate "${BACKUP_DIR}/backup_*.sql.gz" "${DAILY_KEEP}" "${BACKUP_DIR}/weekly_*.sql.gz"
 
-echo "[$(date -Iseconds)] Rotating weekly backups (keeping last ${WEEKLY_KEEP})..."
+echo "[$(date -u -Iseconds)] Rotating weekly backups (keeping last ${WEEKLY_KEEP})..."
 _rotate "${BACKUP_DIR}/weekly_*.sql.gz" "${WEEKLY_KEEP}"
 
-echo "[$(date -Iseconds)] Backup and rotation finished successfully."
+echo "[$(date -u -Iseconds)] Backup and rotation finished successfully."
 exit 0
