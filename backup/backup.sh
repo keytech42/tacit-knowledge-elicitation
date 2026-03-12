@@ -44,7 +44,7 @@ ls -1t "${BACKUP_DIR}"/backup_*.sql.gz 2>/dev/null \
         echo "[$(date -Iseconds)] Removing old daily backup: ${old}"
         rm -f "${old}"
       fi
-    done
+    done || true
 
 # Remove weekly backups beyond WEEKLY_KEEP
 echo "[$(date -Iseconds)] Rotating weekly backups (keeping last ${WEEKLY_KEEP})..."
@@ -53,7 +53,7 @@ ls -1t "${BACKUP_DIR}"/weekly_*.sql.gz 2>/dev/null \
   | while read -r old; do
       echo "[$(date -Iseconds)] Removing old weekly backup: ${old}"
       rm -f "${old}"
-    done
+    done || true
 
 echo "[$(date -Iseconds)] Backup and rotation finished successfully."
 exit 0
