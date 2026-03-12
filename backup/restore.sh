@@ -46,7 +46,7 @@ if [ "${AUTO_CONFIRM}" != true ]; then
   fi
 fi
 
-echo "[$(date -Iseconds)] Dropping database ${PGDATABASE}..."
+echo "[$(date -u -Iseconds)] Dropping database ${PGDATABASE}..."
 # Terminate existing connections and drop
 psql -h "${PGHOST}" -U "${PGUSER}" -d postgres -c \
   "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${PGDATABASE}' AND pid <> pg_backend_pid();" \
@@ -54,17 +54,17 @@ psql -h "${PGHOST}" -U "${PGUSER}" -d postgres -c \
 
 dropdb -h "${PGHOST}" -U "${PGUSER}" --if-exists "${PGDATABASE}"
 
-echo "[$(date -Iseconds)] Creating database ${PGDATABASE}..."
+echo "[$(date -u -Iseconds)] Creating database ${PGDATABASE}..."
 createdb -h "${PGHOST}" -U "${PGUSER}" "${PGDATABASE}"
 
-echo "[$(date -Iseconds)] Restoring from ${BACKUP_FILE}..."
+echo "[$(date -u -Iseconds)] Restoring from ${BACKUP_FILE}..."
 gunzip -c "${BACKUP_FILE}" | psql -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" --quiet -1
 
 # Verify by checking table count
 TABLE_COUNT=$(psql -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
 
-echo "[$(date -Iseconds)] Restore complete. Tables found: ${TABLE_COUNT}"
+echo "[$(date -u -Iseconds)] Restore complete. Tables found: ${TABLE_COUNT}"
 
 if [ "${TABLE_COUNT}" -gt 0 ]; then
   echo "Verification PASSED: database has ${TABLE_COUNT} table(s)."

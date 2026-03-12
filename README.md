@@ -25,6 +25,7 @@ Open http://localhost:5173 and click **Sign in as Test User** to log in as a dev
 | **web** | React 18 + TypeScript + Vite | 5173 | default |
 | **worker** | FastAPI + litellm (LLM tasks) | 8001 | default |
 | **db** | PostgreSQL 16 + pgvector | 5432 | default |
+| **backup** | pg_dump sidecar (daily + WAL) | — | `backup` |
 | **embedding** | llama.cpp (bge-m3 Q8_0) | 8090 | `embedding` |
 
 Migrations run automatically on container start via Alembic. The worker and embedding services are optional — the platform functions fully without them.

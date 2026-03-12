@@ -264,7 +264,7 @@ The `get_db` dependency auto-commits after the handler returns. Calling `commit(
 
 ### Backup & Restore
 
-Automated backups run daily via a `backup` sidecar service (pg_dump to `/backups` volume). Scripts in `backup/`:
+Automated backups run daily via a `backup` sidecar service (pg_dump to host-mounted `${BACKUP_DIR:-./backups}`). Backups survive `docker compose down -v` because they use a bind mount, not a Docker named volume. Scripts in `backup/`:
 
 ```bash
 make backup        # trigger manual backup now

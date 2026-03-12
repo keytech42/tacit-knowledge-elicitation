@@ -1,6 +1,6 @@
 .PHONY: up down test test-e2e migrate logs shell seed setup create-service-account \
        setup-reverse-proxy up-prod down-prod logs-prod restart-prod \
-       backup restore backup-verify \
+       backup-init backup restore backup-verify \
        up-embed down-embed embed-download embed-status
 
 # --- Setup ---
@@ -58,6 +58,10 @@ restart-prod:
 	$(COMPOSE_PROD) restart
 
 # --- Backup & restore ---
+
+backup-init:
+	mkdir -p $${BACKUP_DIR:-./backups}
+	@echo "Backup directory ready: $${BACKUP_DIR:-./backups}"
 
 backup:
 	docker compose --profile backup exec backup /scripts/backup.sh /backups

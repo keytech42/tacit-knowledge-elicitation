@@ -61,13 +61,15 @@ A `backup` sidecar service runs alongside PostgreSQL in Docker Compose:
 │    db    │ ◄─────────────── │  backup  │
 │ (pg16)   │                  │ (pg16)   │
 └──────────┘                  └──────────┘
-      │                             │
-      ▼                             ▼
-  pgdata volume              backups volume
-  (live data)              (backup files + WAL)
+      │              │              │
+      ▼              ▼              │
+  pgdata volume   host directory ◄──┘
+  (live data)     ./backups/ (backup files + WAL)
 ```
 
-The backup container connects to `db` over Docker networking (not volume-level access) and runs `pg_dump` on a daily loop.
+Both the `db` and `backup` containers mount the same host directory (`${BACKUP_DIR:-./backups}`) at `/backups`. This is a **bind mount**, not a Docker named volume — backup files survive `docker compose down -v`.
+
+The backup container connects to `db` over Docker networking (not volume-level access) and runs `pg_dump` on a daily loop. The `db` container writes WAL archive segments to the same directory.
 
 ### Daily Backups
 
@@ -122,10 +124,10 @@ The base `docker-compose.yml` mounts `backup/postgresql.conf` which enables WAL 
 |---------|-------|---------|
 | `wal_level` | `replica` | Enables continuous archiving |
 | `archive_mode` | `on` | Copies completed WAL segments to archive |
-| `archive_command` | `cp %p /backups/wal/%f` | Stores WAL files in the backups volume |
+| `archive_command` | `cp %p /backups/wal/%f` | Stores WAL files in the host-mounted backup directory |
 | `max_wal_senders` | 3 | Allows streaming replication connections |
 
-WAL archiving is always enabled (the custom `postgresql.conf` is mounted in the base compose). WAL segments are archived to `/backups/wal/` on the backup volume.
+WAL archiving is always enabled (the custom `postgresql.conf` is mounted in the base compose). WAL segments are archived to `/backups/wal/` on the host-mounted backup directory. Both the `db` and `backup` containers mount `${BACKUP_DIR:-./backups}` at `/backups`.
 
 With WAL archiving enabled, you can perform **point-in-time recovery (PITR)**: restore a base backup, then replay WAL files up to a specific timestamp. This allows recovering to any point between daily backups.
 
@@ -137,21 +139,92 @@ With WAL archiving enabled, you can perform **point-in-time recovery (PITR)**: r
 | Weekly backups | 4 weeks | `weekly_YYYYMMDD_HHMMSS.sql.gz` (hard-link) |
 | WAL segments | Until next daily backup | `/backups/wal/` (production only) |
 
-### External Backup Storage
+### Host-Persistent Storage
 
-The `backups` Docker volume stores all backup files locally. For disaster recovery (host failure), you should also:
+Backups are stored on the host filesystem at `${BACKUP_DIR:-./backups}` via a bind mount (not a Docker named volume). This means backup files **survive `docker compose down -v`** — only the live database volume (`pgdata`) is destroyed.
 
-1. **Mount to host storage:** Map the `backups` volume to a host directory
-2. **Sync externally:** Use `rsync`, `rclone`, or cloud provider CLI to copy backups to S3/GCS/Azure Blob
-3. **Monitor:** Alert if the latest backup is older than 25 hours
+Configure the backup directory via the `BACKUP_DIR` environment variable:
+```bash
+# Default (relative to project root)
+BACKUP_DIR=./backups
 
-Example with host mount:
-```yaml
-# docker-compose.override.yml or custom overlay
-services:
-  backup:
-    volumes:
-      - /mnt/backups:/backups  # host directory instead of Docker volume
+# Production (absolute path recommended)
+BACKUP_DIR=/opt/backups/knowledge-elicitation
+```
+
+For disaster recovery (host failure), you can sync the host-side backup directory externally:
+```bash
+# rsync to another server
+rsync -az ./backups/ backupserver:/backups/knowledge-elicitation/
+
+# rclone to S3
+rclone sync ./backups/ s3:my-bucket/knowledge-elicitation-backups/
+```
+
+### Testing the Backup Pipeline
+
+Step-by-step guide to verify backup, restore, and host persistence.
+
+**1. Start services with backup profile**
+```bash
+docker compose --profile backup up -d
+```
+
+**2. Wait for the database to be healthy**
+```bash
+docker compose exec db pg_isready -U app
+```
+
+**3. Trigger a daily backup**
+```bash
+make backup
+```
+Verify the backup file appears on the host:
+```bash
+ls -lh ./backups/backup_*.sql.gz
+```
+
+**4. Trigger a weekly backup (simulate Sunday)**
+```bash
+docker compose exec -e DAY_OF_WEEK=7 backup /scripts/backup.sh /backups
+```
+Verify the weekly hard-link was created:
+```bash
+ls -lh ./backups/weekly_*.sql.gz
+```
+
+**5. Verify WAL archiving**
+```bash
+# Force a WAL checkpoint
+docker compose exec db psql -U app -d knowledge_elicitation -c "CHECKPOINT;"
+
+# Check WAL segments exist on the host
+ls ./backups/wal/
+```
+
+**6. Verify backup is restorable**
+```bash
+make backup-verify
+```
+This restores to a temp database, compares table counts, then cleans up.
+
+**7. Destroy Docker volumes — backups should survive**
+```bash
+docker compose --profile backup down -v
+
+# Backups are still on the host
+ls -lh ./backups/backup_*.sql.gz
+ls -lh ./backups/weekly_*.sql.gz
+```
+
+**8. Restore from backup to a fresh database**
+```bash
+docker compose --profile backup up -d
+docker compose exec db pg_isready -U app
+make restore
+
+# Verify data is back
+curl http://localhost:8000/health/db | jq '.row_counts'
 ```
 
 ---

@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend-test:
     runs-on: ubuntu-latest
@@ -154,6 +158,61 @@ jobs:
       - name: Stop services
         if: always()
         run: docker compose --profile embedding down
+
+  backup-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose config
+        run: docker compose config --quiet
+
+      - name: Start db and backup services
+        run: docker compose --profile backup up -d db backup
+
+      - name: Wait for db healthy
+        run: timeout 60 bash -c 'until docker compose exec db pg_isready -U app; do sleep 2; done'
+
+      - name: Verify backup skips empty database
+        run: |
+          docker compose exec backup /scripts/backup.sh /backups 2>&1 | tee /tmp/backup-empty.log
+          grep -q "Skipping backup" /tmp/backup-empty.log
+          echo "PASS: empty database backup correctly skipped"
+
+      - name: Start api to run migrations
+        run: |
+          docker compose up -d api
+          timeout 120 bash -c 'until curl -sf http://localhost:8000/health; do sleep 2; done'
+
+      - name: Trigger daily backup
+        run: docker compose exec backup /scripts/backup.sh /backups
+
+      - name: Trigger weekly backup (simulate Sunday)
+        run: docker compose exec -e DAY_OF_WEEK=7 backup /scripts/backup.sh /backups
+
+      - name: Verify backup files on host
+        run: |
+          echo "--- Daily backups ---"
+          ls -l ./backups/backup_*.sql.gz
+          echo "--- Weekly backups ---"
+          ls -l ./backups/weekly_*.sql.gz
+          echo "--- WAL directory ---"
+          ls -d ./backups/wal/
+
+      - name: Verify backup is restorable
+        run: docker compose exec backup /scripts/verify.sh /backups
+
+      - name: Tear down with -v and verify backups survive
+        run: |
+          docker compose --profile backup down -v
+          echo "Checking backup files survive volume removal..."
+          ls ./backups/backup_*.sql.gz
+          ls ./backups/weekly_*.sql.gz
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose --profile backup logs --tail=50 2>/dev/null || true
 
   e2e-test:
     runs-on: ubuntu-latest
