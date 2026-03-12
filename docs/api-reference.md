@@ -545,7 +545,7 @@ DRAFT ──[submit]──▶ SUBMITTED ──[review starts]──▶ UNDER_REV
 
 #### POST /api/v1/answers/{answer_id}/submit
 
-Submit an answer (transitions from `draft` to `submitted`). Creates an `AnswerRevision` with trigger `initial_submit` (version 1) or `revision_after_review` (subsequent versions). Also generates an embedding and triggers the review-assist auto-trigger when `WORKER_URL` is configured.
+Submit an answer (transitions from `draft` to `submitted`). Creates an `AnswerRevision` with trigger `initial_submit` (version 1) or `revision_after_review` (subsequent versions). Also generates an embedding and triggers the review-assist auto-trigger when `WORKER_URL` is configured and `auto_review_enabled` is true (see [Platform Settings](#platform-settings-admin-only)).
 
 **Request body:** none.
 
@@ -960,10 +960,10 @@ Worker-proxied endpoints (`generate-questions`, `scaffold-options`, `review-assi
 
 ### Auto-Triggers
 
-These fire automatically when `WORKER_URL` is configured (fire-and-forget, failures don't block the main operation):
+These fire automatically when `WORKER_URL` is configured **and** the corresponding [platform setting](#platform-settings-admin-only) is enabled (fire-and-forget, failures don't block the main operation):
 
-- **Question published** → triggers `scaffold-options`
-- **Answer submitted** → triggers `review-assist`
+- **Question published** → triggers `scaffold-options` (gated by `auto_scaffold_enabled`)
+- **Answer submitted** → triggers `review-assist` (gated by `auto_review_enabled`)
 
 ### Answer Option Scaffolding Behavior
 

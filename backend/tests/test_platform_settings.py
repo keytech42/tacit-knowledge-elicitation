@@ -233,6 +233,27 @@ async def test_auto_review_fires_when_enabled(client, db, admin_user, respondent
 
 
 @pytest.mark.asyncio
+async def test_auto_scaffold_fires_when_enabled(client, db, admin_user, author_user):
+    """With auto_scaffold_enabled=True (default), trigger fires on publish."""
+    question = Question(
+        title="Scaffold enabled test", body="Body", created_by_id=author_user.id,
+        status=QuestionStatus.IN_REVIEW.value,
+    )
+    db.add(question)
+    await db.flush()
+    await db.refresh(question)
+    await db.commit()
+
+    with patch("app.api.v1.questions.worker_client.trigger_scaffold_options", new_callable=AsyncMock) as mock_trigger:
+        resp = await client.post(
+            f"/api/v1/questions/{question.id}/publish",
+            headers=auth_header(admin_user),
+        )
+        assert resp.status_code == 200
+        mock_trigger.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_auto_scaffold_gated_by_setting(client, db, admin_user, author_user):
     """Disabling auto_scaffold_enabled prevents trigger_scaffold_options from firing."""
     # Create a question in in_review state
