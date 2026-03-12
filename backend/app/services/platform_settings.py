@@ -34,12 +34,15 @@ async def get_setting(db: AsyncSession, key: str) -> Any:
 
 
 async def get_all_settings(db: AsyncSession) -> dict[str, Any]:
-    """Get all settings, merging DB overrides onto defaults."""
+    """Get all settings, merging DB overrides onto defaults. Falls back to defaults on DB error."""
     settings = dict(DEFAULTS)
-    result = await db.execute(select(PlatformSetting))
-    for row in result.scalars().all():
-        if row.key in DEFAULTS:
-            settings[row.key] = row.value
+    try:
+        result = await db.execute(select(PlatformSetting))
+        for row in result.scalars().all():
+            if row.key in DEFAULTS:
+                settings[row.key] = row.value
+    except Exception:
+        logger.warning("Failed to read settings, using defaults", exc_info=True)
     return settings
 
 
