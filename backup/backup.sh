@@ -14,7 +14,15 @@ BACKUP_FILE="${BACKUP_DIR}/backup_${TIMESTAMP}.sql.gz"
 
 mkdir -p "${BACKUP_DIR}"
 
-echo "[$(date -Iseconds)] Starting backup of ${PGDATABASE}@${PGHOST}..."
+# Skip backup if database has no tables (migrations haven't run yet)
+TABLE_COUNT=$(psql -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" -tAc \
+  "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
+if [ "${TABLE_COUNT:-0}" -eq 0 ]; then
+  echo "[$(date -Iseconds)] Skipping backup — database has no tables (migrations may not have run yet)"
+  exit 0
+fi
+
+echo "[$(date -Iseconds)] Starting backup of ${PGDATABASE}@${PGHOST} (${TABLE_COUNT} tables)..."
 
 pg_dump -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" \
   --no-owner --no-acl --clean --if-exists \
