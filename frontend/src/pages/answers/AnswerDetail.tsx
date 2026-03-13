@@ -64,6 +64,9 @@ export function AnswerDetail() {
 
   const load = () => {
     if (!id) return;
+    // Clear stale pending review immediately so the InlineReviewBox
+    // disappears while fresh data loads (avoids double-submit window)
+    setPendingReview(null);
     api.get<Answer>(`/answers/${id}`)
       .then((a) => {
         setAnswer(a);

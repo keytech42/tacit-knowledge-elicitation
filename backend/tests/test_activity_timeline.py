@@ -157,6 +157,13 @@ class TestActivityTimeline:
         assert "First version" in version_events[1]["diff"]
         assert "Second version" in version_events[1]["diff"]
 
+    async def test_activity_not_found(self, client: AsyncClient, respondent_user: User, db: AsyncSession):
+        """Activity endpoint returns 404 for nonexistent answer."""
+        import uuid
+        fake_id = str(uuid.uuid4())
+        r = await client.get(f"/api/v1/answers/{fake_id}/activity", headers=auth_header(respondent_user))
+        assert r.status_code == 404
+
     async def test_self_assigned_review(self, client: AsyncClient, respondent_user: User, reviewer_user: User, admin_user: User, db: AsyncSession):
         """Reviewer creates review directly (POST /reviews) -> self_assigned is True."""
         q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
