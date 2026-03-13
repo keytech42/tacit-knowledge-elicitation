@@ -45,10 +45,11 @@ export function UserPicker({
   const filtered = useMemo(() => {
     const base = results.filter((u) => !excludeSet.has(u.id));
     if (!prioritizeUser || excludeSet.has(prioritizeUser.id)) return base;
-    // Prepend prioritized user, dedup from results
+    // When searching, only promote prioritized user if they appear in results
+    if (query.trim() && !base.some((u) => u.id === prioritizeUser.id)) return base;
     const withoutPriority = base.filter((u) => u.id !== prioritizeUser.id);
     return [prioritizeUser, ...withoutPriority];
-  }, [results, excludeSet, prioritizeUser]);
+  }, [results, excludeSet, prioritizeUser, query]);
 
   // Debounced search
   useEffect(() => {

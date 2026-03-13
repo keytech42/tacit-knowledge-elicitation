@@ -90,9 +90,7 @@ test.describe("Reviewer Assignment (AnswerDetail)", () => {
         .or(listbox.getByText("Type to search"))
     ).toBeVisible();
 
-    // Use pressSequentially instead of fill() for reliable onChange triggers
-    // on React controlled inputs with debounced search effects
-    await input.pressSequentially("zzz999", { delay: 20 });
+    await input.fill("NonexistentUser12345");
 
     // After debounced search completes, nonsense query yields no results
     await expect(listbox.getByText("No matches found")).toBeVisible({ timeout: 10000 });
