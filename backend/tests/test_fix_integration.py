@@ -217,11 +217,11 @@ class TestFixD_ReviewCommentPreserved:
         )
         assert r.status_code == 200
 
-        # Verify: review is reset to pending BUT comment is preserved
+        # Verify: review verdict is preserved (not reset) along with comment
         r = await client.get(f"/api/v1/reviews/{review_id}", headers=auth_header(reviewer_user))
         review_data = r.json()
-        assert review_data["verdict"] == "pending"
-        assert review_data["comment"] == "Please expand on section 2"  # <-- the fix
+        assert review_data["verdict"] == "changes_requested"  # verdict preserved
+        assert review_data["comment"] == "Please expand on section 2"  # comment preserved
 
 
 # ---------------------------------------------------------------------------

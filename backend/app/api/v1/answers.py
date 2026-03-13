@@ -14,9 +14,9 @@ from app.models.answer import (
     AnswerStatus,
 )
 from app.models.question import Question, QuestionStatus
-from app.models.review import Review, ReviewTargetType, ReviewVerdict
 from app.models.user import RoleName, User
 from app.schemas.answer import (
+    ActivityTimelineResponse,
     AnswerCreate,
     AnswerDiffResponse,
     AnswerListResponse,
@@ -27,6 +27,7 @@ from app.schemas.answer import (
     CollaboratorResponse,
     StagingDiffResponse,
 )
+from app.services.activity import get_answer_activity
 from app.services.answer import (
     can_edit_answer,
     can_manage_collaborators,
@@ -177,24 +178,8 @@ async def submit_answer_endpoint(
         )
 
     if answer.status == AnswerStatus.REVISION_REQUESTED.value:
-        resubmit_answer(answer, current_user)
-        await db.flush()
-
-        # Reset reviews that requested changes: same reviewer re-reviews the same version
-        prev_reviews_result = await db.execute(
-            select(Review).where(
-                Review.target_type == ReviewTargetType.ANSWER.value,
-                Review.target_id == answer.id,
-                Review.answer_version == answer.current_version,
-                Review.verdict == ReviewVerdict.CHANGES_REQUESTED.value,
-            )
-        )
-        prev_reviews = prev_reviews_result.scalars().all()
-        for review in prev_reviews:
-            review.verdict = ReviewVerdict.PENDING.value
-        # If reviewers were reset, move directly to under_review
-        if prev_reviews:
-            answer.status = AnswerStatus.UNDER_REVIEW.value
+        revision = resubmit_answer(answer, current_user)
+        db.add(revision)
         await update_answer_embedding(db, answer)
         await db.flush()
         await db.refresh(answer)
@@ -360,6 +345,22 @@ async def get_staging_diff(
         latest_version=latest_version,
         diff=diff_text,
     )
+
+
+# Activity timeline
+
+@answers_router.get("/{answer_id}/activity", response_model=ActivityTimelineResponse)
+async def get_activity_timeline(
+    answer_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    include_diffs: bool = Query(False),
+):
+    """Get the chronological activity timeline for an answer."""
+    result = await db.execute(select(Answer).where(Answer.id == answer_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Answer not found")
+    return await get_answer_activity(answer_id, db, include_diffs=include_diffs)
 
 
 # Collaborators

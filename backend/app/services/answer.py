@@ -83,33 +83,17 @@ def submit_answer(answer: Answer, user: User) -> AnswerRevision:
     return revision
 
 
-def resubmit_answer(answer: Answer, user: User) -> None:
-    """Resubmit after changes requested — updates the latest revision in-place, no version bump."""
+def resubmit_answer(answer: Answer, user: User) -> AnswerRevision:
+    """Resubmit after changes requested — creates a new immutable version."""
     if answer.status != AnswerStatus.REVISION_REQUESTED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Cannot resubmit answer in {answer.status} status")
     user_roles = {r.name for r in user.roles}
     if answer.author_id != user.id and RoleName.ADMIN.value not in user_roles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the author or admin can resubmit")
 
-    if not answer.revisions:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No revision to update")
-
-    latest = answer.revisions[-1]
-    new_hash = compute_content_hash(answer.body)
-    latest_hash = latest.content_hash or compute_content_hash(latest.body)
-    if new_hash == latest_hash:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No changes detected — the content is identical to the previous version",
-        )
-
-    # Update the existing revision in-place
-    latest.body = answer.body
-    latest.selected_option_id = answer.selected_option_id
-    latest.content_hash = new_hash
-    latest.created_by_id = user.id
-
+    revision = create_revision(answer, user, RevisionTrigger.REVISION_AFTER_REVIEW, check_duplicate=True)
     answer.status = AnswerStatus.SUBMITTED.value
+    return revision
 
 
 async def revise_approved_answer(

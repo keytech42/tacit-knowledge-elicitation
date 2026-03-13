@@ -158,6 +158,12 @@ function UserMenu() {
               ))}
             </div>
           </div>
+          <button
+            onClick={() => { setOpen(false); navigate("/preferences"); }}
+            className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+          >
+            Preferences
+          </button>
           {hasRole("admin") && (
             <button
               onClick={() => { setOpen(false); navigate("/settings"); }}
