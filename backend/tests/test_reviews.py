@@ -60,6 +60,101 @@ class TestReviewCRUD:
         assert ar.json()["status"] == "revision_requested"
 
 
+class TestSelfReviewDevMode:
+    """Self-review gated on DEV_LOGIN_ENABLED — covers create, assign, and full flow."""
+
+    async def test_create_review_self_review_blocked_in_prod(
+        self, client: AsyncClient, reviewer_user: User, admin_user: User, db, roles,
+    ):
+        """Author cannot create a review for their own answer when DEV_LOGIN_ENABLED is off."""
+        from app.config import settings
+        original = settings.DEV_LOGIN_ENABLED
+        settings.DEV_LOGIN_ENABLED = False
+        try:
+            q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
+            db.add(q)
+            await db.flush()
+            a = Answer(question_id=q.id, author_id=reviewer_user.id, body="A", status=AnswerStatus.SUBMITTED.value, current_version=1)
+            db.add(a)
+            await db.flush()
+            r = await client.post("/api/v1/reviews", json={
+                "target_type": "answer", "target_id": str(a.id),
+            }, headers=auth_header(reviewer_user))
+            assert r.status_code == 409
+        finally:
+            settings.DEV_LOGIN_ENABLED = original
+
+    async def test_create_review_self_review_allowed_in_dev(
+        self, client: AsyncClient, reviewer_user: User, admin_user: User, db, roles,
+    ):
+        """Author can create a review for their own answer when DEV_LOGIN_ENABLED is on."""
+        from app.config import settings
+        original = settings.DEV_LOGIN_ENABLED
+        settings.DEV_LOGIN_ENABLED = True
+        try:
+            q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
+            db.add(q)
+            await db.flush()
+            a = Answer(question_id=q.id, author_id=reviewer_user.id, body="A", status=AnswerStatus.SUBMITTED.value, current_version=1)
+            db.add(a)
+            await db.flush()
+            r = await client.post("/api/v1/reviews", json={
+                "target_type": "answer", "target_id": str(a.id),
+            }, headers=auth_header(reviewer_user))
+            assert r.status_code == 201
+        finally:
+            settings.DEV_LOGIN_ENABLED = original
+
+    async def test_self_review_full_flow(
+        self, client: AsyncClient, reviewer_user: User, admin_user: User, db, roles,
+    ):
+        """End-to-end: author self-assigns, reviews, and approves their own answer in dev mode."""
+        from app.config import settings
+        original = settings.DEV_LOGIN_ENABLED
+        settings.DEV_LOGIN_ENABLED = True
+        try:
+            q = Question(
+                title="Q", body="B", created_by_id=admin_user.id,
+                status=QuestionStatus.PUBLISHED.value,
+                review_policy={"min_approvals": 1},
+            )
+            db.add(q)
+            await db.flush()
+            a = Answer(
+                question_id=q.id, author_id=reviewer_user.id,
+                body="Self-reviewed answer", status=AnswerStatus.SUBMITTED.value,
+                current_version=1,
+            )
+            db.add(a)
+            await db.flush()
+
+            # Step 1: self-assign as reviewer
+            assign_r = await client.post(
+                f"/api/v1/reviews/assign/{a.id}",
+                json={"reviewer_id": str(reviewer_user.id)},
+                headers=auth_header(admin_user),
+            )
+            assert assign_r.status_code == 201
+            review_id = assign_r.json()["id"]
+
+            # Step 2: submit approve verdict
+            verdict_r = await client.patch(
+                f"/api/v1/reviews/{review_id}",
+                json={"verdict": "approved", "comment": "Self-approved for testing"},
+                headers=auth_header(reviewer_user),
+            )
+            assert verdict_r.status_code == 200
+            assert verdict_r.json()["verdict"] == "approved"
+
+            # Step 3: answer should be approved
+            answer_r = await client.get(
+                f"/api/v1/answers/{a.id}", headers=auth_header(reviewer_user),
+            )
+            assert answer_r.json()["status"] == "approved"
+        finally:
+            settings.DEV_LOGIN_ENABLED = original
+
+
 class TestReviewComments:
     async def test_add_comment(self, client: AsyncClient, reviewer_user: User, respondent_user: User, admin_user: User, db):
         q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
@@ -177,21 +272,47 @@ class TestAssignReviewer:
         assert r.status_code == 409
 
     async def test_reject_self_review(self, client, admin_user, reviewer_user, db):
-        """Cannot assign the answer author as reviewer."""
-        # Make the reviewer_user the answer author so they have the reviewer role
-        q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
-        db.add(q)
-        await db.flush()
-        a = Answer(question_id=q.id, author_id=reviewer_user.id, body="A", status=AnswerStatus.SUBMITTED.value, current_version=1)
-        db.add(a)
-        await db.flush()
-        r = await client.post(
-            f"/api/v1/reviews/assign/{a.id}",
-            json={"reviewer_id": str(reviewer_user.id)},
-            headers=auth_header(admin_user),
-        )
-        assert r.status_code == 409
-        assert "author" in r.json()["detail"].lower()
+        """Cannot assign the answer author as reviewer when DEV_LOGIN_ENABLED is off."""
+        from app.config import settings
+        original = settings.DEV_LOGIN_ENABLED
+        settings.DEV_LOGIN_ENABLED = False
+        try:
+            q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
+            db.add(q)
+            await db.flush()
+            a = Answer(question_id=q.id, author_id=reviewer_user.id, body="A", status=AnswerStatus.SUBMITTED.value, current_version=1)
+            db.add(a)
+            await db.flush()
+            r = await client.post(
+                f"/api/v1/reviews/assign/{a.id}",
+                json={"reviewer_id": str(reviewer_user.id)},
+                headers=auth_header(admin_user),
+            )
+            assert r.status_code == 409
+            assert "author" in r.json()["detail"].lower()
+        finally:
+            settings.DEV_LOGIN_ENABLED = original
+
+    async def test_allow_self_review_in_dev_mode(self, client, admin_user, reviewer_user, db):
+        """Self-review is allowed when DEV_LOGIN_ENABLED is on (test mode)."""
+        from app.config import settings
+        original = settings.DEV_LOGIN_ENABLED
+        settings.DEV_LOGIN_ENABLED = True
+        try:
+            q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value)
+            db.add(q)
+            await db.flush()
+            a = Answer(question_id=q.id, author_id=reviewer_user.id, body="A", status=AnswerStatus.SUBMITTED.value, current_version=1)
+            db.add(a)
+            await db.flush()
+            r = await client.post(
+                f"/api/v1/reviews/assign/{a.id}",
+                json={"reviewer_id": str(reviewer_user.id)},
+                headers=auth_header(admin_user),
+            )
+            assert r.status_code == 201
+        finally:
+            settings.DEV_LOGIN_ENABLED = original
 
     async def test_reject_non_reviewer_role(self, client, admin_user, respondent_user, author_user, db):
         """Cannot assign a user who doesn't have the reviewer role."""

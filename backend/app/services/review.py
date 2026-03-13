@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.answer import Answer, AnswerStatus
 from app.models.question import Question
 from app.models.review import Review, ReviewTargetType, ReviewVerdict
@@ -125,8 +126,8 @@ async def auto_assign_reviewers(answer: Answer, question: Question, db: AsyncSes
     )
     reviewers = reviewers_result.scalars().all()
 
-    # Filter out the answer author unless self-review allowed
-    if not allow_self_review:
+    # Filter out the answer author unless self-review allowed (or dev/test mode)
+    if not allow_self_review and not settings.DEV_LOGIN_ENABLED:
         reviewers = [r for r in reviewers if r.id != answer.author_id]
 
     # Take first N reviewers (simple round-robin for v1)

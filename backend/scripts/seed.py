@@ -1,7 +1,8 @@
 """
 Seed script for dev onboarding and E2E testing.
 
-Populates the database with realistic demo data covering all question and answer states.
+Populates the database with realistic demo data covering all question and answer states,
+respondent assignments, source documents, review policies, and the self-review test flow.
 Idempotent — safe to run multiple times.
 
 Usage:
@@ -25,15 +26,19 @@ from app.models.question import (
     Question,
     QuestionQualityFeedback,
     QuestionStatus,
+    SourceType,
 )
 from app.models.answer import Answer, AnswerStatus
 from app.models.review import Review, ReviewTargetType, ReviewVerdict
+from app.models.source_document import SourceDocument
+from app.models.question_respondent import QuestionRespondent
+from app.models.platform_setting import PlatformSetting
 from app.services.question import apply_publish, apply_start_review, apply_submit
 from app.services.answer import submit_answer
 
 
 # ---------------------------------------------------------------------------
-# User definitions
+# User definitions — respondent-reviewer has both roles for self-review testing
 # ---------------------------------------------------------------------------
 USERS = [
     {
@@ -60,6 +65,11 @@ USERS = [
         "email": "reviewer@example.com",
         "display_name": "Casey Reviewer",
         "roles": [RoleName.REVIEWER],
+    },
+    {
+        "email": "respondent-reviewer@example.com",
+        "display_name": "Riley Test (self-review)",
+        "roles": [RoleName.RESPONDENT, RoleName.REVIEWER],
     },
 ]
 
@@ -110,6 +120,7 @@ QUESTIONS = [
             "found most effective? How do you onboard new team members quickly?"
         ),
         "category": "Knowledge Management",
+        "review_policy": {"min_approvals": 1, "auto_assign": False, "allow_self_review": False, "require_comment_on_reject": True},
     },
     {
         "key": "published_with_approved",
@@ -121,6 +132,41 @@ QUESTIONS = [
             "and how you structure modules for testability."
         ),
         "category": "Testing",
+        "review_policy": {"min_approvals": 1, "auto_assign": True, "allow_self_review": False, "require_comment_on_reject": True},
+    },
+    {
+        "key": "closed",
+        "title": "How do you prioritize tech debt versus feature work?",
+        "body": (
+            "Every team balances new features with maintaining existing code. Describe "
+            "your framework for deciding when to tackle tech debt versus shipping features.\n\n"
+            "How do you quantify tech debt impact? How do you make the case for cleanup "
+            "work to stakeholders?"
+        ),
+        "category": "Engineering Management",
+    },
+    {
+        "key": "extracted",
+        "title": "What are the key indicators of a healthy engineering team?",
+        "body": (
+            "Engineering team health goes beyond velocity metrics. Describe the signals "
+            "you look for to assess whether a team is functioning well.\n\n"
+            "Consider factors like psychological safety, knowledge distribution, on-call burden, "
+            "and feedback loops."
+        ),
+        "category": "Team Health",
+        "source_type": SourceType.EXTRACTED,
+    },
+    {
+        "key": "self_review",
+        "title": "How do you approach testing in resource-constrained environments?",
+        "body": (
+            "Not every project has dedicated QA or extensive CI infrastructure. Describe "
+            "your strategies for maintaining quality when resources are limited.\n\n"
+            "What tradeoffs do you make? How do you decide which tests to write first?"
+        ),
+        "category": "Testing",
+        "review_policy": {"min_approvals": 1, "auto_assign": False, "allow_self_review": False, "require_comment_on_reject": True},
     },
 ]
 
@@ -169,7 +215,7 @@ async def seed():
     print("=== Seeding database ===\n")
 
     # Ensure roles exist
-    print("[1/6] Ensuring roles exist...")
+    print("[1/9] Ensuring roles exist...")
     await seed_roles()
 
     async with async_session() as session:
@@ -180,7 +226,7 @@ async def seed():
         print(f"  Roles available: {list(role_map.keys())}\n")
 
         # --- Users ---
-        print("[2/6] Creating users...")
+        print("[2/9] Creating users...")
         users = {}
         for u in USERS:
             user = await get_or_create_user(
@@ -197,9 +243,58 @@ async def seed():
         respondent1 = users["respondent1@example.com"]
         respondent2 = users["respondent2@example.com"]
         reviewer = users["reviewer@example.com"]
+        resp_reviewer = users["respondent-reviewer@example.com"]
+
+        # --- Source Document ---
+        print(f"\n[3/9] Creating source documents...")
+        result = await session.execute(
+            select(SourceDocument).where(SourceDocument.title == "Engineering Team Health Playbook")
+        )
+        source_doc = result.scalar_one_or_none()
+        if not source_doc:
+            source_doc = SourceDocument(
+                title="Engineering Team Health Playbook",
+                body=(
+                    "Chapter 5: Key Indicators of Team Health\n\n"
+                    "A healthy engineering team exhibits several observable patterns. "
+                    "First, knowledge is distributed — no single person is a bottleneck. "
+                    "Second, the on-call burden is shared equitably. Third, team members "
+                    "feel safe raising concerns without fear of retribution.\n\n"
+                    "Metrics to track include: deployment frequency, change failure rate, "
+                    "mean time to recovery, and lead time for changes (the DORA metrics). "
+                    "However, quantitative metrics alone paint an incomplete picture."
+                ),
+                domain="engineering-management",
+                document_summary="Internal playbook covering engineering team health indicators, DORA metrics, and psychological safety assessment frameworks.",
+                uploaded_by_id=admin.id,
+                question_count=1,
+            )
+            session.add(source_doc)
+            await session.flush()
+            print(f"  [created] SourceDocument: {source_doc.title}")
+        else:
+            print(f"  [skip] SourceDocument already exists")
+
+        # --- Platform Settings ---
+        print(f"\n[4/9] Creating platform settings...")
+        default_settings = {
+            "auto_scaffold_enabled": True,
+            "auto_review_enabled": False,
+        }
+        for key, value in default_settings.items():
+            result = await session.execute(
+                select(PlatformSetting).where(PlatformSetting.key == key)
+            )
+            if not result.scalar_one_or_none():
+                session.add(PlatformSetting(key=key, value=value, updated_by_id=admin.id))
+                print(f"  [created] Setting: {key} = {value}")
+            else:
+                print(f"  [skip] Setting {key} already exists")
+
+        await session.commit()
 
         # --- Questions ---
-        print(f"\n[3/6] Creating questions...")
+        print(f"\n[5/9] Creating questions...")
         questions = {}
         for q_def in QUESTIONS:
             existing = await get_existing_question(session, q_def["title"])
@@ -208,12 +303,18 @@ async def seed():
                 questions[q_def["key"]] = existing
                 continue
 
-            q = Question(
-                title=q_def["title"],
-                body=q_def["body"],
-                category=q_def["category"],
-                created_by_id=author.id,
-            )
+            kwargs = {
+                "title": q_def["title"],
+                "body": q_def["body"],
+                "category": q_def["category"],
+                "created_by_id": author.id,
+            }
+            if "review_policy" in q_def:
+                kwargs["review_policy"] = q_def["review_policy"]
+            if "source_type" in q_def:
+                kwargs["source_type"] = q_def["source_type"].value
+
+            q = Question(**kwargs)
             session.add(q)
             await session.flush()
             questions[q_def["key"]] = q
@@ -222,10 +323,22 @@ async def seed():
         await session.commit()
         # Refresh questions to load relationships
         for q in questions.values():
-            await session.refresh(q, ["created_by", "confirmed_by", "answer_options"])
+            await session.refresh(q, ["created_by", "confirmed_by", "answer_options", "assigned_respondents"])
+
+        # Link extracted question to source document
+        q_extracted = questions["extracted"]
+        if q_extracted.source_document_id is None and source_doc:
+            q_extracted.source_type = SourceType.EXTRACTED.value
+            q_extracted.source_document_id = source_doc.id
+            q_extracted.source_passage = (
+                "A healthy engineering team exhibits several observable patterns. "
+                "First, knowledge is distributed — no single person is a bottleneck."
+            )
+            await session.flush()
+            print(f"  [linked] Extracted question to source document")
 
         # --- State transitions ---
-        print(f"\n[4/6] Applying state transitions...")
+        print(f"\n[6/9] Applying state transitions...")
 
         # Q1: draft — no transitions needed
         q_draft = questions["draft"]
@@ -269,10 +382,62 @@ async def seed():
         else:
             print(f"  [skip] '{q_pub_approved.title[:40]}...' already {q_pub_approved.status}")
 
+        # Q6: closed — full lifecycle
+        q_closed = questions["closed"]
+        if q_closed.status == QuestionStatus.DRAFT.value:
+            apply_submit(q_closed, author)
+            apply_start_review(q_closed, admin)
+            apply_publish(q_closed, admin)
+            q_closed.status = QuestionStatus.CLOSED.value
+            q_closed.closed_at = datetime.now(timezone.utc)
+            print(f"  [transition] '{q_closed.title[:40]}...' -> closed")
+        else:
+            print(f"  [skip] '{q_closed.title[:40]}...' already {q_closed.status}")
+
+        # Q7: extracted — submit + review + publish
+        if q_extracted.status == QuestionStatus.DRAFT.value:
+            apply_submit(q_extracted, author)
+            apply_start_review(q_extracted, admin)
+            apply_publish(q_extracted, admin)
+            print(f"  [transition] '{q_extracted.title[:40]}...' -> published (extracted)")
+        else:
+            print(f"  [skip] '{q_extracted.title[:40]}...' already {q_extracted.status}")
+
+        # Q8: self_review — publish for self-review testing
+        q_self_review = questions["self_review"]
+        if q_self_review.status == QuestionStatus.DRAFT.value:
+            apply_submit(q_self_review, author)
+            apply_start_review(q_self_review, admin)
+            apply_publish(q_self_review, admin)
+            print(f"  [transition] '{q_self_review.title[:40]}...' -> published (self-review)")
+        else:
+            print(f"  [skip] '{q_self_review.title[:40]}...' already {q_self_review.status}")
+
+        await session.commit()
+
+        # --- Respondent assignments ---
+        print(f"\n[7/9] Assigning respondents...")
+
+        for q, respondent_list in [
+            (q_pub_answers, [respondent1, respondent2]),
+            (q_pub_approved, [respondent1]),
+            (q_self_review, [resp_reviewer]),
+        ]:
+            await session.refresh(q, ["assigned_respondents"])
+            existing_respondent_ids = {r.user_id for r in q.assigned_respondents}
+            for resp in respondent_list:
+                if resp.id not in existing_respondent_ids:
+                    session.add(QuestionRespondent(
+                        question_id=q.id, user_id=resp.id, assigned_by_id=admin.id,
+                    ))
+                    print(f"  [assigned] {resp.display_name} -> '{q.title[:40]}...'")
+                else:
+                    print(f"  [skip] {resp.display_name} already assigned to '{q.title[:30]}...'")
+
         await session.commit()
 
         # --- Answer options for published questions ---
-        print(f"\n[5/6] Creating answer options, answers, and reviews...")
+        print(f"\n[8/9] Creating answer options, answers, and reviews...")
 
         # Answer options for Q4
         if not q_pub_answers.answer_options:
@@ -535,8 +700,42 @@ async def seed():
         else:
             print(f"  [skip] Q5 answers already exist ({len(existing_answers_q5)})")
 
+        # --- Self-review answer for Q8 ---
+        result = await session.execute(
+            select(Answer).where(Answer.question_id == q_self_review.id)
+        )
+        existing_answers_self_review = result.scalars().all()
+
+        if not existing_answers_self_review:
+            a_self = Answer(
+                question_id=q_self_review.id,
+                author_id=resp_reviewer.id,
+                body=(
+                    "When resources are limited, I focus on the highest-leverage tests first:\n\n"
+                    "1. **Integration tests for critical paths**: Cover the happy path through "
+                    "your most important user flows end-to-end\n"
+                    "2. **Contract tests for boundaries**: Ensure your API contracts don't break "
+                    "between services\n"
+                    "3. **Property-based tests for complex logic**: When you can't enumerate all "
+                    "edge cases, let the framework find them\n\n"
+                    "I skip: UI snapshot tests (too brittle), 100% coverage goals (diminishing "
+                    "returns), and mocking everything (hides real bugs)."
+                ),
+            )
+            session.add(a_self)
+            await session.flush()
+            await session.refresh(a_self, ["revisions", "author"])
+            rev_self = submit_answer(a_self, resp_reviewer)
+            session.add(rev_self)
+            await session.flush()
+
+            # Leave as submitted — ready for self-review testing
+            print(f"  [created] Self-review answer for Q8 (submitted, awaiting self-review)")
+        else:
+            print(f"  [skip] Q8 self-review answers already exist ({len(existing_answers_self_review)})")
+
         # --- Quality feedback for published questions ---
-        print(f"\n[6/6] Creating quality feedback...")
+        print(f"\n[9/9] Creating quality feedback...")
 
         for q, feedbacks in [
             (q_pub_answers, [
@@ -546,6 +745,9 @@ async def seed():
             (q_pub_approved, [
                 {"user": admin, "rating": 4, "comment": "Good practical question."},
                 {"user": reviewer, "rating": 5, "comment": "Gets to the heart of software design quality."},
+            ]),
+            (q_extracted, [
+                {"user": admin, "rating": 3, "comment": "Good extracted question but could be more specific."},
             ]),
         ]:
             for fb in feedbacks:
@@ -570,11 +772,16 @@ async def seed():
 
     print("\n=== Seed complete ===")
     print("\nDemo accounts (use dev-login):")
-    print("  admin@example.com       — Admin + Author")
-    print("  author@example.com      — Author")
-    print("  respondent1@example.com  — Respondent")
-    print("  respondent2@example.com  — Respondent")
-    print("  reviewer@example.com     — Reviewer")
+    print("  admin@example.com                — Admin + Author")
+    print("  author@example.com               — Author")
+    print("  respondent1@example.com           — Respondent")
+    print("  respondent2@example.com           — Respondent")
+    print("  reviewer@example.com              — Reviewer")
+    print("  respondent-reviewer@example.com   — Respondent + Reviewer (self-review testing)")
+    print("\nSelf-review test flow:")
+    print("  1. Log in as respondent-reviewer@example.com")
+    print("  2. Go to 'How do you approach testing in resource-constrained environments?'")
+    print("  3. The submitted answer is ready for self-review assignment")
 
 
 if __name__ == "__main__":

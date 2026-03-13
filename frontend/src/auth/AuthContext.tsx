@@ -10,7 +10,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   authConfig: AuthConfig | null;
-  login: (code: string) => Promise<void>;
+  login: (code: string, email?: string) => Promise<void>;
   loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
   hasRole: (role: string) => boolean;
@@ -38,11 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("user", JSON.stringify(userInfo));
   };
 
-  const login = async (code: string) => {
+  const login = async (code: string, email?: string) => {
     setLoading(true);
     try {
       const endpoint = code === "test" ? "/auth/dev-login" : "/auth/google";
-      const body = code === "test" ? undefined : { code };
+      const body = code === "test" ? (email ? { email } : undefined) : { code };
       const response = await api.post<{
         access_token: string;
         user_id: string;
