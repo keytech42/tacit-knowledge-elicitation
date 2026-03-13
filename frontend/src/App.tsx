@@ -15,6 +15,7 @@ import { ServiceAccounts } from "@/pages/admin/ServiceAccounts";
 import { AILogs } from "@/pages/admin/AILogs";
 import { AIControls } from "@/pages/admin/AIControls";
 import { SourceDocuments } from "@/pages/admin/SourceDocuments";
+import { MLExport } from "@/pages/admin/MLExport";
 import { Settings } from "@/pages/settings/Settings";
 
 function App() {
@@ -41,6 +42,7 @@ function App() {
         <Route path="/admin/ai-logs" element={<ProtectedRoute requiredRole="admin"><AILogs /></ProtectedRoute>} />
         <Route path="/admin/ai" element={<ProtectedRoute requiredRole="admin"><AIControls /></ProtectedRoute>} />
         <Route path="/admin/source-documents" element={<ProtectedRoute requiredRole="admin"><SourceDocuments /></ProtectedRoute>} />
+        <Route path="/admin/ml-export" element={<ProtectedRoute requiredRole="admin"><MLExport /></ProtectedRoute>} />
       </Route>
     </Routes>
     </AITaskProvider>

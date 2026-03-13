@@ -26,6 +26,7 @@ const adminLinks = [
   { to: "/admin/ai-logs", label: "AI Logs" },
   { to: "/admin/ai", label: "AI Controls" },
   { to: "/admin/source-documents", label: "Documents" },
+  { to: "/admin/ml-export", label: "ML Export" },
 ];
 
 function AdminDropdown() {

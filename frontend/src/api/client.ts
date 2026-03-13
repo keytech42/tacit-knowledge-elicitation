@@ -401,3 +401,43 @@ export const sourceDocuments = {
   get: (id: string) => api.get<SourceDocumentDetail>(`/source-documents/${id}`),
   delete: (id: string) => api.delete(`/source-documents/${id}`),
 };
+
+// ML export API functions
+
+export interface MLExportParams {
+  date_from?: string;
+  date_to?: string;
+  question_status?: string;
+  category?: string;
+  entity_type?: string;
+  verdict?: string;
+}
+
+async function fetchExportBlob(path: string, params: MLExportParams): Promise<Blob> {
+  const query = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v) query.set(k, v);
+  }
+  const token = getToken();
+  const resp = await fetch(`${API_BASE}/export${path}?${query}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (resp.status === 401) {
+    clearToken();
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: "Export failed" }));
+    throw new Error(err.detail || `HTTP ${resp.status}`);
+  }
+  return resp.blob();
+}
+
+export const mlExport = {
+  trainingData: (params: MLExportParams = {}) => fetchExportBlob("/training-data", params),
+  embeddings: (params: MLExportParams = {}) => fetchExportBlob("/embeddings", params),
+  reviewPairs: (params: MLExportParams = {}) => fetchExportBlob("/review-pairs", params),
+};
