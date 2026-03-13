@@ -1,4 +1,5 @@
 """Tests for async AI task engine — persistent task tracking and cancellation."""
+import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -49,8 +50,8 @@ async def test_generate_questions_creates_ai_task(client, db, admin_user, enable
     assert resp.status_code == 200
     data = resp.json()
     assert data["task_type"] == "generate_questions"
-    assert data["status"] == "running"
-    assert data["worker_task_id"] == "worker-123"
+    # Endpoint now returns immediately with PENDING; background task updates to RUNNING
+    assert data["status"] == "pending"
 
     # Verify DB row
     result = await db.execute(select(AITask).where(AITask.id == uuid.UUID(data["id"])))
@@ -73,7 +74,7 @@ async def test_scaffold_options_creates_ai_task(client, db, admin_user, enable_w
     assert resp.status_code == 200
     data = resp.json()
     assert data["task_type"] == "scaffold_options"
-    assert data["status"] == "running"
+    assert data["status"] == "pending"
 
 
 @pytest.mark.asyncio
@@ -89,7 +90,7 @@ async def test_review_assist_creates_ai_task(client, db, admin_user, enable_work
     assert resp.status_code == 200
     data = resp.json()
     assert data["task_type"] == "review_assist"
-    assert data["status"] == "running"
+    assert data["status"] == "pending"
 
 
 @pytest.mark.asyncio
@@ -108,8 +109,7 @@ async def test_extract_questions_creates_source_doc_and_ai_task(client, db, admi
     assert resp.status_code == 200
     data = resp.json()
     assert data["task_type"] == "extract_questions"
-    assert data["status"] == "running"
-    assert data["worker_task_id"] == "worker-extract-1"
+    assert data["status"] == "pending"
 
     # Verify SourceDocument was created
     from app.models.source_document import SourceDocument
@@ -121,6 +121,7 @@ async def test_extract_questions_creates_source_doc_and_ai_task(client, db, admi
 
 @pytest.mark.asyncio
 async def test_worker_failure_marks_task_failed(client, db, admin_user, enable_worker):
+    """Worker failure is now handled in background; endpoint returns PENDING immediately."""
     with patch("app.services.worker_client.trigger_generate_questions", new_callable=AsyncMock) as mock_trigger:
         mock_trigger.return_value = None  # Worker didn't respond
 
@@ -130,9 +131,154 @@ async def test_worker_failure_marks_task_failed(client, db, admin_user, enable_w
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "failed"
-    assert data["error"] == "Worker did not respond"
+    # Task starts as pending; background dispatch will mark it failed
+    assert data["status"] == "pending"
     assert data["worker_task_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Background dispatch tests — verify _dispatch_to_worker updates AITask
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_worker_updates_to_running(db, admin_user):
+    """_dispatch_to_worker should transition AITask from PENDING to RUNNING on success."""
+    from contextlib import asynccontextmanager
+    from app.api.v1.worker_triggers import _dispatch_to_worker
+
+    task = AITask(
+        task_type=AITaskType.GENERATE_QUESTIONS,
+        status=AITaskStatus.PENDING,
+        user_id=admin_user.id,
+    )
+    db.add(task)
+    await db.flush()
+    await db.refresh(task)
+
+    async def mock_worker(**kwargs):
+        return {"task_id": "bg-worker-1", "status": "accepted"}
+
+    @asynccontextmanager
+    async def mock_session():
+        yield db
+
+    with patch("app.api.v1.worker_triggers.async_session", mock_session):
+        await _dispatch_to_worker(task.id, mock_worker, topic="test")
+
+    await db.refresh(task)
+    assert task.status == AITaskStatus.RUNNING
+    assert task.worker_task_id == "bg-worker-1"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_worker_marks_failed_on_exception(db, admin_user):
+    """_dispatch_to_worker should mark AITask as FAILED when worker raises."""
+    from contextlib import asynccontextmanager
+    from app.api.v1.worker_triggers import _dispatch_to_worker
+
+    task = AITask(
+        task_type=AITaskType.GENERATE_QUESTIONS,
+        status=AITaskStatus.PENDING,
+        user_id=admin_user.id,
+    )
+    db.add(task)
+    await db.flush()
+    await db.refresh(task)
+
+    async def exploding_worker(**kwargs):
+        raise ConnectionError("worker unreachable")
+
+    @asynccontextmanager
+    async def mock_session():
+        yield db
+
+    with patch("app.api.v1.worker_triggers.async_session", mock_session):
+        await _dispatch_to_worker(task.id, exploding_worker, topic="test")
+
+    await db.refresh(task)
+    assert task.status == AITaskStatus.FAILED
+    assert task.error == "Worker did not respond"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_worker_marks_failed_on_none_response(db, admin_user):
+    """_dispatch_to_worker should mark AITask as FAILED when worker returns None."""
+    from contextlib import asynccontextmanager
+    from app.api.v1.worker_triggers import _dispatch_to_worker
+
+    task = AITask(
+        task_type=AITaskType.GENERATE_QUESTIONS,
+        status=AITaskStatus.PENDING,
+        user_id=admin_user.id,
+    )
+    db.add(task)
+    await db.flush()
+    await db.refresh(task)
+
+    async def nil_worker(**kwargs):
+        return None
+
+    @asynccontextmanager
+    async def mock_session():
+        yield db
+
+    with patch("app.api.v1.worker_triggers.async_session", mock_session):
+        await _dispatch_to_worker(task.id, nil_worker, topic="test")
+
+    await db.refresh(task)
+    assert task.status == AITaskStatus.FAILED
+    assert task.error == "Worker did not respond"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_worker_missing_task_is_noop(db):
+    """_dispatch_to_worker should silently return if AITask row doesn't exist."""
+    from contextlib import asynccontextmanager
+    from app.api.v1.worker_triggers import _dispatch_to_worker
+
+    async def mock_worker(**kwargs):
+        return {"task_id": "orphan-1", "status": "accepted"}
+
+    @asynccontextmanager
+    async def mock_session():
+        yield db
+
+    fake_id = uuid.uuid4()
+    with patch("app.api.v1.worker_triggers.async_session", mock_session):
+        # Should not raise
+        await _dispatch_to_worker(fake_id, mock_worker, topic="test")
+
+
+@pytest.mark.asyncio
+async def test_background_tasks_are_tracked(client, admin_user, enable_worker):
+    """Background tasks should be stored in _background_tasks set to prevent GC."""
+    from app.api.v1.worker_triggers import _background_tasks
+
+    started = asyncio.Event()
+    proceed = asyncio.Event()
+
+    async def blocking_trigger(**kwargs):
+        started.set()
+        await proceed.wait()
+        return {"task_id": "tracked-1", "status": "accepted"}
+
+    with patch("app.services.worker_client.trigger_generate_questions", new_callable=AsyncMock, side_effect=blocking_trigger):
+        resp = await client.post("/api/v1/ai/generate-questions", json={
+            "topic": "Tracking test",
+        }, headers=auth_header(admin_user))
+
+    assert resp.status_code == 200
+
+    # While the background task is in-flight, it should be in the tracking set
+    await started.wait()
+    assert len(_background_tasks) >= 1
+
+    # Let it finish and verify cleanup
+    proceed.set()
+    await asyncio.sleep(0.1)
+    # Done callback should have removed it
+    assert len(_background_tasks) == 0
 
 
 # ---------------------------------------------------------------------------

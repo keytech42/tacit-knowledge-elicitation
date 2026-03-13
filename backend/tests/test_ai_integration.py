@@ -51,8 +51,8 @@ async def test_ai_generate_questions_proxies_to_worker(client, db, admin_user):
         assert resp.status_code == 200
         data = resp.json()
         assert data["task_type"] == "generate_questions"
-        assert data["status"] == "running"
-        assert data["worker_task_id"] == "abc-123"
+        # Endpoint returns immediately with pending; background task updates status
+        assert data["status"] == "pending"
         assert "id" in data
 
 
@@ -72,7 +72,7 @@ async def test_ai_scaffold_options_proxies_to_worker(client, db, admin_user):
         assert resp.status_code == 200
         data = resp.json()
         assert data["task_type"] == "scaffold_options"
-        assert data["worker_task_id"] == "def-456"
+        assert data["status"] == "pending"
 
 
 @pytest.mark.asyncio
@@ -91,7 +91,7 @@ async def test_ai_review_assist_proxies_to_worker(client, db, admin_user):
         assert resp.status_code == 200
         data = resp.json()
         assert data["task_type"] == "review_assist"
-        assert data["worker_task_id"] == "ghi-789"
+        assert data["status"] == "pending"
 
 
 @pytest.mark.asyncio

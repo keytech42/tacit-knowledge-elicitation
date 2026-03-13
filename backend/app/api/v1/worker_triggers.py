@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -7,12 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_role
 from app.config import settings
-from app.database import get_db
+from app.database import async_session, get_db
 from app.models.user import RoleName, User
 from app.models.ai_task import AITask, AITaskType, AITaskStatus
 from app.schemas.ai_task import AITaskResponse, AITaskListResponse
 from app.services import worker_client
 from app.services.recommendation import recommend_respondents
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -59,6 +63,37 @@ def _require_worker():
         raise HTTPException(status_code=503, detail="Worker service not configured")
 
 
+# Hold references to background tasks so they aren't garbage-collected mid-flight.
+_background_tasks: set[asyncio.Task] = set()
+
+
+async def _dispatch_to_worker(ai_task_id: uuid.UUID, worker_func, **worker_kwargs):
+    """Background coroutine: call worker and update AITask with result.
+
+    Opens its own short-lived DB session so the request handler's connection
+    is released immediately — preventing pool starvation when the worker is
+    slow or unreachable (up to 10 s timeout).
+    """
+    try:
+        result = await worker_func(**worker_kwargs)
+    except Exception:
+        logger.exception("Worker dispatch failed for task %s", ai_task_id)
+        result = None
+
+    async with async_session() as db:
+        row = await db.execute(select(AITask).where(AITask.id == ai_task_id))
+        ai_task = row.scalar_one_or_none()
+        if not ai_task:
+            return
+        if result and result.get("task_id"):
+            ai_task.worker_task_id = result["task_id"]
+            ai_task.status = AITaskStatus.RUNNING
+        else:
+            ai_task.status = AITaskStatus.FAILED
+            ai_task.error = "Worker did not respond"
+        await db.commit()
+
+
 async def _create_and_dispatch(
     db: AsyncSession,
     user: User,
@@ -66,27 +101,25 @@ async def _create_and_dispatch(
     worker_func,
     **worker_kwargs,
 ) -> AITask:
-    """Create an AITask row, dispatch to worker, and update with worker_task_id."""
+    """Create an AITask row, commit so background task can see it, return immediately."""
     ai_task = AITask(
         task_type=task_type,
         status=AITaskStatus.PENDING,
         user_id=user.id,
     )
     db.add(ai_task)
-    await db.flush()
+    # Commit (not just flush) so the background task's independent session
+    # can see this row — flush is invisible to other sessions under READ COMMITTED.
+    await db.commit()
     await db.refresh(ai_task)
 
-    result = await worker_func(**worker_kwargs)
+    # Fire-and-forget: release the request's DB connection right away.
+    task = asyncio.create_task(
+        _dispatch_to_worker(ai_task.id, worker_func, **worker_kwargs)
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
-    if result and result.get("task_id"):
-        ai_task.worker_task_id = result["task_id"]
-        ai_task.status = AITaskStatus.RUNNING
-    else:
-        ai_task.status = AITaskStatus.FAILED
-        ai_task.error = "Worker did not respond"
-
-    await db.flush()
-    await db.refresh(ai_task)
     return ai_task
 
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { api, ai, Question, Answer, User, AITask, Recommendation } from "@/api/client";
 import { Admonition } from "@/components/Admonition";
 import { StatusBadge } from "@/components/StatusBadge";
+import { useToast } from "@/components/ToastContext";
 import { useAITasks } from "@/contexts/AITaskContext";
 
 // ---------------------------------------------------------------------------
@@ -511,6 +512,7 @@ function buildCombinedList(
 // ---------------------------------------------------------------------------
 
 export function AIControls() {
+  const toast = useToast();
   // ---- Shared data (questions, users) ----
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(true);
@@ -641,8 +643,9 @@ export function AIControls() {
       const task = await ai.generateQuestions(topic, domain, count, genContext || undefined);
       setGenTaskId(task.id);
       addTask(task);
-    } catch {
+    } catch (err: unknown) {
       setGenTaskId(null);
+      toast.error(err instanceof Error ? err.message : "Failed to generate questions");
     }
     setGenLoading(false);
   };
@@ -664,8 +667,9 @@ export function AIControls() {
       }
       setExtractTaskId(task.id);
       addTask(task);
-    } catch {
+    } catch (err: unknown) {
       setExtractTaskId(null);
+      toast.error(err instanceof Error ? err.message : "Failed to extract questions");
     }
     setExtractLoading(false);
   };
@@ -677,8 +681,9 @@ export function AIControls() {
       const task = await ai.scaffoldOptions(scaffoldQuestion.id);
       setScaffoldTaskId(task.id);
       addTask(task);
-    } catch {
+    } catch (err: unknown) {
       setScaffoldTaskId(null);
+      toast.error(err instanceof Error ? err.message : "Failed to generate options");
     }
     setScaffoldLoading(false);
   };
@@ -690,8 +695,9 @@ export function AIControls() {
       const task = await ai.reviewAssist(reviewAnswer.id);
       setReviewTaskId(task.id);
       addTask(task);
-    } catch {
+    } catch (err: unknown) {
       setReviewTaskId(null);
+      toast.error(err instanceof Error ? err.message : "Failed to start review assist");
     }
     setReviewLoading(false);
   };
