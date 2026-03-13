@@ -595,6 +595,7 @@ Returns 404 if the answer is not found. Returns 403 if the caller is not the aut
 | `GET` | `/api/v1/answers/{answer_id}/versions/{version}` | Any authenticated user | Get a specific revision by version number | 200 |
 | `GET` | `/api/v1/answers/{answer_id}/diff` | Any authenticated user | Get a unified diff between two revisions | 200 |
 | `GET` | `/api/v1/answers/{answer_id}/staging-diff` | Any authenticated user | Compare working copy against latest committed revision | 200 |
+| `GET` | `/api/v1/answers/{answer_id}/activity` | Any authenticated user | Get chronological activity timeline | 200 |
 
 #### GET /api/v1/answers/{answer_id}/versions
 
@@ -660,6 +661,61 @@ Compare the current working copy (live `answer.body`) against the latest committ
 ```
 
 `has_changes` is false and `diff` is null when the working copy matches the latest revision. `latest_version` is null if no revisions exist yet.
+
+### Activity Timeline
+
+| Method | Path | Auth | Description | Status |
+|--------|------|------|-------------|--------|
+| `GET` | `/api/v1/answers/{answer_id}/activity` | Any authenticated user | Get chronological activity timeline | 200 |
+
+#### GET /api/v1/answers/{answer_id}/activity
+
+Returns a chronological timeline of all activity on an answer: version submissions, reviewer assignments, and review verdicts. Interleaves events from revisions and reviews sorted by timestamp.
+
+**Query parameters:**
+- `include_diffs` (bool, default `false`) — when true, version events include unified diff text against the previous version
+
+**Response (200):**
+```json
+{
+  "events": [
+    {
+      "type": "version_submitted",
+      "timestamp": "2026-03-12T14:00:00Z",
+      "actor": {UserResponse},
+      "version": 1,
+      "trigger": "initial_submit",
+      "diff": null
+    },
+    {
+      "type": "reviewer_assigned",
+      "timestamp": "2026-03-12T15:00:00Z",
+      "reviewer": {UserResponse},
+      "assigned_by": null,
+      "answer_version": 1,
+      "self_assigned": true
+    },
+    {
+      "type": "review_submitted",
+      "timestamp": "2026-03-12T16:00:00Z",
+      "reviewer": {UserResponse},
+      "verdict": "changes_requested",
+      "comment": "Please expand section 2",
+      "answer_version": 1,
+      "is_stale": true
+    }
+  ],
+  "current_version": 2,
+  "answer_status": "submitted"
+}
+```
+
+Event types:
+- `version_submitted` — a new revision was created (submit, resubmit, or post-approval revision)
+- `reviewer_assigned` — a reviewer was assigned or self-assigned to review
+- `review_submitted` — a reviewer submitted a verdict (approved, changes_requested, rejected)
+
+The `is_stale` flag on `review_submitted` events indicates the review was for an older version than the current one.
 
 ### Answer Collaborators
 

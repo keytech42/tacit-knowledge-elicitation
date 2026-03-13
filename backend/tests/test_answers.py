@@ -238,3 +238,97 @@ class TestCollaborators:
 
         r = await client.post(f"/api/v1/answers/{a.id}/collaborators", json={"user_id": str(reviewer_user.id)}, headers=auth_header(reviewer_user))
         assert r.status_code == 403
+
+
+class TestResubmitVersioning:
+    """Resubmit after changes_requested creates a new version (GitHub PR model)."""
+
+    async def test_resubmit_creates_new_version(self, client: AsyncClient, respondent_user: User, reviewer_user: User, admin_user: User, db):
+        """Resubmit bumps current_version, creates new AnswerRevision, preserves v1 body."""
+        q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value, review_policy={"min_approvals": 1})
+        db.add(q)
+        await db.flush()
+
+        # Create and submit answer (v1)
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={"body": "Version one body"}, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Get changes requested
+        rv = await client.post("/api/v1/reviews", json={"target_type": "answer", "target_id": a_id}, headers=auth_header(reviewer_user))
+        await client.patch(f"/api/v1/reviews/{rv.json()['id']}", json={"verdict": "changes_requested"}, headers=auth_header(reviewer_user))
+
+        # Edit and resubmit
+        await client.patch(f"/api/v1/answers/{a_id}", json={"body": "Version two body"}, headers=auth_header(respondent_user))
+        r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+        assert r.status_code == 200
+        assert r.json()["current_version"] == 2
+
+        # Check revisions
+        versions = await client.get(f"/api/v1/answers/{a_id}/versions", headers=auth_header(respondent_user))
+        revs = versions.json()
+        assert len(revs) == 2
+        assert revs[0]["version"] == 1
+        assert revs[0]["body"] == "Version one body"
+        assert revs[0]["trigger"] == "initial_submit"
+        assert revs[1]["version"] == 2
+        assert revs[1]["body"] == "Version two body"
+        assert revs[1]["trigger"] == "revision_after_review"
+
+    async def test_resubmit_old_reviews_not_reset(self, client: AsyncClient, respondent_user: User, reviewer_user: User, admin_user: User, db):
+        """Old review keeps its verdict and answer_version after resubmit."""
+        q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value, review_policy={"min_approvals": 1})
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={"body": "Original"}, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        rv = await client.post("/api/v1/reviews", json={"target_type": "answer", "target_id": a_id}, headers=auth_header(reviewer_user))
+        review_id = rv.json()["id"]
+        await client.patch(f"/api/v1/reviews/{review_id}", json={"verdict": "changes_requested", "comment": "Fix it"}, headers=auth_header(reviewer_user))
+
+        await client.patch(f"/api/v1/answers/{a_id}", json={"body": "Fixed version"}, headers=auth_header(respondent_user))
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        # Old review unchanged
+        r = await client.get(f"/api/v1/reviews/{review_id}", headers=auth_header(reviewer_user))
+        assert r.json()["verdict"] == "changes_requested"
+        assert r.json()["answer_version"] == 1
+        assert r.json()["comment"] == "Fix it"
+
+    async def test_resubmit_duplicate_content_rejected(self, client: AsyncClient, respondent_user: User, reviewer_user: User, admin_user: User, db):
+        """Resubmit without editing body returns 409."""
+        q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value, review_policy={"min_approvals": 1})
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={"body": "Same content"}, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        rv = await client.post("/api/v1/reviews", json={"target_type": "answer", "target_id": a_id}, headers=auth_header(reviewer_user))
+        await client.patch(f"/api/v1/reviews/{rv.json()['id']}", json={"verdict": "changes_requested"}, headers=auth_header(reviewer_user))
+
+        # Resubmit without editing — should fail
+        r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+        assert r.status_code == 409
+
+    async def test_resubmit_answer_status_is_submitted(self, client: AsyncClient, respondent_user: User, reviewer_user: User, admin_user: User, db):
+        """After resubmit, answer status is 'submitted' (not 'under_review')."""
+        q = Question(title="Q", body="B", created_by_id=admin_user.id, status=QuestionStatus.PUBLISHED.value, review_policy={"min_approvals": 1})
+        db.add(q)
+        await db.flush()
+
+        r = await client.post(f"/api/v1/questions/{q.id}/answers", json={"body": "Body"}, headers=auth_header(respondent_user))
+        a_id = r.json()["id"]
+        await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+
+        rv = await client.post("/api/v1/reviews", json={"target_type": "answer", "target_id": a_id}, headers=auth_header(reviewer_user))
+        await client.patch(f"/api/v1/reviews/{rv.json()['id']}", json={"verdict": "changes_requested"}, headers=auth_header(reviewer_user))
+
+        await client.patch(f"/api/v1/answers/{a_id}", json={"body": "New body"}, headers=auth_header(respondent_user))
+        r = await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
+        assert r.status_code == 200
+        assert r.json()["status"] == "submitted"

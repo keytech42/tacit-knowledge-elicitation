@@ -75,3 +75,29 @@ class CollaboratorResponse(BaseModel):
     granted_by: UserResponse
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class ActivityEventResponse(BaseModel):
+    type: str  # "version_submitted" | "reviewer_assigned" | "review_submitted"
+    timestamp: datetime
+    # Version event fields
+    actor: UserResponse | None = None
+    version: int | None = None
+    trigger: str | None = None
+    diff: str | None = None
+    # Review event fields
+    review_id: uuid.UUID | None = None
+    reviewer: UserResponse | None = None
+    assigned_by: UserResponse | None = None
+    verdict: str | None = None
+    comment: str | None = None
+    answer_version: int | None = None
+    is_stale: bool | None = None
+    self_assigned: bool | None = None
+    model_config = {"from_attributes": True}
+
+
+class ActivityTimelineResponse(BaseModel):
+    events: list[ActivityEventResponse]
+    current_version: int
+    answer_status: str

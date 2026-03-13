@@ -17,6 +17,7 @@ import { AIControls } from "@/pages/admin/AIControls";
 import { SourceDocuments } from "@/pages/admin/SourceDocuments";
 import { MLExport } from "@/pages/admin/MLExport";
 import { Settings } from "@/pages/settings/Settings";
+import { UserPreferences } from "@/pages/settings/UserPreferences";
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
         <Route path="/reviews" element={<ProtectedRoute requiredRole="reviewer"><ReviewQueue /></ProtectedRoute>} />
         <Route path="/reviews/:id" element={<ReviewDetail />} />
 
+        <Route path="/preferences" element={<UserPreferences />} />
         <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
 
         <Route path="/admin/questions" element={<ProtectedRoute requiredRole="admin"><QuestionReviewQueue /></ProtectedRoute>} />

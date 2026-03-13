@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, ai, Answer, AnswerRevision, Review, User } from "@/api/client";
+import { api, ai, Answer, ActivityTimeline as ActivityTimelineType, Review, User, fetchActivityTimeline } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { ActionButton } from "@/components/ActionButton";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { Breadcrumb } from "@/components/Breadcrumb";
+import { InlineReviewBox } from "@/components/InlineReviewBox";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { StatusBadge, WORKFLOW_HINTS } from "@/components/StatusBadge";
 import { UserPicker } from "@/components/UserPicker";
 import { useAITasks } from "@/contexts/AITaskContext";
+import { useQuestionEvents } from "@/hooks/useQuestionEvents";
 
 function editPermission(isAdmin: boolean, isAuthor: boolean, status: string) {
   if ((isAdmin || isAuthor) && (status === "draft" || status === "revision_requested")) return { enabled: true };
@@ -44,18 +47,14 @@ export function AnswerDetail() {
   const { id } = useParams<{ id: string }>();
   const { user, hasRole } = useAuth();
   const [answer, setAnswer] = useState<Answer | null>(null);
-  const [revisions, setRevisions] = useState<AnswerRevision[]>([]);
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const [timeline, setTimeline] = useState<ActivityTimelineType | null>(null);
+  const [pendingReview, setPendingReview] = useState<Review | null>(null);
   const [editing, setEditing] = useState(false);
   const [revising, setRevising] = useState(false);
   const [editBody, setEditBody] = useState("");
   const [error, setError] = useState("");
-  const [diffFrom, setDiffFrom] = useState<number>(0);
-  const [diffTo, setDiffTo] = useState<number>(0);
-  const [diffText, setDiffText] = useState<string | null>(null);
   const [assigningReviewer, setAssigningReviewer] = useState(false);
   const [pickedReviewer, setPickedReviewer] = useState<User | null>(null);
-  const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { addTask, cancelTask, getTask } = useAITasks();
   const [aiReviewTaskId, setAiReviewTaskId] = useState<string | null>(null);
@@ -65,6 +64,9 @@ export function AnswerDetail() {
 
   const load = () => {
     if (!id) return;
+    // Clear stale pending review immediately so the InlineReviewBox
+    // disappears while fresh data loads (avoids double-submit window)
+    setPendingReview(null);
     api.get<Answer>(`/answers/${id}`)
       .then((a) => {
         setAnswer(a);
@@ -72,18 +74,24 @@ export function AnswerDetail() {
         api.get<{ title: string }>(`/questions/${a.question_id}`).then((q) => setQuestionTitle(q.title)).catch(() => {});
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Answer not found"));
-    api.get<AnswerRevision[]>(`/answers/${id}/versions`).then((revs) => {
-      setRevisions(revs);
-      // Auto-select last two versions for diff
-      if (revs.length >= 2) {
-        setDiffFrom(revs[revs.length - 2].version);
-        setDiffTo(revs[revs.length - 1].version);
-      }
+    fetchActivityTimeline(id, true).then(setTimeline).catch(() => {});
+    // Find pending review for current user
+    api.get<Review[]>(`/reviews?target_type=answer&target_id=${id}`).then((reviews) => {
+      const mine = reviews.find(
+        (r) => r.reviewer.id === user?.id && r.verdict === "pending"
+      );
+      setPendingReview(mine ?? null);
     }).catch(() => {});
-    api.get<Review[]>(`/reviews?target_type=answer&target_id=${id}`).then(setReviews).catch(() => {});
   };
 
   useEffect(load, [id]);
+
+  // SSE: refresh when answer status changes on the parent question
+  useQuestionEvents(answer?.question_id, (event) => {
+    if (event.type === "answer_status_changed" && event.answer_id === id) {
+      load();
+    }
+  });
 
   const handleSave = async () => {
     if (!id || isLoading) return;
@@ -130,16 +138,6 @@ export function AnswerDetail() {
     }
   };
 
-  const handleViewDiff = async () => {
-    if (!id || !diffFrom || !diffTo) return;
-    try {
-      const result = await api.get<{ diff: string }>(`/answers/${id}/diff?from=${diffFrom}&to=${diffTo}`);
-      setDiffText(result.diff);
-    } catch (err: unknown) {
-      setDiffText(err instanceof Error ? err.message : "Could not load diff");
-    }
-  };
-
   const handleAssignReviewer = async (selectedUser: User | null) => {
     if (!id || !selectedUser) {
       setPickedReviewer(null);
@@ -150,7 +148,7 @@ export function AnswerDetail() {
       await ai.assignReviewer(id, selectedUser.id);
       setPickedReviewer(null);
       setError("");
-      load(); // Refresh answer status and reviews list
+      load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not assign reviewer");
     }
@@ -195,12 +193,6 @@ export function AnswerDetail() {
   const submitPerm = submitPermission(isAdmin, isAuthor, answer.status);
   const revisePerm = revisePermission(isAdmin, isAuthor, answer.status);
   const canAssignReview = (isReviewer || isAdmin) && (answer.status === "submitted" || answer.status === "under_review");
-
-  // Use answer_version from the API (set at review creation time)
-  const reviewsWithMeta = reviews.map((rev) => ({
-    ...rev,
-    answerVersion: rev.answer_version ?? 1,
-  }));
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -313,91 +305,22 @@ export function AnswerDetail() {
 
       {error && <p className="text-destructive text-sm mb-4">{error}</p>}
 
-      {/* Version History */}
-      <h2 className="font-semibold text-lg mb-3">Version History</h2>
-      <div className="space-y-2 mb-4">
-        {revisions.map((rev) => (
-          <div key={rev.id} className="bg-background rounded border border-border text-sm">
-            <button
-              onClick={() => setExpandedVersion(expandedVersion === rev.version ? null : rev.version)}
-              className="flex items-center gap-3 w-full p-3 text-left hover:bg-muted/50"
-            >
-              <span className="font-mono font-medium">v{rev.version}</span>
-              <span className="text-xs bg-secondary px-2 py-0.5 rounded">{rev.trigger.replace(/_/g, " ")}</span>
-              <span className="text-xs text-muted-foreground">{rev.created_by.display_name}</span>
-              <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleString()}</span>
-              <span className="text-muted-foreground text-xs">{expandedVersion === rev.version ? "\u25B2" : "\u25BC"}</span>
-            </button>
-            {expandedVersion === rev.version && (
-              <div className="px-3 pb-3 border-t border-border">
-                <p className="whitespace-pre-wrap text-foreground/70 text-xs mt-2">{rev.body}</p>
-              </div>
-            )}
-          </div>
-        ))}
-        {revisions.length === 0 && <p className="text-sm text-muted-foreground">No revisions yet.</p>}
-      </div>
-
-      {/* Diff viewer */}
-      {revisions.length >= 2 && (
-        <div className="bg-background p-4 rounded-lg border border-border mb-6">
-          <h3 className="text-sm font-semibold mb-2">Compare Versions</h3>
-          <div className="flex items-center gap-2 mb-3">
-            <select value={diffFrom} onChange={(e) => setDiffFrom(Number(e.target.value))} className="border border-border rounded px-2 py-1 text-sm bg-background">
-              <option value={0}>From...</option>
-              {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
-            </select>
-            <span className="text-muted-foreground text-sm">&rarr;</span>
-            <select value={diffTo} onChange={(e) => setDiffTo(Number(e.target.value))} className="border border-border rounded px-2 py-1 text-sm bg-background">
-              <option value={0}>To...</option>
-              {revisions.map((r) => <option key={r.version} value={r.version}>v{r.version}</option>)}
-            </select>
-            <button onClick={handleViewDiff} disabled={!diffFrom || !diffTo || diffFrom === diffTo} className="bg-secondary text-secondary-foreground px-3 py-1 rounded text-sm disabled:opacity-50 active:scale-[0.97] transition-all duration-150">View Diff</button>
-          </div>
-          {diffText !== null && (
-            <div className="bg-muted rounded text-xs overflow-x-auto font-mono border border-border">
-              {diffText.split("\n").map((line, i) => {
-                let bg = "";
-                let fg = "text-foreground/70";
-                if (line.startsWith("+++") || line.startsWith("---")) {
-                  bg = "bg-muted"; fg = "text-muted-foreground font-semibold";
-                } else if (line.startsWith("@@")) {
-                  bg = "bg-blue-500/10"; fg = "text-blue-600 dark:text-blue-400";
-                } else if (line.startsWith("+")) {
-                  bg = "bg-green-500/15"; fg = "text-green-700 dark:text-green-400";
-                } else if (line.startsWith("-")) {
-                  bg = "bg-red-500/15"; fg = "text-red-700 dark:text-red-400";
-                }
-                return (
-                  <div key={i} className={`px-3 py-0.5 ${bg} ${fg} whitespace-pre-wrap`}>
-                    {line || "\u00a0"}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      {/* Activity Timeline */}
+      <h2 className="font-semibold text-lg mb-3">Activity</h2>
+      {timeline ? (
+        <div className="mb-6">
+          <ActivityTimeline events={timeline.events} currentVersion={timeline.current_version} />
         </div>
+      ) : (
+        <p className="text-sm text-muted-foreground mb-6">Loading timeline...</p>
       )}
 
-      {/* Reviews — enriched with metadata */}
-      <h2 className="font-semibold text-lg mb-3">Reviews ({reviews.length})</h2>
-      <div className="space-y-2">
-        {reviewsWithMeta.map((rev) => (
-          <Link key={rev.id} to={`/reviews/${rev.id}`} className="block bg-background p-3 rounded border border-border text-sm hover:border-primary/30">
-            <div className="flex items-center gap-3">
-              <StatusBadge status={rev.verdict} />
-              <span className="text-xs text-muted-foreground font-mono">v{rev.answerVersion}</span>
-              <span className="text-muted-foreground">{rev.reviewer.display_name}</span>
-              {rev.reviewer.user_type === "service" && (
-                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-medium border border-border">AI</span>
-              )}
-              <span className="text-xs text-muted-foreground ml-auto">{new Date(rev.created_at).toLocaleDateString()}</span>
-            </div>
-            {rev.comment && <p className="text-xs text-muted-foreground mt-1 truncate">{rev.comment}</p>}
-          </Link>
-        ))}
-        {reviews.length === 0 && <p className="text-sm text-muted-foreground">No reviews yet.</p>}
-      </div>
+      {/* Inline Review Box */}
+      {pendingReview && (
+        <div className="mb-6">
+          <InlineReviewBox review={pendingReview} onVerdictSubmitted={load} />
+        </div>
+      )}
     </div>
   );
 }

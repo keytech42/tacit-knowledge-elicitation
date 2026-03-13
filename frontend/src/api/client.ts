@@ -179,6 +179,35 @@ export interface AnswerRevision {
   created_at: string;
 }
 
+// Activity timeline types
+
+export interface ActivityEvent {
+  type: "version_submitted" | "reviewer_assigned" | "review_submitted";
+  timestamp: string;
+  actor: User | null;
+  version: number | null;
+  trigger: string | null;
+  diff: string | null;
+  review_id: string | null;
+  reviewer: User | null;
+  assigned_by: User | null;
+  verdict: string | null;
+  comment: string | null;
+  answer_version: number | null;
+  is_stale: boolean | null;
+  self_assigned: boolean | null;
+}
+
+export interface ActivityTimeline {
+  events: ActivityEvent[];
+  current_version: number;
+  answer_status: string;
+}
+
+export function fetchActivityTimeline(answerId: string, includeDiffs = true): Promise<ActivityTimeline> {
+  return api.get<ActivityTimeline>(`/answers/${answerId}/activity?include_diffs=${includeDiffs}`);
+}
+
 // Source document types
 
 export interface SourceDocument {

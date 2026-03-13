@@ -601,12 +601,12 @@ class TestRevisionCycleIntegrity:
         assert r.json()["status"] == "submitted", \
             "Old v1 approval should not auto-approve the v2 cycle"
 
-    async def test_resubmit_resets_changes_requested_reviews_only(
+    async def test_resubmit_preserves_old_review_verdicts(
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, reviewer_user_2: User, db: AsyncSession,
     ):
-        """When resubmitting after changes_requested, only the changes_requested
-        reviews are reset to pending. Other verdicts stay."""
+        """When resubmitting after changes_requested, old reviews are preserved
+        as-is (not reset). They become stale against the new version."""
         q = await _published_question(db, admin_user, review_policy={"min_approvals": 2})
 
         # Create and submit answer
@@ -640,11 +640,12 @@ class TestRevisionCycleIntegrity:
         }, headers=auth_header(respondent_user))
         await client.post(f"/api/v1/answers/{a_id}/submit", headers=auth_header(respondent_user))
 
-        # Check: review 2 (changes_requested) should now be pending
+        # Check: review 2 (changes_requested) stays changes_requested (not reset)
         r = await client.get(f"/api/v1/reviews/{review2_id}", headers=auth_header(reviewer_user_2))
-        assert r.json()["verdict"] == ReviewVerdict.PENDING.value
+        assert r.json()["verdict"] == ReviewVerdict.CHANGES_REQUESTED.value
+        assert r.json()["answer_version"] == 1  # stale — still on v1
 
-        # Check: review 1 (approved) should still be approved
+        # Check: review 1 (approved) still approved
         r = await client.get(f"/api/v1/reviews/{review1_id}", headers=auth_header(reviewer_user))
         assert r.json()["verdict"] == ReviewVerdict.APPROVED.value
 
