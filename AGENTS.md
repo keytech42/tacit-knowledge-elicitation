@@ -67,6 +67,7 @@ Use `Depends(require_role(RoleName.ADMIN))` for RBAC in routes.
 
 ## Workflow
 
+- **Test-first for behavior changes.** Before modifying behavior: find all existing tests that assert on it, update them (xfail if needed), write new tests for new behavior, then implement. Trace all callers of modified interfaces. See `.claude/rules/workflow.md` for the full checklist.
 - **One cohesive change per branch and PR.** A branch should tell one story — a feature with its tests and docs, a bug fix, a refactor. The test is: can you summarize the PR in 1-2 sentences without "and also"? If not, split it.
 - **Branch before changing code.** Create a descriptive branch (`feat/...`, `fix/...`, `refactor/...`) off `main` before making changes.
 
