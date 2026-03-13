@@ -22,16 +22,31 @@ def _jsonl_response(generator: AsyncGenerator[str, None]) -> StreamingResponse:
     return StreamingResponse(generator, media_type="application/x-ndjson")
 
 
-@router.get("/training-data")
+@router.get(
+    "/training-data",
+    summary="Export training data",
+    description=(
+        "Stream question-answer pairs as JSONL for fine-tuning or supervised learning. "
+        "Each line is a TrainingDataRow JSON object containing the question, answer, "
+        "selected option, review verdicts, and metadata. "
+        "Filterable by question status, category, and date range."
+    ),
+    response_description="Streaming JSONL (application/x-ndjson) — one TrainingDataRow per line",
+)
 async def export_training_data(
     current_user: User = require_role(RoleName.ADMIN),
     db: AsyncSession = Depends(get_db),
-    date_from: datetime | None = Query(None),
-    date_to: datetime | None = Query(None),
-    question_status: str | None = Query(None),
-    category: str | None = Query(None),
+    date_from: datetime | None = Query(None, description="Include answers created on or after this ISO 8601 datetime"),
+    date_to: datetime | None = Query(None, description="Include answers created on or before this ISO 8601 datetime"),
+    question_status: str | None = Query(None, description="Filter by question status (draft, proposed, in_review, published, closed, archived)"),
+    category: str | None = Query(None, description="Filter by exact question category"),
 ):
-    """Stream Q&A pairs as JSONL for training data."""
+    """Stream Q&A pairs as JSONL for training data.
+
+    Returns every answer joined with its parent question, selected answer option,
+    and aggregated review verdicts. Ordered by answer creation date ascending.
+    Dates filter on `answer.created_at`.
+    """
 
     async def generate() -> AsyncGenerator[str, None]:
         query = (
@@ -98,15 +113,28 @@ async def export_training_data(
     return _jsonl_response(generate())
 
 
-@router.get("/embeddings")
+@router.get(
+    "/embeddings",
+    summary="Export embeddings",
+    description=(
+        "Stream entity embeddings as JSONL for similarity search, clustering, or visualization. "
+        "Each line is an EmbeddingRow JSON object with a 1024-dimensional vector. "
+        "Only entities that have a computed embedding are included."
+    ),
+    response_description="Streaming JSONL (application/x-ndjson) — one EmbeddingRow per line",
+)
 async def export_embeddings(
     current_user: User = require_role(RoleName.ADMIN),
     db: AsyncSession = Depends(get_db),
-    entity_type: str | None = Query(None, pattern="^(question|answer|both)$"),
-    date_from: datetime | None = Query(None),
-    date_to: datetime | None = Query(None),
+    entity_type: str | None = Query(None, pattern="^(question|answer|both)$", description="Entity type filter: 'question', 'answer', or 'both'. Omit for all."),
+    date_from: datetime | None = Query(None, description="Include entities created on or after this ISO 8601 datetime"),
+    date_to: datetime | None = Query(None, description="Include entities created on or before this ISO 8601 datetime"),
 ):
-    """Stream entity embeddings as JSONL."""
+    """Stream entity embeddings as JSONL.
+
+    Returns questions and/or answers that have a non-null embedding (Vector(1024)).
+    Questions are emitted first, then answers, each ordered by creation date ascending.
+    """
 
     async def generate() -> AsyncGenerator[str, None]:
         include_questions = entity_type in (None, "question", "both")
@@ -149,15 +177,28 @@ async def export_embeddings(
     return _jsonl_response(generate())
 
 
-@router.get("/review-pairs")
+@router.get(
+    "/review-pairs",
+    summary="Export review pairs",
+    description=(
+        "Stream answer-review pairs as JSONL for RLHF or reward model training. "
+        "Each line is a ReviewPairRow JSON object pairing an answer with its reviewer's "
+        "verdict and comment. Pending reviews are always excluded."
+    ),
+    response_description="Streaming JSONL (application/x-ndjson) — one ReviewPairRow per line",
+)
 async def export_review_pairs(
     current_user: User = require_role(RoleName.ADMIN),
     db: AsyncSession = Depends(get_db),
-    verdict: str | None = Query(None),
-    date_from: datetime | None = Query(None),
-    date_to: datetime | None = Query(None),
+    verdict: str | None = Query(None, description="Filter by review verdict (approved, changes_requested, rejected, superseded). Pending reviews are always excluded."),
+    date_from: datetime | None = Query(None, description="Include reviews created on or after this ISO 8601 datetime"),
+    date_to: datetime | None = Query(None, description="Include reviews created on or before this ISO 8601 datetime"),
 ):
-    """Stream answer-review pairs as JSONL for RLHF."""
+    """Stream answer-review pairs as JSONL for RLHF.
+
+    Returns non-pending reviews joined with their target answer and parent question.
+    Ordered by review creation date ascending. Dates filter on `review.created_at`.
+    """
 
     async def generate() -> AsyncGenerator[str, None]:
         query = (
