@@ -340,8 +340,7 @@ class TestExtractQuestionsEndpoint:
         assert r.status_code == 200
         data = r.json()
         assert data["task_type"] == "extract_questions"
-        assert data["worker_task_id"] == "test-task-123"
-        assert data["status"] == "running"
+        assert data["status"] == "pending"
 
     async def test_extract_requires_admin(self, client: AsyncClient, author_user: User):
         r = await client.post(

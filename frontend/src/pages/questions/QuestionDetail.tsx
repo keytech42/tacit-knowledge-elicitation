@@ -255,8 +255,12 @@ export function QuestionDetail() {
       const task = await ai.scaffoldOptions(id);
       setScaffoldTaskId(task.id);
       addTask(task);
-    } catch {
+      setError("");
+    } catch (err: unknown) {
       setScaffoldTaskId(null);
+      const msg = err instanceof Error ? err.message : "Failed to generate options";
+      setError(msg);
+      toast.error(msg);
     }
     setScaffoldLoading(false);
   };
