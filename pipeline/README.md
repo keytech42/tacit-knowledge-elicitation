@@ -20,14 +20,52 @@ ANTHROPIC_API_KEY=sk-... python -m pipeline.run ../configs/experiments/bharvest.
 
 ## How It Works
 
-```
-Sources (Slack, Notion, PDF, text)
-  → Stage 1: Ingest & chunk documents
-  → Stage 2: Extract norm statements (stated vs. practiced)      [concurrent, 5 parallel]
-  → Stage 3: Detect contradictions between norms (batched)        [concurrent, 5 parallel]
-  → Stage 4: Generate elicitation questions (batched, severity-sorted) [concurrent, 5 parallel]
-  → Dedup: Remove duplicate questions (exact or LLM-based)
-  → Export: Platform-importable JSON + summary report
+```mermaid
+flowchart TD
+    subgraph sources["Source Data"]
+        S1[Slack JSON export]
+        S2[Notion markdown]
+        S3[PDF documents]
+        S4[Plain text / markdown]
+    end
+
+    subgraph stage1["Stage 1 — Ingest"]
+        A1[Source Adapters] --> A2[Chunking Strategy]
+    end
+
+    subgraph stage2["Stage 2 — Norm Extraction"]
+        B1["Per-chunk LLM calls<br/>(concurrent, 5 parallel)"]
+        B2["NormStatement[]<br/>stated vs. practiced"]
+    end
+
+    subgraph stage3["Stage 3 — Contradiction Detection"]
+        C1["Batched LLM calls<br/>(20 norms/batch, concurrent)"]
+        C2["Contradiction[]<br/>severity + confidence"]
+    end
+
+    subgraph stage4["Stage 4 — Question Generation"]
+        D1["Batched LLM calls<br/>(severity-sorted, concurrent)"]
+        D2["GeneratedQuestion[]<br/>evidence-grounded"]
+    end
+
+    subgraph output["Output"]
+        E1[Dedup]
+        E2[platform_import.json]
+        E3[report.md]
+        E4[manifest.json]
+    end
+
+    sources --> stage1
+    A2 -->|"ParsedDocument[]"| B1
+    B1 --> B2
+    B2 -->|"NormStatement[]"| C1
+    C1 --> C2
+    C2 -->|"Contradiction[]"| D1
+    D1 --> D2
+    D2 --> E1
+    E1 --> E2
+    E1 --> E3
+    E1 --> E4
 ```
 
 ### Pipeline stages in detail
@@ -40,21 +78,64 @@ Sources (Slack, Notion, PDF, text)
 
 **Stage 4 — Question Generation**: Contradictions are sorted by severity (high first), batched, and the LLM generates elicitation questions grounded in specific evidence. Each question includes a title, body with evidence context, category, and suggested answer options. Failed batches are skipped.
 
+### Concurrent execution model
+
+```mermaid
+sequenceDiagram
+    participant Runner as run.py
+    participant Stage as Stage Module
+    participant Sem as Semaphore(5)
+    participant LLM as LLM API
+
+    Runner->>Stage: extract_norms(documents, config)
+    Stage->>Stage: Build tasks for all chunks
+
+    par Chunk 1
+        Stage->>Sem: acquire
+        Sem-->>Stage: granted
+        Stage->>LLM: call_llm(chunk_1)
+        LLM-->>Stage: NormExtractionResult
+        Stage->>Sem: release
+    and Chunk 2
+        Stage->>Sem: acquire
+        Sem-->>Stage: granted
+        Stage->>LLM: call_llm(chunk_2)
+        LLM-->>Stage: NormExtractionResult
+        Stage->>Sem: release
+    and Chunk 3
+        Stage->>Sem: acquire
+        Sem-->>Stage: granted
+        Stage->>LLM: call_llm(chunk_3)
+        LLM-->>Stage: ERROR (skipped)
+        Stage->>Sem: release
+    and Chunk 4+
+        Stage->>Sem: acquire
+        Note over Sem: waits until<br/>slot available
+        Sem-->>Stage: granted
+        Stage->>LLM: call_llm(chunk_N)
+        LLM-->>Stage: NormExtractionResult
+        Stage->>Sem: release
+    end
+
+    Stage->>Stage: Flatten results, log failures
+    Stage-->>Runner: NormStatement[]
+```
+
 ### Run outputs
 
 Each run creates a timestamped directory under `runs/`:
 
 ```
 runs/20260315-141604-bharvest/
-  config_snapshot.yaml           Frozen copy of the experiment config
-  stage_1_documents.jsonl        ParsedDocument list (source text + chunks)
-  stage_2_norms.jsonl            NormStatement list (text, type, source, confidence)
-  stage_3_contradictions.jsonl   Contradiction list (norm pair, tension, severity)
-  stage_4_questions.jsonl        GeneratedQuestion list (title, body, evidence, options)
-  export/
-    platform_import.json         Ready for platform import
-    report.md                    Human-readable summary
-  manifest.json                  Timing, counts, status per stage, LLM usage/cost
+├── config_snapshot.yaml ··········· Frozen copy of the experiment config
+├── stage_1_documents.jsonl ········ ParsedDocument list (source text + chunks)
+├── stage_2_norms.jsonl ············ NormStatement list (text, type, source, confidence)
+├── stage_3_contradictions.jsonl ··· Contradiction list (norm pair, tension, severity)
+├── stage_4_questions.jsonl ········ GeneratedQuestion list (title, body, evidence, options)
+├── export/
+│   ├── platform_import.json ······· Ready for platform import
+│   └── report.md ·················· Human-readable summary
+└── manifest.json ·················· Timing, counts, status per stage, LLM usage/cost
 ```
 
 All intermediate outputs are JSONL (one JSON object per line), so you can inspect any stage independently:
@@ -87,20 +168,20 @@ for line in sys.stdin:
 
 ```
 configs/
-  experiments/
-    default.yaml              Baseline experiment config
-    bharvest.yaml             B-Harvest-specific config (local paths)
-  prompts/
-    norm_extraction/
-      system.md               System prompt (plain markdown)
-      user.md.jinja            User prompt (Jinja2 template)
-    contradiction_detection/
-      system.md
-      user.md.jinja
-    question_generation/
-      system.md
-      user.md.jinja
-  quality_criteria.yaml       Question scoring weights and thresholds
+├── experiments/
+│   ├── default.yaml ··············· Baseline experiment config
+│   └── bharvest.yaml ·············· B-Harvest-specific config (local paths)
+├── prompts/
+│   ├── norm_extraction/
+│   │   ├── system.md ·············· System prompt (plain markdown)
+│   │   └── user.md.jinja ········· User prompt (Jinja2 template)
+│   ├── contradiction_detection/
+│   │   ├── system.md
+│   │   └── user.md.jinja
+│   └── question_generation/
+│       ├── system.md
+│       └── user.md.jinja
+└── quality_criteria.yaml ·········· Question scoring weights and thresholds
 ```
 
 ### Experiment YAML reference
@@ -167,7 +248,40 @@ To iterate on prompts, edit the template files and re-run — no code changes ne
 
 ### Pluggable strategies
 
-Code-level variation points use a `@register` decorator:
+```mermaid
+flowchart LR
+    subgraph registry["Strategy Registry (@register)"]
+        direction TB
+        R1["get_strategy(category, name, **kwargs)"]
+    end
+
+    subgraph ingest["Ingest Adapters"]
+        I1[text]
+        I2[slack]
+        I3[notion]
+        I4[pdf]
+    end
+
+    subgraph parsers["PDF Parsers"]
+        P1["pymupdf<br/>(fast, text-layer)"]
+        P2["docling<br/>(OCR, scanned)"]
+    end
+
+    subgraph chunking["Chunkers"]
+        K1["paragraph<br/>(boundary-split)"]
+        K2["sliding_window<br/>(overlap)"]
+    end
+
+    subgraph dedup["Dedup"]
+        D1["exact<br/>(title hash)"]
+        D2["llm<br/>(semantic)"]
+    end
+
+    registry --- ingest
+    registry --- parsers
+    registry --- chunking
+    registry --- dedup
+```
 
 | Category | Strategies | Config key |
 |----------|-----------|------------|
@@ -182,16 +296,66 @@ LLM stages are NOT strategies — they share `run_llm_stage()` and differ only i
 
 Defined in `pipeline/models.py`. All are Pydantic `BaseModel` subclasses serializable to JSON.
 
-### ParsedDocument (Stage 1 output)
+```mermaid
+erDiagram
+    ParsedDocument {
+        string source_path
+        SourceType source_type
+        string title
+        string raw_text
+        string content_hash
+        dict metadata
+    }
+    ParsedChunk {
+        string text
+        int chunk_index
+        int total_chunks
+        int char_offset
+    }
+    NormStatement {
+        string id
+        string text
+        NormType norm_type
+        string source_document
+        string source_passage
+        float confidence
+    }
+    Contradiction {
+        string id
+        string norm_a_id
+        string norm_b_id
+        string tension_description
+        Severity severity
+        float confidence
+    }
+    GeneratedQuestion {
+        string title
+        string body
+        string category
+        list evidence
+        list source_passages
+        list suggested_options
+        float confidence
+    }
+
+    ParsedDocument ||--o{ ParsedChunk : "chunks"
+    ParsedChunk ||--o{ NormStatement : "stage 2 extracts"
+    NormStatement }o--o{ Contradiction : "norm_a / norm_b"
+    Contradiction ||--o{ GeneratedQuestion : "stage 4 generates"
+```
+
+### Field descriptions
+
+**ParsedDocument** (Stage 1 output)
 - `source_path`: file path
 - `source_type`: slack | notion | pdf | text
-- `title`: document title
+- `title`: document title (channel name for Slack, filename for others)
 - `raw_text`: full extracted text
 - `chunks`: list of `ParsedChunk` (text, chunk_index, total_chunks, char_offset)
-- `metadata`: dict (e.g., channel name, relative path)
+- `metadata`: dict (e.g., `{"channel": "general"}` or `{"relative_path": "HR/policy.md"}`)
 - `content_hash`: SHA256 of raw_text
 
-### NormStatement (Stage 2 output)
+**NormStatement** (Stage 2 output)
 - `id`: UUID
 - `text`: the norm statement
 - `norm_type`: `stated` (from docs) or `practiced` (from behavior)
@@ -199,14 +363,14 @@ Defined in `pipeline/models.py`. All are Pydantic `BaseModel` subclasses seriali
 - `source_passage`: exact text supporting the norm
 - `confidence`: 0.0–1.0
 
-### Contradiction (Stage 3 output)
+**Contradiction** (Stage 3 output)
 - `id`: UUID
 - `norm_a_id`, `norm_b_id`: the two conflicting norms
 - `tension_description`: explanation of the conflict
 - `severity`: low | medium | high
 - `confidence`: 0.0–1.0
 
-### GeneratedQuestion (Stage 4 output)
+**GeneratedQuestion** (Stage 4 output)
 - `title`: the question
 - `body`: context with evidence
 - `category`: e.g., Authority, Communication, Process
@@ -219,59 +383,59 @@ Defined in `pipeline/models.py`. All are Pydantic `BaseModel` subclasses seriali
 
 ```
 pipeline/
-  pipeline/
-    __main__.py          python -m pipeline entry point
-    run.py               CLI: load config → run stages → save outputs → log usage
-    config.py            ExperimentConfig Pydantic model (YAML schema)
-    models.py            Data types: ParsedDocument, NormStatement, Contradiction, etc.
-    llm.py               litellm wrapper + UsageStats tracker
-    registry.py          @register decorator + get_strategy()
-    ingest/
-      base.py            SourceAdapter protocol
-      runner.py           Dispatches to registered adapters + applies chunking
-      text.py            Plain text / markdown adapter
-      slack.py           Slack JSON export adapter (channel dirs → messages)
-      notion.py          Notion markdown export adapter (recursive .md walk)
-      pdf.py             PDF adapter (delegates to registered PDF parser)
-    parsers/
-      base.py            PdfParser protocol
-      pymupdf_strategy.py  Fast text-layer parser (PyMuPDF)
-      docling_strategy.py  CV/ML parser for scanned docs (optional dep)
-    chunking/
-      base.py            Chunker protocol
-      runner.py           Applies configured chunker to all documents
-      paragraph.py       Paragraph-boundary splitting
-      sliding_window.py  Fixed-size windows with overlap
-    stages/
-      base.py            run_llm_stage() — Jinja2 template loader + LLM call
-      norm_extraction.py   Stage 2: chunks → NormStatement[] (concurrent)
-      contradiction_detection.py  Stage 3: norms → Contradiction[] (batched, concurrent)
-      question_generation.py      Stage 4: contradictions → GeneratedQuestion[] (batched, sorted, concurrent)
-    dedup/
-      base.py            DedupStrategy protocol
-      runner.py           Dispatches to registered dedup strategy
-      exact.py           Hash/title exact match
-      llm_dedup.py       LLM-based semantic dedup
-    export/
-      platform_json.py   Platform-importable JSON array
-      summary_report.py  Markdown run summary
-  tests/
-    conftest.py          Fixtures: configs, sample documents/norms/contradictions/questions
-    fixtures/            Sample Slack JSON, Notion markdown, text files
-    test_config.py       Config loading and validation
-    test_ingest.py       Source adapter tests
-    test_parsers.py      PDF parser tests
-    test_chunking.py     Chunking strategy tests
-    test_stages.py       LLM stage tests (mocked) + concurrency tests
-    test_llm.py          JSON extraction + UsageStats tests
-    test_dedup.py        Dedup strategy tests
-    test_export.py       Export formatter tests
-    test_run.py          Integration: dry-run, end-to-end with mocked LLM
+├── pipeline/
+│   ├── __main__.py ················ python -m pipeline entry point
+│   ├── run.py ····················· CLI: load config → run stages → save outputs → log usage
+│   ├── config.py ·················· ExperimentConfig Pydantic model (YAML schema)
+│   ├── models.py ·················· Data types: ParsedDocument, NormStatement, Contradiction, etc.
+│   ├── llm.py ····················· litellm wrapper + UsageStats tracker
+│   ├── registry.py ················ @register decorator + get_strategy()
+│   ├── ingest/
+│   │   ├── base.py ················ SourceAdapter protocol
+│   │   ├── runner.py ·············· Dispatches to registered adapters + applies chunking
+│   │   ├── text.py ················ Plain text / markdown adapter
+│   │   ├── slack.py ··············· Slack JSON export adapter (channel dirs → messages)
+│   │   ├── notion.py ·············· Notion markdown export adapter (recursive .md walk)
+│   │   └── pdf.py ················· PDF adapter (delegates to registered PDF parser)
+│   ├── parsers/
+│   │   ├── base.py ················ PdfParser protocol
+│   │   ├── pymupdf_strategy.py ···· Fast text-layer parser (PyMuPDF)
+│   │   └── docling_strategy.py ···· CV/ML parser for scanned docs (optional dep)
+│   ├── chunking/
+│   │   ├── base.py ················ Chunker protocol
+│   │   ├── runner.py ·············· Applies configured chunker to all documents
+│   │   ├── paragraph.py ·········· Paragraph-boundary splitting
+│   │   └── sliding_window.py ····· Fixed-size windows with overlap
+│   ├── stages/
+│   │   ├── base.py ················ run_llm_stage() — Jinja2 template loader + LLM call
+│   │   ├── norm_extraction.py ····· Stage 2: chunks → NormStatement[] (concurrent)
+│   │   ├── contradiction_detection.py · Stage 3: norms → Contradiction[] (batched, concurrent)
+│   │   └── question_generation.py · Stage 4: contradictions → GeneratedQuestion[] (batched, concurrent)
+│   ├── dedup/
+│   │   ├── base.py ················ DedupStrategy protocol
+│   │   ├── runner.py ·············· Dispatches to registered dedup strategy
+│   │   ├── exact.py ··············· Hash/title exact match
+│   │   └── llm_dedup.py ·········· LLM-based semantic dedup
+│   └── export/
+│       ├── platform_json.py ······· Platform-importable JSON array
+│       └── summary_report.py ······ Markdown run summary
+└── tests/
+    ├── conftest.py ················ Fixtures: configs, sample documents/norms/contradictions/questions
+    ├── fixtures/ ·················· Sample Slack JSON, Notion markdown, text files
+    ├── test_config.py ············· Config loading and validation
+    ├── test_ingest.py ············· Source adapter tests
+    ├── test_parsers.py ············ PDF parser tests
+    ├── test_chunking.py ··········· Chunking strategy tests
+    ├── test_stages.py ············· LLM stage tests (mocked) + concurrency tests
+    ├── test_llm.py ················ JSON extraction + UsageStats tests
+    ├── test_dedup.py ·············· Dedup strategy tests
+    ├── test_export.py ············· Export formatter tests
+    └── test_run.py ················ Integration: dry-run, end-to-end with mocked LLM
 
 configs/
-  experiments/           One YAML per experiment
-  prompts/               Jinja2 templates per stage (system.md + user.md.jinja)
-  quality_criteria.yaml  Scoring weights
+├── experiments/ ··················· One YAML per experiment
+├── prompts/ ······················· Jinja2 templates per stage (system.md + user.md.jinja)
+└── quality_criteria.yaml ·········· Scoring weights
 ```
 
 ### Key design patterns
