@@ -205,6 +205,14 @@ if [ ! -f "$DIST_DIR/index.html" ]; then
 fi
 ok "Frontend built: $DIST_DIR"
 
+# Deploy to web root
+WEB_ROOT="/var/www/knowledge-elicitation"
+info "Deploying frontend to $WEB_ROOT..."
+$SUDO mkdir -p "$WEB_ROOT"
+$SUDO rm -rf "${WEB_ROOT:?}/"*
+$SUDO cp -r "$DIST_DIR/." "$WEB_ROOT/"
+ok "Frontend deployed to $WEB_ROOT"
+
 # --- Install and configure: Caddy ---
 
 install_caddy() {
@@ -261,22 +269,19 @@ install_caddy() {
 
     $SUDO tee "$CADDY_CONFIG" > /dev/null << EOF
 $DOMAIN {
-    # Frontend static files
-    root * $DIST_DIR
-    file_server
-
-    # API proxy (includes SSE — Caddy streams automatically)
     handle /api/* {
         reverse_proxy localhost:8000
     }
 
-    # Health check proxy
     handle /health {
         reverse_proxy localhost:8000
     }
 
-    # SPA fallback — serve index.html for all non-file routes
-    try_files {path} /index.html
+    handle {
+        root * $WEB_ROOT
+        try_files {path} /index.html
+        file_server
+    }
 }
 EOF
     ok "Written $CADDY_CONFIG"
@@ -318,7 +323,7 @@ server {
     listen 80;
     server_name DOMAIN_PLACEHOLDER;
 
-    root DIST_PLACEHOLDER;
+    root WEB_ROOT_PLACEHOLDER;
     index index.html;
 
     # API and SSE proxy
@@ -350,7 +355,7 @@ NGINX_INNER
 
     # Replace placeholders (avoids shell variable conflicts with nginx $vars)
     $SUDO sed -i "s|DOMAIN_PLACEHOLDER|$DOMAIN|g" "$NGINX_SITE"
-    $SUDO sed -i "s|DIST_PLACEHOLDER|$DIST_DIR|g" "$NGINX_SITE"
+    $SUDO sed -i "s|WEB_ROOT_PLACEHOLDER|$WEB_ROOT|g" "$NGINX_SITE"
     ok "Written $NGINX_SITE"
 
     # Enable site
@@ -445,7 +450,7 @@ printf "${BOLD}%s${NC}\n" "Reverse proxy setup complete!"
 echo
 echo "  Proxy:    $PROXY"
 echo "  Domain:   https://$DOMAIN"
-echo "  Frontend: $DIST_DIR"
+echo "  Frontend: $WEB_ROOT"
 echo
 if [ ! -f "$ENV_FILE" ] || grep -q "DEV_LOGIN_ENABLED=true" "$ENV_FILE" 2>/dev/null; then
     echo "Remaining steps:"
