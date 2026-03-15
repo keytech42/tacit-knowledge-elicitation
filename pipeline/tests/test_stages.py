@@ -266,7 +266,7 @@ async def test_generate_questions(
 async def test_generate_questions_norm_lookup(
     default_config, sample_contradictions, sample_norms
 ):
-    """Should build norm_lookup dict and pass to template."""
+    """Should build minimal norm_lookup with only norms referenced by the batch."""
     mock_result = QuestionGenerationResult(questions=[])
     with patch(
         "pipeline.stages.question_generation.run_llm_stage",
@@ -279,6 +279,7 @@ async def test_generate_questions_norm_lookup(
 
         template_vars = mock_stage.call_args_list[0][0][2]
         norm_lookup = template_vars["norm_lookup"]
+        # Only norms referenced by the contradiction should be in lookup
         assert "norm-1" in norm_lookup
         assert "norm-2" in norm_lookup
         assert norm_lookup["norm-1"].text == sample_norms[0].text
@@ -337,11 +338,102 @@ async def test_generate_questions_max_items(
 @pytest.mark.asyncio
 async def test_generate_questions_empty_contradictions(default_config, sample_norms):
     """Should handle empty contradictions list."""
-    mock_result = QuestionGenerationResult(questions=[])
+    questions = await generate_questions([], sample_norms, default_config)
+    assert questions == []
+
+
+@pytest.mark.asyncio
+async def test_generate_questions_batching(default_config, sample_norms):
+    """Should batch contradictions when there are more than batch_size."""
+    default_config.question_generation.batch_size = 1
+
+    contradictions = [
+        Contradiction(
+            id="c1", norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description="Tension 1", severity=Severity.high, confidence=0.9,
+        ),
+        Contradiction(
+            id="c2", norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description="Tension 2", severity=Severity.low, confidence=0.7,
+        ),
+    ]
+    mock_result = QuestionGenerationResult(
+        questions=[GeneratedQuestion(title="Q", body="b", category="A", confidence=0.8)]
+    )
     with patch(
         "pipeline.stages.question_generation.run_llm_stage",
         new_callable=AsyncMock,
         return_value=mock_result,
+    ) as mock_stage:
+        questions = await generate_questions(contradictions, sample_norms, default_config)
+
+        assert mock_stage.call_count == 2
+        assert len(questions) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_questions_severity_ordering(default_config, sample_norms):
+    """Should process high-severity contradictions first."""
+    contradictions = [
+        Contradiction(
+            id="c-low", norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description="Low tension", severity=Severity.low, confidence=0.9,
+        ),
+        Contradiction(
+            id="c-high", norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description="High tension", severity=Severity.high, confidence=0.9,
+        ),
+    ]
+    default_config.question_generation.batch_size = 1
+
+    mock_result = QuestionGenerationResult(
+        questions=[GeneratedQuestion(title="Q", body="b", category="A", confidence=0.8)]
+    )
+    with patch(
+        "pipeline.stages.question_generation.run_llm_stage",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ) as mock_stage:
+        await generate_questions(contradictions, sample_norms, default_config)
+
+        # First batch should contain the high-severity contradiction
+        first_batch = mock_stage.call_args_list[0][0][2]["contradictions"]
+        assert first_batch[0].severity == Severity.high
+
+
+@pytest.mark.asyncio
+async def test_generate_questions_skips_failed_batch(default_config, sample_norms):
+    """Should skip a failed batch and continue with the next."""
+    contradictions = [
+        Contradiction(
+            id="c1", norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description="Tension 1", severity=Severity.high, confidence=0.9,
+        ),
+        Contradiction(
+            id="c2", norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description="Tension 2", severity=Severity.medium, confidence=0.8,
+        ),
+    ]
+    default_config.question_generation.batch_size = 1
+
+    ok_result = QuestionGenerationResult(
+        questions=[GeneratedQuestion(title="Q", body="b", category="A", confidence=0.8)]
+    )
+
+    call_count = {"n": 0}
+
+    async def side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("LLM failed")
+        return ok_result
+
+    with patch(
+        "pipeline.stages.question_generation.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=side_effect,
     ):
-        questions = await generate_questions([], sample_norms, default_config)
-        assert questions == []
+        questions = await generate_questions(contradictions, sample_norms, default_config)
+
+        # First batch failed, second succeeded
+        assert len(questions) == 1
