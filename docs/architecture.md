@@ -2,7 +2,7 @@
 
 ## System Overview
 
-The platform is a four-service stack deployed via Docker Compose.
+The platform is a four-service stack deployed via Docker Compose, plus a standalone pipeline for offline knowledge mining.
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
@@ -14,9 +14,17 @@ The platform is a four-service stack deployed via Docker Compose.
                      │ worker :8001 │
                      │ FastAPI+LLM  │
                      └──────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│ pipeline (standalone, runs locally)                  │
+│ Slack/Notion/PDF → Norms → Contradictions → Questions│
+│ Output: platform_import.json (importable to api)    │
+└─────────────────────────────────────────────────────┘
 ```
 
 The frontend calls the backend API at `/api/v1/*`, proxied through Vite in development. The worker service is optional — the platform functions fully without it. When configured, the backend triggers LLM tasks on the worker via HTTP, and the worker calls back to the platform API as a service account.
+
+The **pipeline** (`pipeline/`) is a standalone Python package that runs locally — not containerized, not part of Docker Compose. It ingests organizational data sources (Slack exports, Notion exports, PDFs), mines tacit knowledge through LLM-powered stages, and outputs `platform_import.json` which can be imported into the platform. See [Pipeline Guide](pipeline.md) for details.
 
 ## Backend (FastAPI)
 
