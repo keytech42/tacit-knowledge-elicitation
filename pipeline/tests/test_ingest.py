@@ -132,7 +132,7 @@ class TestNotionAdapter:
 
         for doc in docs:
             assert "relative_path" in doc.metadata
-            assert doc.metadata["relative_path"].startswith("Team Wiki/")
+            assert doc.metadata["relative_path"].startswith("team-wiki/")
 
     def test_ingest_missing_directory(self):
         from pipeline.ingest.notion import NotionAdapter
