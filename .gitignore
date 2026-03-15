@@ -34,3 +34,9 @@ backups/
 
 # Git worktrees
 worktrees/
+
+# Pipeline run outputs
+runs/
+
+# Local experiment configs (prefixed with _)
+configs/experiments/_*

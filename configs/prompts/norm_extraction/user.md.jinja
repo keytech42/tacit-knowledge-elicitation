@@ -1,0 +1,20 @@
+Extract all organizational norms from the following document chunk.
+
+## Source Document
+- **Title**: {{ source_title }}
+- **Type**: {{ source_type }}
+{% if source_metadata %}
+- **Metadata**: {{ source_metadata }}
+{% endif %}
+
+## Chunk {{ chunk_index }} of {{ total_chunks }}
+
+{{ chunk_text }}
+
+---
+
+Extract every norm statement you can identify. For each norm, provide:
+- The norm text (a clear, standalone statement of the norm)
+- Whether it is "stated" (explicitly written) or "practiced" (observed behavior)
+- The exact source passage that supports it
+- Your confidence level (0.0–1.0)

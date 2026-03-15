@@ -1,0 +1,65 @@
+# Example experiment config — copy and customize for your organization
+#
+# Usage:
+#   cp configs/experiments/example.yaml configs/experiments/my-org.yaml
+#   # Edit paths and filters, then:
+#   python -m pipeline.run configs/experiments/my-org.yaml --dry-run
+
+experiment_name: my-org
+
+sources:
+  # Slack export — download from Slack admin, unzip, point path here
+  - type: slack
+    path: /path/to/slack-export
+    filters:
+      channels:           # optional: limit to specific channels (omit to ingest all)
+        - general
+        - engineering
+        - culture
+
+  # Notion export — export as markdown from Notion settings
+  - type: notion
+    path: /path/to/notion-export/Team Wiki
+
+  # PDF documents — books, policy docs, etc.
+  # - type: pdf
+  #   path: /path/to/documents/handbook.pdf
+
+  # Plain text / markdown files
+  # - type: text
+  #   path: /path/to/notes/
+
+chunking:
+  strategy: paragraph       # paragraph | sliding_window
+  max_chars: 4000
+
+norm_extraction:
+  model: anthropic/claude-sonnet-4-6
+  temperature: 0.3
+  prompt_dir: norm_extraction
+  max_items: 0              # 0 = unlimited
+  concurrency: 5
+
+contradiction_detection:
+  model: anthropic/claude-sonnet-4-6
+  temperature: 0.2
+  prompt_dir: contradiction_detection
+  batch_size: 20
+  concurrency: 5
+
+question_generation:
+  model: anthropic/claude-sonnet-4-6
+  temperature: 0.3
+  prompt_dir: question_generation
+  max_items: 15             # cap total questions
+  concurrency: 5
+
+dedup:
+  strategy: exact           # exact | llm
+  threshold: 0.85
+
+output:
+  base_dir: runs
+  export_formats:
+    - platform_json
+    - summary_report

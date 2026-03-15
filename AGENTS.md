@@ -18,6 +18,8 @@ backend/          FastAPI API server
 worker/           Separate FastAPI service for LLM-powered tasks
 frontend/         React SPA (Vite + TypeScript)
 backup/           pg_dump scripts and PostgreSQL config
+pipeline/         Standalone tacit knowledge mining pipeline (own pyproject.toml, runs locally)
+configs/          Pipeline experiment configs, prompt templates, quality criteria
 ```
 
 ## Running Commands

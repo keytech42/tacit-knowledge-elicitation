@@ -1,0 +1,17 @@
+[
+  {
+    "user": "U001",
+    "text": "We should document our deployment process",
+    "ts": "1704067200.000100"
+  },
+  {
+    "user": "U002",
+    "text": "Agreed, the current process is only in people's heads",
+    "ts": "1704067260.000200"
+  },
+  {
+    "user": "U001",
+    "text": "I'll start a wiki page for it",
+    "ts": "1704067320.000300"
+  }
+]
