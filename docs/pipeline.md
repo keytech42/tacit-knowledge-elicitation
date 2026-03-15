@@ -271,10 +271,12 @@ flowchart LR
 
 | Category | Strategies | Config key |
 |----------|-----------|------------|
-| Source ingest | `text`, `slack`, `notion`, `pdf` | `sources[].type` |
+| Source ingest | `text`, `slack`, `notion`, `pdf`, `notion_mcp`\*, `slack_mcp`\* | `sources[].type` |
 | PDF parsing | `pymupdf` (fast, text-layer), `docling` (OCR/scanned) | internal to pdf adapter |
 | Chunking | `paragraph` (boundary-split), `sliding_window` (overlap) | `chunking.strategy` |
 | Dedup | `exact` (title hash), `llm` (semantic) | `dedup.strategy` |
+
+\* Scaffolded — registered but raise `NotImplementedError` until MCP client SDK is integrated. See `ingest/notion_mcp.py` and `ingest/slack_mcp.py` for implementation roadmap.
 
 LLM stages are NOT strategies — they share `run_llm_stage()` and differ only in prompts and response models.
 
@@ -382,7 +384,9 @@ pipeline/
 │   │   ├── text.py ················ Plain text / markdown adapter
 │   │   ├── slack.py ··············· Slack JSON export adapter (channel dirs → messages)
 │   │   ├── notion.py ·············· Notion markdown export adapter (recursive .md walk)
-│   │   └── pdf.py ················· PDF adapter (delegates to registered PDF parser)
+│   │   ├── pdf.py ················· PDF adapter (delegates to registered PDF parser)
+│   │   ├── notion_mcp.py ·········· Notion MCP adapter (scaffolded, TODO)
+│   │   └── slack_mcp.py ··········· Slack MCP adapter (scaffolded, TODO)
 │   ├── parsers/
 │   │   ├── base.py ················ PdfParser protocol
 │   │   ├── pymupdf_strategy.py ···· Fast text-layer parser (PyMuPDF)
@@ -464,7 +468,7 @@ Cost is calculated by `litellm.completion_cost()` using its built-in pricing dat
 cd pipeline && pip install -e ".[dev]" && pytest tests/ -xvs
 ```
 
-116 tests, all run locally with mocked LLM calls. No API keys needed.
+All tests run locally with mocked LLM calls. No API keys needed. Run `pytest tests/ -v` for current count.
 
 ### What is NOT Tested (Requires Manual Validation)
 
