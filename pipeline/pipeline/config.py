@@ -28,6 +28,7 @@ class LLMStageConfig(BaseModel):
     prompt_dir: str = ""  # relative to configs/prompts/
     batch_size: int = 20  # for contradiction detection pairwise batching
     max_items: int = 0  # 0 = unlimited
+    concurrency: int = 5  # max parallel LLM calls per stage
 
 
 class DedupConfig(BaseModel):

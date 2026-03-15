@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -42,63 +43,77 @@ def _load_quality_criteria(configs_dir: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-async def generate_questions(
-    contradictions: list[Contradiction],
-    norms: list[NormStatement],
-    config: ExperimentConfig,
+async def _generate_batch(
+    batch: list[Contradiction],
+    norm_lookup: dict[str, NormStatement],
+    quality_weights: str,
+    stage_config,
+    semaphore: asyncio.Semaphore,
 ) -> list[GeneratedQuestion]:
-    """Generate elicitation questions grounded in contradictions.
+    """Generate questions from a single batch of contradictions."""
+    # Build minimal norm_lookup for this batch
+    batch_norm_ids = set()
+    for c in batch:
+        batch_norm_ids.add(c.norm_a_id)
+        batch_norm_ids.add(c.norm_b_id)
+    batch_norm_lookup = {nid: norm_lookup[nid] for nid in batch_norm_ids if nid in norm_lookup}
 
-    Batches contradictions to avoid exceeding context limits.
-    Prioritizes high-severity contradictions first.
-    """
-    stage_config = config.question_generation
+    template_vars = {
+        "contradictions": batch,
+        "norm_lookup": batch_norm_lookup,
+        "quality_weights": quality_weights,
+    }
 
-    norm_lookup = {norm.id: norm for norm in norms}
-    quality_weights = _load_quality_criteria()
-
-    # Sort by severity (high first) and take top contradictions
-    severity_order = {"high": 0, "medium": 1, "low": 2}
-    sorted_contradictions = sorted(
-        contradictions,
-        key=lambda c: (severity_order.get(c.severity.value, 9), -c.confidence),
-    )
-
-    # Batch to avoid massive prompts — 20 contradictions per call
-    batch_size = stage_config.batch_size
-    all_questions: list[GeneratedQuestion] = []
-
-    for i in range(0, len(sorted_contradictions), batch_size):
-        batch = sorted_contradictions[i : i + batch_size]
-
-        # Build a minimal norm_lookup with only norms referenced by this batch
-        batch_norm_ids = set()
-        for c in batch:
-            batch_norm_ids.add(c.norm_a_id)
-            batch_norm_ids.add(c.norm_b_id)
-        batch_norm_lookup = {nid: norm_lookup[nid] for nid in batch_norm_ids if nid in norm_lookup}
-
-        template_vars = {
-            "contradictions": batch,
-            "norm_lookup": batch_norm_lookup,
-            "quality_weights": quality_weights,
-        }
-
+    async with semaphore:
         try:
             result = await run_llm_stage(
                 stage_config,
                 QuestionGenerationResult,
                 template_vars,
             )
-            all_questions.extend(result.questions)
         except Exception:
-            logger.warning(
-                f"Failed to generate questions from contradiction batch {i // batch_size + 1}, skipping"
-            )
-            continue
+            logger.warning("Failed to generate questions from contradiction batch, skipping")
+            return []
 
-        if stage_config.max_items and len(all_questions) >= stage_config.max_items:
-            break
+    return result.questions
+
+
+async def generate_questions(
+    contradictions: list[Contradiction],
+    norms: list[NormStatement],
+    config: ExperimentConfig,
+) -> list[GeneratedQuestion]:
+    """Generate elicitation questions grounded in contradictions (concurrent).
+
+    Batches contradictions to avoid exceeding context limits.
+    Prioritizes high-severity contradictions first.
+    """
+    stage_config = config.question_generation
+    semaphore = asyncio.Semaphore(stage_config.concurrency)
+
+    norm_lookup = {norm.id: norm for norm in norms}
+    quality_weights = _load_quality_criteria()
+
+    # Sort by severity (high first)
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    sorted_contradictions = sorted(
+        contradictions,
+        key=lambda c: (severity_order.get(c.severity.value, 9), -c.confidence),
+    )
+
+    # Build batch tasks
+    batch_size = stage_config.batch_size
+    tasks = []
+    for i in range(0, len(sorted_contradictions), batch_size):
+        batch = sorted_contradictions[i : i + batch_size]
+        tasks.append(_generate_batch(batch, norm_lookup, quality_weights, stage_config, semaphore))
+
+    # Run concurrently
+    results = await asyncio.gather(*tasks)
+
+    all_questions: list[GeneratedQuestion] = []
+    for questions in results:
+        all_questions.extend(questions)
 
     if stage_config.max_items:
         all_questions = all_questions[: stage_config.max_items]

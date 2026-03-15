@@ -137,6 +137,36 @@ async def test_extract_norms_no_chunks(default_config):
     assert norms == []
 
 
+@pytest.mark.asyncio
+async def test_extract_norms_concurrency(default_config, sample_document):
+    """Should run LLM calls concurrently up to concurrency limit."""
+    import asyncio
+
+    default_config.norm_extraction.concurrency = 2
+    active = {"count": 0, "max": 0}
+
+    mock_result = NormExtractionResult(
+        norms=[NormStatement(text="A norm", norm_type=NormType.stated, confidence=0.9)]
+    )
+
+    async def tracked_stage(*args, **kwargs):
+        active["count"] += 1
+        active["max"] = max(active["max"], active["count"])
+        await asyncio.sleep(0.01)
+        active["count"] -= 1
+        return mock_result
+
+    with patch(
+        "pipeline.stages.norm_extraction.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=tracked_stage,
+    ):
+        norms = await extract_norms([sample_document], default_config)
+
+    assert len(norms) == 3  # 3 chunks
+    assert active["max"] <= 2  # concurrency limit respected
+
+
 # ---------------------------------------------------------------------------
 # Stage 3: Contradiction Detection
 # ---------------------------------------------------------------------------

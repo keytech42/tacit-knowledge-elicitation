@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -18,50 +19,66 @@ class NormExtractionResult(BaseModel):
     norms: list[NormStatement]
 
 
+async def _extract_from_chunk(
+    doc: ParsedDocument,
+    chunk_index: int,
+    stage_config,
+    semaphore: asyncio.Semaphore,
+) -> list[NormStatement]:
+    """Extract norms from a single chunk, with concurrency limiting."""
+    chunk = doc.chunks[chunk_index]
+    template_vars = {
+        "source_title": doc.title,
+        "source_type": doc.source_type.value,
+        "source_metadata": json.dumps(doc.metadata) if doc.metadata else "",
+        "chunk_index": chunk.chunk_index,
+        "total_chunks": chunk.total_chunks,
+        "chunk_text": chunk.text,
+    }
+
+    async with semaphore:
+        try:
+            result = await run_llm_stage(
+                stage_config,
+                NormExtractionResult,
+                template_vars,
+            )
+        except Exception:
+            logger.warning(
+                f"Failed to extract norms from {doc.title} chunk {chunk.chunk_index}/{chunk.total_chunks}, skipping"
+            )
+            return []
+
+    norms = result.norms
+    for norm in norms:
+        norm.source_document = doc.title
+    return norms
+
+
 async def extract_norms(
     documents: list[ParsedDocument], config: ExperimentConfig
 ) -> list[NormStatement]:
-    """Extract norms from all document chunks via LLM."""
-    all_norms: list[NormStatement] = []
+    """Extract norms from all document chunks via LLM (concurrent)."""
     stage_config = config.norm_extraction
+    semaphore = asyncio.Semaphore(stage_config.concurrency)
 
-    failed_chunks = 0
+    # Build all tasks
+    tasks = []
     for doc in documents:
-        for chunk in doc.chunks:
-            template_vars = {
-                "source_title": doc.title,
-                "source_type": doc.source_type.value,
-                "source_metadata": json.dumps(doc.metadata) if doc.metadata else "",
-                "chunk_index": chunk.chunk_index,
-                "total_chunks": chunk.total_chunks,
-                "chunk_text": chunk.text,
-            }
+        for i in range(len(doc.chunks)):
+            tasks.append(_extract_from_chunk(doc, i, stage_config, semaphore))
 
-            try:
-                result = await run_llm_stage(
-                    stage_config,
-                    NormExtractionResult,
-                    template_vars,
-                )
-            except Exception:
-                failed_chunks += 1
-                logger.warning(
-                    f"Failed to extract norms from {doc.title} chunk {chunk.chunk_index}/{chunk.total_chunks}, skipping"
-                )
-                continue
+    # Run concurrently
+    results = await asyncio.gather(*tasks)
 
-            for norm in result.norms:
-                norm.source_document = doc.title
-                all_norms.append(norm)
+    # Flatten
+    all_norms: list[NormStatement] = []
+    for norms in results:
+        all_norms.extend(norms)
 
-            if stage_config.max_items and len(all_norms) >= stage_config.max_items:
-                break
-
-        if stage_config.max_items and len(all_norms) >= stage_config.max_items:
-            break
-
-    if failed_chunks:
-        logger.warning(f"Skipped {failed_chunks} chunks due to LLM failures")
+    failed = sum(1 for r in results if not r)
+    if failed:
+        logger.warning(f"Skipped {failed} chunks due to LLM failures")
 
     if stage_config.max_items:
         all_norms = all_norms[: stage_config.max_items]
