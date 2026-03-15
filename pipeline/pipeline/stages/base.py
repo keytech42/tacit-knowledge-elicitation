@@ -81,4 +81,5 @@ async def run_llm_stage(
         model=stage_config.model,
         temperature=stage_config.temperature,
         max_retries=stage_config.max_retries,
+        max_tokens=8192,
     )

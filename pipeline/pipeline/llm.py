@@ -94,9 +94,17 @@ async def call_llm(
             last_error = e
             if attempt < max_retries - 1:
                 wait = 2**attempt
-                logger.warning(f"LLM call attempt {attempt + 1} failed: {e}. Retrying in {wait}s...")
+                raw_preview = content[:200] if content else "(no content)"
+                logger.warning(
+                    f"LLM call attempt {attempt + 1} failed: {e}. "
+                    f"Response preview: {raw_preview!r}. Retrying in {wait}s..."
+                )
                 await asyncio.sleep(wait)
             else:
-                logger.error(f"LLM call failed after {max_retries} attempts: {e}")
+                raw_preview = content[:500] if content else "(no content)"
+                logger.error(
+                    f"LLM call failed after {max_retries} attempts: {e}. "
+                    f"Last response preview: {raw_preview!r}"
+                )
 
     raise RuntimeError(f"LLM call failed after {max_retries} attempts: {last_error}")
