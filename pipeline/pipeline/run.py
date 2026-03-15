@@ -67,8 +67,8 @@ def save_manifest(manifest: RunManifest, run_dir: Path) -> None:
 async def run_pipeline(config: ExperimentConfig, config_path: str, dry_run: bool = False) -> Path:
     """Execute the full pipeline."""
     # Reset usage tracker for this run
-    from pipeline.llm import UsageStats, usage
-    usage.__init__()
+    from pipeline.llm import usage
+    usage.reset()
 
     run_dir = create_run_dir(config)
     run_id = run_dir.name

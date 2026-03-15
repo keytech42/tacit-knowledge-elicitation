@@ -133,6 +133,14 @@ async def test_full_pipeline_integration(integration_config, mock_llm_responses)
     report = (run_dir / "export" / "report.md").read_text()
     assert "# Pipeline Run Report" in report or "Run Summary" in report
 
+    # Usage tracking is present in manifest
+    assert "usage" in manifest["totals"]
+    usage = manifest["totals"]["usage"]
+    assert "calls" in usage
+    assert "input_tokens" in usage
+    assert "output_tokens" in usage
+    assert "cost_usd" in usage
+
 
 @pytest.mark.asyncio
 async def test_config_snapshot_matches_input(integration_config, mock_llm_responses):

@@ -19,17 +19,17 @@ flowchart TD
 
     subgraph stage2["Stage 2 — Norm Extraction"]
         B1["Per-chunk LLM calls<br/>(concurrent, 5 parallel)"]
-        B2["NormStatement[]<br/>stated vs. practiced"]
+        B2["<code>NormStatement[]</code><br/>stated vs. practiced"]
     end
 
     subgraph stage3["Stage 3 — Contradiction Detection"]
         C1["Batched LLM calls<br/>(20 norms/batch, concurrent)"]
-        C2["Contradiction[]<br/>severity + confidence"]
+        C2["<code>Contradiction[]</code><br>severity + confidence"]
     end
 
     subgraph stage4["Stage 4 — Question Generation"]
         D1["Batched LLM calls<br/>(severity-sorted, concurrent)"]
-        D2["GeneratedQuestion[]<br/>evidence-grounded"]
+        D2["<code>GeneratedQuestion[]</code><br>evidence-grounded"]
     end
 
     subgraph output["Output"]
@@ -40,11 +40,11 @@ flowchart TD
     end
 
     sources --> stage1
-    A2 -->|"ParsedDocument[]"| B1
+    A2 -->|"<code>ParsedDocument[]</code>"| B1
     B1 --> B2
-    B2 -->|"NormStatement[]"| C1
+    B2 -->|"<code>NormStatement[]</code>"| C1
     C1 --> C2
-    C2 -->|"Contradiction[]"| D1
+    C2 -->|"<code>Contradiction[]</code>"| D1
     D1 --> D2
     D2 --> E1
     E1 --> E2

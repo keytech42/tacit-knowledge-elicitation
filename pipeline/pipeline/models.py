@@ -113,4 +113,4 @@ class RunManifest(BaseModel):
     started_at: datetime
     completed_at: datetime | None = None
     stages: list[StageResult] = Field(default_factory=list)
-    totals: dict[str, int] = Field(default_factory=dict)
+    totals: dict = Field(default_factory=dict)

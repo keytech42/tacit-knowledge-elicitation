@@ -38,6 +38,15 @@ class UsageStats:
         with self._lock:
             self.failed_calls += 1
 
+    def reset(self) -> None:
+        """Reset all counters to zero."""
+        with self._lock:
+            self.input_tokens = 0
+            self.output_tokens = 0
+            self.calls = 0
+            self.failed_calls = 0
+            self.cost_usd = 0.0
+
     def summary(self) -> dict:
         return {
             "input_tokens": self.input_tokens,

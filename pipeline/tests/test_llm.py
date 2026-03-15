@@ -121,12 +121,15 @@ def test_usage_stats_summary():
 
 
 def test_usage_stats_reset():
-    """Reinitializing should reset all counters."""
+    """reset() should zero all counters."""
     stats = UsageStats()
     stats.record(input_tokens=100, output_tokens=50, cost=0.001)
-    stats.__init__()
+    stats.record_failure()
+    stats.reset()
     assert stats.calls == 0
+    assert stats.failed_calls == 0
     assert stats.input_tokens == 0
+    assert stats.output_tokens == 0
     assert stats.cost_usd == 0.0
 
 

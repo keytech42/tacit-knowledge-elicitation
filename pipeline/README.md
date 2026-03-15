@@ -58,5 +58,5 @@ pipeline/
 │   ├── stages/ ···················· LLM stages (norm, contradiction, question)
 │   ├── dedup/ ····················· Dedup strategies (exact, llm)
 │   └── export/ ···················· Output formatters (platform_json, summary_report)
-└── tests/ ························· 116 tests with fixtures
+└── tests/ ························· 125 tests with fixtures
 ```
