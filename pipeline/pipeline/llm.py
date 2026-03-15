@@ -27,9 +27,13 @@ def _extract_json(text: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Fix common issues: unescaped control characters in string values
-    # Replace literal tabs/newlines inside JSON strings
-    cleaned = re.sub(r'[\x00-\x1f]', lambda m: f'\\u{ord(m.group()):04x}', text)
+    # Fix common issues: control chars, smart quotes
+    cleaned = text
+    # Replace smart/curly quotes with straight quotes
+    cleaned = cleaned.replace("\u201c", '\\"').replace("\u201d", '\\"')  # " "
+    cleaned = cleaned.replace("\u2018", "\\'").replace("\u2019", "\\'")  # ' '
+    # Replace control characters
+    cleaned = re.sub(r'[\x00-\x1f]', lambda m: f'\\u{ord(m.group()):04x}', cleaned)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
