@@ -14,37 +14,44 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+def _clean_json_text(text: str) -> str:
+    """Apply common fixes to LLM JSON output."""
+    # Replace smart/curly quotes with escaped straight quotes
+    text = text.replace("\u201c", '\\"').replace("\u201d", '\\"')  # " "
+    text = text.replace("\u2018", "\\'").replace("\u2019", "\\'")  # ' '
+    # Replace control characters
+    text = re.sub(r'[\x00-\x1f]', lambda m: f'\\u{ord(m.group()):04x}', text)
+    return text
+
+
 def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response, handling code fences and control chars."""
+    """Extract JSON from LLM response, handling code fences, smart quotes, and preamble."""
     text = text.strip()
     # Strip markdown code fences
-    if text.startswith("```"):
+    if "```" in text:
         lines = text.split("\n")
         lines = [line for line in lines if not line.strip().startswith("```")]
-        text = "\n".join(lines)
+        text = "\n".join(lines).strip()
     # Try parsing as-is first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Fix common issues: control chars, smart quotes
-    cleaned = text
-    # Replace smart/curly quotes with straight quotes
-    cleaned = cleaned.replace("\u201c", '\\"').replace("\u201d", '\\"')  # " "
-    cleaned = cleaned.replace("\u2018", "\\'").replace("\u2019", "\\'")  # ' '
-    # Replace control characters
-    cleaned = re.sub(r'[\x00-\x1f]', lambda m: f'\\u{ord(m.group()):04x}', cleaned)
+    # Try with common fixes
     try:
-        return json.loads(cleaned)
+        return json.loads(_clean_json_text(text))
     except json.JSONDecodeError:
         pass
-    # Last resort: find the outermost { } block
+    # Extract outermost { } block (handles preamble text, BOM, etc.)
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         subset = text[start:end + 1]
-        cleaned = re.sub(r'[\x00-\x1f]', lambda m: f'\\u{ord(m.group()):04x}', subset)
-        return json.loads(cleaned)
+        try:
+            return json.loads(subset)
+        except json.JSONDecodeError:
+            pass
+        return json.loads(_clean_json_text(subset))
     raise json.JSONDecodeError("No JSON object found in response", text, 0)
 
 
