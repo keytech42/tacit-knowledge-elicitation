@@ -34,3 +34,6 @@ backups/
 
 # Git worktrees
 worktrees/
+
+# Pipeline run outputs
+runs/

@@ -1,0 +1,36 @@
+Generate knowledge elicitation questions based on the following contradictions.
+
+## Detected Contradictions
+
+{% for c in contradictions %}
+### Contradiction {{ loop.index }} ({{ c.severity }}) [ID: {{ c.id }}]
+**Tension**: {{ c.tension_description }}
+**Confidence**: {{ c.confidence }}
+
+**Norm A** [{{ c.norm_a_id }}]: {{ norm_lookup[c.norm_a_id].text }}
+- Type: {{ norm_lookup[c.norm_a_id].norm_type }}
+- Source: {{ norm_lookup[c.norm_a_id].source_document }}
+- Passage: {{ norm_lookup[c.norm_a_id].source_passage }}
+
+**Norm B** [{{ c.norm_b_id }}]: {{ norm_lookup[c.norm_b_id].text }}
+- Type: {{ norm_lookup[c.norm_b_id].norm_type }}
+- Source: {{ norm_lookup[c.norm_b_id].source_document }}
+- Passage: {{ norm_lookup[c.norm_b_id].source_passage }}
+
+{% endfor %}
+
+{% if quality_weights %}
+## Quality Weights
+{{ quality_weights }}
+{% endif %}
+
+---
+
+Generate questions that:
+1. Probe the contradictions above to surface tacit knowledge
+2. Include specific evidence (source passages) in the question body
+3. Cannot be answered by simply searching Notion or Slack
+4. Would take 2-3 minutes to answer with a concrete response
+5. Could lead to actionable policy or process improvements
+
+For each question, provide: title, body (with evidence context), category, evidence references, source passages, and suggested answer options where appropriate.

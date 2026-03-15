@@ -1,0 +1,28 @@
+Analyze the following batch of norms for contradictions and tensions.
+
+## Norms to Analyze
+
+{% for norm in norms %}
+### Norm {{ loop.index }} ({{ norm.norm_type }}) [ID: {{ norm.id }}]
+> {{ norm.text }}
+
+Source: {{ norm.source_document }}
+Passage: {{ norm.source_passage }}
+Confidence: {{ norm.confidence }}
+
+{% endfor %}
+
+{% if batch_context %}
+## Additional Context
+{{ batch_context }}
+{% endif %}
+
+---
+
+Identify all contradictions between the norms above. For each contradiction:
+- Reference the two norm IDs involved (norm_a_id, norm_b_id)
+- Describe the tension clearly
+- Rate the severity (low, medium, high)
+- Rate your confidence (0.0–1.0)
+
+Only report genuine contradictions. If there are none, return an empty list.

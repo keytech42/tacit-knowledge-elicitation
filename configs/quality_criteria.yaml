@@ -1,0 +1,19 @@
+# Quality criteria and weights for question scoring.
+# Referenced by experiment configs; used in question generation stage.
+
+weights:
+  recency: 0.2
+  specificity: 0.3
+  contradiction_strength: 0.3
+  evidence_count: 0.2
+
+thresholds:
+  min_confidence: 0.5
+  min_evidence_count: 1
+  min_contradiction_severity: low  # low, medium, high
+
+filters:
+  # Questions that can be answered by searching docs should be removed
+  remove_searchable: true
+  # Minimum number of source passages required
+  min_source_passages: 1

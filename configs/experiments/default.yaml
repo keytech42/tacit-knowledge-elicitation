@@ -1,0 +1,42 @@
+experiment_name: default
+
+sources:
+  - type: text
+    path: ./sample_data
+    filters: {}
+
+chunking:
+  strategy: paragraph
+  max_chars: 4000
+  overlap: 200
+
+norm_extraction:
+  model: anthropic/claude-sonnet-4-6
+  temperature: 0.3
+  max_retries: 3
+  prompt_dir: norm_extraction
+  max_items: 0  # unlimited
+
+contradiction_detection:
+  model: anthropic/claude-sonnet-4-6
+  temperature: 0.2
+  max_retries: 3
+  prompt_dir: contradiction_detection
+  batch_size: 20
+
+question_generation:
+  model: anthropic/claude-sonnet-4-6
+  temperature: 0.3
+  max_retries: 3
+  prompt_dir: question_generation
+  max_items: 0
+
+dedup:
+  strategy: exact
+  threshold: 0.85
+
+output:
+  base_dir: runs
+  export_formats:
+    - platform_json
+    - summary_report
