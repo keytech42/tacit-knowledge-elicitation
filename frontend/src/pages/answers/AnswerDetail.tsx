@@ -45,7 +45,7 @@ function revisePermission(isAdmin: boolean, isAuthor: boolean, status: string) {
 
 export function AnswerDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, authConfig } = useAuth();
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [timeline, setTimeline] = useState<ActivityTimelineType | null>(null);
   const [pendingReview, setPendingReview] = useState<Review | null>(null);
@@ -275,9 +275,12 @@ export function AnswerDetail() {
               onSelect={handleAssignReviewer}
               placeholder="Search reviewers..."
               disabled={assigningReviewer}
-              excludeIds={[answer.author.id]}
+              excludeIds={authConfig?.dev_login_enabled ? [] : [answer.author.id]}
               prioritizeUser={user && (isReviewer || isAdmin) ? user as User : null}
             />
+            {authConfig?.dev_login_enabled && (
+              <p className="text-xs text-amber-600 mt-1">Self-review allowed in test mode</p>
+            )}
           </div>
         )}
         {aiReviewTask && (

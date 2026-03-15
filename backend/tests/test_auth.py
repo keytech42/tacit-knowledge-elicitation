@@ -23,6 +23,48 @@ class TestJWT:
         assert response.status_code == 401
 
 
+class TestDevLogin:
+    async def test_dev_login_creates_default_user(self, client: AsyncClient, roles):
+        """POST /auth/dev-login with no body creates dev@localhost with all roles."""
+        r = await client.post("/api/v1/auth/dev-login")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["email"] == "dev@localhost"
+        assert len(data["roles"]) >= 4  # all roles assigned
+
+    async def test_dev_login_impersonate_existing_user(
+        self, client: AsyncClient, respondent_user: User,
+    ):
+        """POST /auth/dev-login with email logs in as that user."""
+        r = await client.post(
+            "/api/v1/auth/dev-login",
+            json={"email": respondent_user.email},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["email"] == respondent_user.email
+        assert data["user_id"] == str(respondent_user.id)
+
+    async def test_dev_login_nonexistent_email_404(self, client: AsyncClient):
+        """POST /auth/dev-login with unknown email returns 404."""
+        r = await client.post(
+            "/api/v1/auth/dev-login",
+            json={"email": "nobody@nowhere.com"},
+        )
+        assert r.status_code == 404
+
+    async def test_dev_login_disabled_returns_404(self, client: AsyncClient):
+        """Dev login is hidden when DEV_LOGIN_ENABLED is false."""
+        from app.config import settings
+        original = settings.DEV_LOGIN_ENABLED
+        settings.DEV_LOGIN_ENABLED = False
+        try:
+            r = await client.post("/api/v1/auth/dev-login")
+            assert r.status_code == 404
+        finally:
+            settings.DEV_LOGIN_ENABLED = original
+
+
 class TestAPIKeyAuth:
     async def test_api_key_auth_works(
         self, client: AsyncClient, service_user: tuple[User, str]

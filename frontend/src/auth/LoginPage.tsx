@@ -77,11 +77,11 @@ export function LoginPage() {
     }
   };
 
-  const handleDevLogin = async () => {
+  const handleDevLogin = async (email?: string) => {
     setError(null);
     setLoggingIn(true);
     try {
-      await login("test");
+      await login("test", email);
       navigate("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Dev login failed");
@@ -89,6 +89,15 @@ export function LoginPage() {
       setLoggingIn(false);
     }
   };
+
+  const seedUsers = [
+    { email: "admin@example.com", label: "Alex Admin", roles: "Admin + Author" },
+    { email: "author@example.com", label: "Jordan Author", roles: "Author" },
+    { email: "respondent1@example.com", label: "Sam Respondent", roles: "Respondent" },
+    { email: "respondent2@example.com", label: "Taylor Respondent", roles: "Respondent" },
+    { email: "reviewer@example.com", label: "Casey Reviewer", roles: "Reviewer" },
+    { email: "respondent-reviewer@example.com", label: "Riley Test", roles: "Respondent + Reviewer" },
+  ];
 
   const googleClientId = authConfig?.google_client_id;
   const devLoginEnabled = authConfig?.dev_login_enabled ?? !googleClientId;
@@ -135,12 +144,28 @@ export function LoginPage() {
                 </div>
               )}
               <button
-                onClick={handleDevLogin}
+                onClick={() => handleDevLogin()}
                 disabled={loggingIn}
                 className="w-full bg-secondary text-secondary-foreground py-3 px-4 rounded-md font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                {loggingIn ? "Signing in..." : "Sign in as Test User"}
+                {loggingIn ? "Signing in..." : "Sign in as Test User (all roles)"}
               </button>
+              <div className="mt-3 pt-3 border-t border-border">
+                <p className="text-xs text-muted-foreground mb-2">Or sign in as a seed user:</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {seedUsers.map((u) => (
+                    <button
+                      key={u.email}
+                      onClick={() => handleDevLogin(u.email)}
+                      disabled={loggingIn}
+                      className="text-left px-2.5 py-1.5 rounded border border-border text-xs hover:bg-muted transition-colors disabled:opacity-50"
+                    >
+                      <span className="font-medium block truncate">{u.label}</span>
+                      <span className="text-muted-foreground">{u.roles}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </>
           )}
 

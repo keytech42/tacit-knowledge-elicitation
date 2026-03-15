@@ -10,7 +10,7 @@ import { UserPicker } from "@/components/UserPicker";
 
 export function ReviewDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, authConfig } = useAuth();
   const [review, setReview] = useState<Review | null>(null);
   const [target, setTarget] = useState<Answer | Question | null>(null);
   const [comment, setComment] = useState("");
@@ -95,6 +95,7 @@ export function ReviewDetail() {
   const answerStatus = review.answer_status ?? null;
   const canAssign = review.target_type === "answer" && (hasRole("admin") || hasRole("reviewer"));
   const answerAuthorId = target && "author" in target ? (target as Answer).author?.id : null;
+  const devMode = authConfig?.dev_login_enabled ?? false;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -149,9 +150,12 @@ export function ReviewDetail() {
               label="Assign additional reviewer"
               placeholder="Search for a reviewer..."
               disabled={assigning}
-              excludeIds={answerAuthorId ? [answerAuthorId] : []}
+              excludeIds={answerAuthorId && !devMode ? [answerAuthorId] : []}
               prioritizeUser={user as User | null}
             />
+            {devMode && answerAuthorId && (
+              <p className="text-xs text-amber-600 mt-1">Self-review allowed in test mode</p>
+            )}
             {assigning && <p className="text-xs text-muted-foreground mt-1">Assigning...</p>}
             {assignError && <p className="text-xs text-red-600 mt-1">{assignError}</p>}
           </div>

@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,11 +46,27 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
 
 
 @router.post("/dev-login", response_model=TokenResponse)
-async def dev_login(db: AsyncSession = Depends(get_db)):
-    """Create or return a dev admin user. Available when DEV_LOGIN_ENABLED is true."""
+async def dev_login(
+    email: str | None = Body(None, embed=True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Log in as a dev user. Available when DEV_LOGIN_ENABLED is true.
+
+    With no email: creates/returns the default dev admin (dev@localhost, all roles).
+    With email: logs in as an existing user (for testing specific roles).
+    """
     if not settings.DEV_LOGIN_ENABLED:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
+    if email:
+        # Impersonate an existing user
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        return _token_response(user)
+
+    # Default: create/return dev admin with all roles
     dev_email = "dev@localhost"
     result = await db.execute(select(User).where(User.email == dev_email))
     user = result.scalar_one_or_none()

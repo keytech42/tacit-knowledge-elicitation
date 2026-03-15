@@ -65,9 +65,13 @@ test.describe("Reviewer Assignment (AnswerDetail)", () => {
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
 
-    // The dev user is the answer author and excluded from reviewer candidates,
-    // so with a single test user the dropdown shows "Type to search"
-    await expect(listbox.getByText("Type to search")).toBeVisible();
+    // In dev mode, self-review is allowed so the answer author appears as a
+    // candidate. With a single test user the listbox shows that user as an option.
+    // (When self-review is disabled, the author is excluded and it shows "Type to search".)
+    await expect(
+      listbox.getByRole("option").first()
+        .or(listbox.getByText("Type to search"))
+    ).toBeVisible();
   });
 
   test("search shows no-matches when query yields no results", async ({ page }) => {
@@ -75,11 +79,21 @@ test.describe("Reviewer Assignment (AnswerDetail)", () => {
 
     const input = page.getByPlaceholder("Search reviewers...");
     await input.click();
-    await input.fill("NonexistentUser12345");
 
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
-    await expect(listbox.getByText("No matches found")).toBeVisible({ timeout: 5000 });
+
+    // Wait for the initial search to settle before typing a query.
+    // In dev mode, the answer author (only user) shows up as an option.
+    await expect(
+      listbox.getByRole("option").first()
+        .or(listbox.getByText("Type to search"))
+    ).toBeVisible();
+
+    await input.fill("NonexistentUser12345");
+
+    // After debounced search completes, nonsense query yields no results
+    await expect(listbox.getByText("No matches found")).toBeVisible({ timeout: 10000 });
   });
 
   test("UserPicker not shown for approved answers", async ({ page }) => {

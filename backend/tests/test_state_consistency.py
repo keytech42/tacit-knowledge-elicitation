@@ -177,21 +177,26 @@ class TestMissingGuardRails:
         self, client: AsyncClient, admin_user: User, respondent_user: User,
         reviewer_user: User, roles: dict[str, Role], db: AsyncSession,
     ):
-        """The answer author should not be able to create a review for their own answer."""
-        # Give the respondent reviewer role so they pass the role check
-        await db.refresh(respondent_user, ["roles"])
-        respondent_user.roles.append(roles[RoleName.REVIEWER.value])
-        await db.flush()
+        """The answer author should not be able to create a review for their own answer (prod mode)."""
+        from app.config import settings
+        original = settings.DEV_LOGIN_ENABLED
+        settings.DEV_LOGIN_ENABLED = False
+        try:
+            # Give the respondent reviewer role so they pass the role check
+            await db.refresh(respondent_user, ["roles"])
+            respondent_user.roles.append(roles[RoleName.REVIEWER.value])
+            await db.flush()
 
-        q = await _published_question(db, admin_user)
-        a_id = await _submitted_answer(client, db, q, respondent_user)
+            q = await _published_question(db, admin_user)
+            a_id = await _submitted_answer(client, db, q, respondent_user)
 
-        # BUG: respondent (the author) can create a review on their own answer
-        r = await client.post("/api/v1/reviews", json={
-            "target_type": "answer", "target_id": a_id,
-        }, headers=auth_header(respondent_user))
-        assert r.status_code == 409, \
-            "Author should not be able to review their own answer"
+            r = await client.post("/api/v1/reviews", json={
+                "target_type": "answer", "target_id": a_id,
+            }, headers=auth_header(respondent_user))
+            assert r.status_code == 409, \
+                "Author should not be able to review their own answer"
+        finally:
+            settings.DEV_LOGIN_ENABLED = original
 
     async def test_cannot_change_verdict_on_resolved_review(
         self, client: AsyncClient, admin_user: User, respondent_user: User,

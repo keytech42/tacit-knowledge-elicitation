@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, require_role
+from app.config import settings
 from app.database import get_db
 from app.models.answer import Answer, AnswerStatus
 from app.models.question import Question, QuestionStatus
@@ -91,7 +92,7 @@ async def create_review(
             raise HTTPException(status_code=404, detail="Answer not found")
         if target.status not in (AnswerStatus.SUBMITTED.value, AnswerStatus.UNDER_REVIEW.value):
             raise HTTPException(status_code=409, detail="Answer is not in a reviewable state")
-        if target.author_id == current_user.id:
+        if target.author_id == current_user.id and not settings.DEV_LOGIN_ENABLED:
             raise HTTPException(status_code=409, detail="Cannot review your own answer")
         # Move to under_review if submitted
         if target.status == AnswerStatus.SUBMITTED.value:
@@ -187,8 +188,8 @@ async def assign_reviewer(
     if RoleName.REVIEWER.value not in reviewer_roles:
         raise HTTPException(status_code=400, detail="Target user does not have the reviewer role")
 
-    # Prevent self-review
-    if reviewer_user.id == answer.author_id:
+    # Prevent self-review (except in dev/test mode)
+    if reviewer_user.id == answer.author_id and not settings.DEV_LOGIN_ENABLED:
         raise HTTPException(status_code=409, detail="Cannot assign the answer author as reviewer")
 
     # Prevent duplicate pending review for same reviewer+version
