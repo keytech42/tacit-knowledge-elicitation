@@ -18,6 +18,8 @@ def run_ingest(config: ExperimentConfig) -> list[ParsedDocument]:
     import pipeline.ingest.notion  # noqa: F401
     import pipeline.ingest.pdf  # noqa: F401
     import pipeline.ingest.text  # noqa: F401
+    import pipeline.ingest.notion_mcp  # noqa: F401
+    import pipeline.ingest.slack_mcp  # noqa: F401
 
     from pipeline.chunking.runner import apply_chunking
 

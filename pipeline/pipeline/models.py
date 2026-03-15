@@ -17,6 +17,8 @@ class SourceType(str, Enum):
     notion = "notion"
     pdf = "pdf"
     text = "text"
+    notion_mcp = "notion_mcp"
+    slack_mcp = "slack_mcp"
 
 
 class ParsedChunk(BaseModel):
