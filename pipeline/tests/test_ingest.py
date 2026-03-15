@@ -197,6 +197,8 @@ class TestRegistryIntegration:
         import pipeline.ingest.slack  # noqa: F401
         import pipeline.ingest.notion  # noqa: F401
         import pipeline.ingest.pdf  # noqa: F401
+        import pipeline.ingest.notion_mcp  # noqa: F401
+        import pipeline.ingest.slack_mcp  # noqa: F401
 
         from pipeline.registry import list_strategies
 
@@ -205,3 +207,55 @@ class TestRegistryIntegration:
         assert "slack" in strategies
         assert "notion" in strategies
         assert "pdf" in strategies
+        assert "notion_mcp" in strategies
+        assert "slack_mcp" in strategies
+
+
+class TestNotionMCPAdapter:
+    def test_raises_not_implemented(self):
+        from pipeline.ingest.notion_mcp import NotionMCPAdapter
+
+        adapter = NotionMCPAdapter()
+        source = SourceConfig(type="notion_mcp", path="")
+        with pytest.raises(NotImplementedError, match="MCP client SDK"):
+            adapter.ingest(source)
+
+    def test_to_document(self):
+        from pipeline.ingest.notion_mcp import NotionMCPAdapter
+
+        adapter = NotionMCPAdapter()
+        doc = adapter._to_document(
+            page_id="abc123",
+            title="Test Page",
+            content="Some content",
+            metadata={"workspace": "test"},
+        )
+        assert doc.source_type == SourceType.notion_mcp
+        assert doc.title == "Test Page"
+        assert doc.source_path == "notion://abc123"
+        assert doc.content_hash  # non-empty
+
+
+class TestSlackMCPAdapter:
+    def test_raises_not_implemented(self):
+        from pipeline.ingest.slack_mcp import SlackMCPAdapter
+
+        adapter = SlackMCPAdapter()
+        source = SourceConfig(type="slack_mcp", path="")
+        with pytest.raises(NotImplementedError, match="official MCP server"):
+            adapter.ingest(source)
+
+    def test_to_document(self):
+        from pipeline.ingest.slack_mcp import SlackMCPAdapter
+
+        adapter = SlackMCPAdapter()
+        doc = adapter._to_document(
+            channel_name="general",
+            messages=["user1: hello", "user2: world"],
+            metadata={"channel": "general", "message_count": 2},
+        )
+        assert doc.source_type == SourceType.slack_mcp
+        assert doc.title == "#general"
+        assert doc.source_path == "slack://general"
+        assert "hello" in doc.raw_text
+        assert doc.content_hash  # non-empty
