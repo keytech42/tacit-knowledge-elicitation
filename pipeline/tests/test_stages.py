@@ -167,6 +167,77 @@ async def test_extract_norms_concurrency(default_config, sample_document):
     assert active["max"] <= 2  # concurrency limit respected
 
 
+@pytest.mark.asyncio
+async def test_extract_norms_concurrency_one_is_sequential(default_config, sample_document):
+    """concurrency=1 should process chunks one at a time."""
+    import asyncio
+
+    default_config.norm_extraction.concurrency = 1
+    active = {"count": 0, "max": 0}
+
+    mock_result = NormExtractionResult(
+        norms=[NormStatement(text="Norm", norm_type=NormType.stated, confidence=0.9)]
+    )
+
+    async def tracked_stage(*args, **kwargs):
+        active["count"] += 1
+        active["max"] = max(active["max"], active["count"])
+        await asyncio.sleep(0.01)
+        active["count"] -= 1
+        return mock_result
+
+    with patch(
+        "pipeline.stages.norm_extraction.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=tracked_stage,
+    ):
+        norms = await extract_norms([sample_document], default_config)
+
+    assert len(norms) == 3
+    assert active["max"] == 1  # strictly sequential
+
+
+@pytest.mark.asyncio
+async def test_extract_norms_partial_failure_during_concurrency(default_config, sample_document):
+    """Some concurrent tasks fail, others succeed — results still collected."""
+    default_config.norm_extraction.concurrency = 3
+    call_count = {"n": 0}
+
+    mock_result = NormExtractionResult(
+        norms=[NormStatement(text="Good norm", norm_type=NormType.stated, confidence=0.9)]
+    )
+
+    async def sometimes_fail(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise RuntimeError("Transient failure")
+        return mock_result
+
+    with patch(
+        "pipeline.stages.norm_extraction.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=sometimes_fail,
+    ):
+        norms = await extract_norms([sample_document], default_config)
+
+    assert len(norms) == 2  # 3 chunks, 1 failed, 2 succeeded
+
+
+@pytest.mark.asyncio
+async def test_extract_norms_all_fail_returns_empty(default_config, sample_document):
+    """All concurrent tasks fail — returns empty list, no crash."""
+    default_config.norm_extraction.concurrency = 3
+
+    with patch(
+        "pipeline.stages.norm_extraction.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("LLM down"),
+    ):
+        norms = await extract_norms([sample_document], default_config)
+
+    assert norms == []
+
+
 # ---------------------------------------------------------------------------
 # Stage 3: Contradiction Detection
 # ---------------------------------------------------------------------------
@@ -256,6 +327,64 @@ async def test_detect_contradictions_empty_norms(default_config):
     """Should handle empty norms list gracefully."""
     result = await detect_contradictions([], default_config)
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_detect_contradictions_concurrency(default_config, sample_norms):
+    """Should respect concurrency limit for batch processing."""
+    import asyncio
+
+    default_config.contradiction_detection.batch_size = 1
+    default_config.contradiction_detection.concurrency = 1
+    active = {"count": 0, "max": 0}
+
+    mock_result = ContradictionDetectionResult(contradictions=[])
+
+    async def tracked_stage(*args, **kwargs):
+        active["count"] += 1
+        active["max"] = max(active["max"], active["count"])
+        await asyncio.sleep(0.01)
+        active["count"] -= 1
+        return mock_result
+
+    with patch(
+        "pipeline.stages.contradiction_detection.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=tracked_stage,
+    ):
+        await detect_contradictions(sample_norms, default_config)
+
+    assert active["max"] == 1  # sequential with concurrency=1
+
+
+@pytest.mark.asyncio
+async def test_detect_contradictions_partial_failure(default_config, sample_norms):
+    """Failed batch should be skipped, others still collected."""
+    default_config.contradiction_detection.batch_size = 1
+    call_count = {"n": 0}
+
+    good_result = ContradictionDetectionResult(contradictions=[
+        Contradiction(
+            norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description="Tension", severity=Severity.medium, confidence=0.8,
+        )
+    ])
+
+    async def sometimes_fail(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("Batch failed")
+        return good_result
+
+    with patch(
+        "pipeline.stages.contradiction_detection.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=sometimes_fail,
+    ):
+        result = await detect_contradictions(sample_norms, default_config)
+
+    # 2 norms with batch_size=1 → 2 batches, 1 failed → 1 result
+    assert len(result) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -467,3 +596,41 @@ async def test_generate_questions_skips_failed_batch(default_config, sample_norm
 
         # First batch failed, second succeeded
         assert len(questions) == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_questions_concurrency(default_config, sample_norms):
+    """Should respect concurrency limit for question generation batches."""
+    import asyncio
+
+    contradictions = [
+        Contradiction(
+            id=f"c{i}", norm_a_id="norm-1", norm_b_id="norm-2",
+            tension_description=f"Tension {i}", severity=Severity.high, confidence=0.9,
+        )
+        for i in range(4)
+    ]
+    default_config.question_generation.batch_size = 1
+    default_config.question_generation.concurrency = 2
+    active = {"count": 0, "max": 0}
+
+    mock_result = QuestionGenerationResult(
+        questions=[GeneratedQuestion(title="Q", body="b", category="A", confidence=0.8)]
+    )
+
+    async def tracked_stage(*args, **kwargs):
+        active["count"] += 1
+        active["max"] = max(active["max"], active["count"])
+        await asyncio.sleep(0.01)
+        active["count"] -= 1
+        return mock_result
+
+    with patch(
+        "pipeline.stages.question_generation.run_llm_stage",
+        new_callable=AsyncMock,
+        side_effect=tracked_stage,
+    ):
+        questions = await generate_questions(contradictions, sample_norms, default_config)
+
+    assert len(questions) == 4  # 4 batches, 1 question each
+    assert active["max"] <= 2  # concurrency limit respected
