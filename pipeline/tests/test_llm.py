@@ -1,8 +1,10 @@
-"""Tests for LLM wrapper — JSON extraction and error handling."""
+"""Tests for LLM wrapper — JSON extraction, error handling, and usage tracking."""
 
 import json
 
 import pytest
+
+from pipeline.llm import UsageStats
 
 from pipeline.llm import _clean_json_text, _extract_json
 
@@ -82,6 +84,70 @@ def test_clean_json_text_passthrough():
     """Normal text should pass through unchanged."""
     text = '{"key": "value"}'
     assert _clean_json_text(text) == text
+
+
+# --- UsageStats tests ---
+
+
+def test_usage_stats_record():
+    stats = UsageStats()
+    stats.record(input_tokens=100, output_tokens=50, cost=0.001)
+    stats.record(input_tokens=200, output_tokens=100, cost=0.002)
+    assert stats.input_tokens == 300
+    assert stats.output_tokens == 150
+    assert stats.calls == 2
+    assert stats.cost_usd == pytest.approx(0.003)
+
+
+def test_usage_stats_record_failure():
+    stats = UsageStats()
+    stats.record_failure()
+    stats.record_failure()
+    assert stats.failed_calls == 2
+    assert stats.calls == 0
+
+
+def test_usage_stats_summary():
+    stats = UsageStats()
+    stats.record(input_tokens=1000, output_tokens=500, cost=0.0105)
+    stats.record_failure()
+    s = stats.summary()
+    assert s["input_tokens"] == 1000
+    assert s["output_tokens"] == 500
+    assert s["total_tokens"] == 1500
+    assert s["calls"] == 1
+    assert s["failed_calls"] == 1
+    assert s["cost_usd"] == pytest.approx(0.0105)
+
+
+def test_usage_stats_reset():
+    """Reinitializing should reset all counters."""
+    stats = UsageStats()
+    stats.record(input_tokens=100, output_tokens=50, cost=0.001)
+    stats.__init__()
+    assert stats.calls == 0
+    assert stats.input_tokens == 0
+    assert stats.cost_usd == 0.0
+
+
+def test_usage_stats_thread_safety():
+    """Concurrent records should not lose data."""
+    import threading
+
+    stats = UsageStats()
+    def record_many():
+        for _ in range(100):
+            stats.record(input_tokens=1, output_tokens=1, cost=0.0001)
+
+    threads = [threading.Thread(target=record_many) for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert stats.calls == 1000
+    assert stats.input_tokens == 1000
+    assert stats.cost_usd == pytest.approx(0.1)
 
 
 # --- Multi-strategy fallback tests ---
