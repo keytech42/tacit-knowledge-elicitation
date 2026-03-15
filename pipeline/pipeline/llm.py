@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import re
+import threading
+from dataclasses import dataclass, field
 from typing import TypeVar
 
 import litellm
@@ -12,6 +14,43 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class UsageStats:
+    """Thread-safe accumulator for LLM token usage across a pipeline run."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    calls: int = 0
+    failed_calls: int = 0
+    cost_usd: float = 0.0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def record(self, input_tokens: int, output_tokens: int, cost: float) -> None:
+        with self._lock:
+            self.input_tokens += input_tokens
+            self.output_tokens += output_tokens
+            self.cost_usd += cost
+            self.calls += 1
+
+    def record_failure(self) -> None:
+        with self._lock:
+            self.failed_calls += 1
+
+    def summary(self) -> dict:
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.input_tokens + self.output_tokens,
+            "calls": self.calls,
+            "failed_calls": self.failed_calls,
+            "cost_usd": round(self.cost_usd, 6),
+        }
+
+
+# Global usage tracker — reset per pipeline run
+usage = UsageStats()
 
 
 def _clean_json_text(text: str) -> str:
@@ -90,6 +129,7 @@ async def call_llm(
         enriched_messages.insert(0, {"role": "system", "content": system_suffix.strip()})
 
     last_error = None
+    content = ""
     for attempt in range(max_retries):
         try:
             response = await litellm.acompletion(
@@ -99,6 +139,20 @@ async def call_llm(
                 max_tokens=max_tokens,
             )
             content = response.choices[0].message.content
+
+            # Record token usage and cost from litellm
+            resp_usage = getattr(response, "usage", None)
+            try:
+                call_cost = litellm.completion_cost(completion_response=response)
+            except Exception:
+                call_cost = 0.0
+            if resp_usage:
+                usage.record(
+                    input_tokens=getattr(resp_usage, "prompt_tokens", 0),
+                    output_tokens=getattr(resp_usage, "completion_tokens", 0),
+                    cost=call_cost,
+                )
+
             parsed = _extract_json(content)
             return response_model.model_validate(parsed)
         except (json.JSONDecodeError, Exception) as e:
@@ -118,4 +172,5 @@ async def call_llm(
                     f"Last response preview: {raw_preview!r}"
                 )
 
+    usage.record_failure()
     raise RuntimeError(f"LLM call failed after {max_retries} attempts: {last_error}")

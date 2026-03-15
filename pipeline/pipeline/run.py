@@ -66,6 +66,10 @@ def save_manifest(manifest: RunManifest, run_dir: Path) -> None:
 
 async def run_pipeline(config: ExperimentConfig, config_path: str, dry_run: bool = False) -> Path:
     """Execute the full pipeline."""
+    # Reset usage tracker for this run
+    from pipeline.llm import UsageStats, usage
+    usage.__init__()
+
     run_dir = create_run_dir(config)
     run_id = run_dir.name
 
@@ -179,8 +183,16 @@ async def run_pipeline(config: ExperimentConfig, config_path: str, dry_run: bool
         logger.exception("Export failed (non-fatal)")
 
     manifest.completed_at = datetime.now(timezone.utc)
+    manifest.totals["usage"] = usage.summary()
     save_manifest(manifest, run_dir)
-    logger.info(f"Pipeline complete. Results in {run_dir}")
+
+    us = usage.summary()
+    logger.info(
+        f"Pipeline complete. Results in {run_dir}\n"
+        f"  LLM usage: {us['calls']} calls, {us['failed_calls']} failed\n"
+        f"  Tokens: {us['input_tokens']:,} input + {us['output_tokens']:,} output = {us['total_tokens']:,} total\n"
+        f"  Cost: ${us['cost_usd']:.4f}"
+    )
     return run_dir
 
 
